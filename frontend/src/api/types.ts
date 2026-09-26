@@ -32,7 +32,7 @@ export type WorkflowStage =
   | 'CONTAIN'
   | 'LEARN'
 
-export type DetectionSource = 'SURICATA' | 'ML_ANOMALY' | 'HYBRID'
+export type DetectionSource = 'SURICATA' | 'ML_ANOMALY' | 'THREAT_INTEL' | 'HYBRID'
 
 export type Protocol = 'TCP' | 'UDP' | 'ICMP' | 'HTTP' | 'HTTPS' | 'SSH' | 'DNS' | 'SMB' | 'FTP' | 'RDP'
 
@@ -57,6 +57,11 @@ export type AssetType =
 export type AssetCriticality = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
 
 export type AssetStatus = 'ONLINE' | 'ISOLATED' | 'OFFLINE'
+
+export type AssetExposure = 'EXTERNAL' | 'INTERNAL'
+
+/** Security posture derived from active incidents and vulnerabilities. */
+export type AssetPosture = 'AT_RISK' | 'MONITORED' | 'SECURE'
 
 export type ContainmentActionType =
   | 'BLOCK_IP'
@@ -93,6 +98,25 @@ export interface MitreTechnique {
   tactic: string // e.g. "Credential Access"
   description: string
   url: string // https://attack.mitre.org/techniques/T1110/
+}
+
+export type IndicatorType = 'IP' | 'DOMAIN' | 'URL' | 'HASH'
+
+/** GET /threat-intel/indicators — indicator of compromise known to NETRA. */
+export interface ThreatIndicator {
+  id: string // IND-xxx
+  type: IndicatorType
+  value: string // stored raw; UI displays defanged
+  source: string // feed name, e.g. "abuse.ch ThreatFox"
+  confidence: number // 0–1
+  severity: Severity
+  description: string
+  tags: string[]
+  firstSeen: string
+  lastSeen: string
+  matchCount: number // correlated events matching this indicator
+  incidentIds: string[]
+  mitreTechniqueIds: string[]
 }
 
 export interface Vulnerability {
@@ -140,7 +164,11 @@ export interface Asset {
   operatingSystem: string
   services: string[] // e.g. ["ssh:22", "postgresql:5432"]
   vulnerabilities: Vulnerability[]
-  status: AssetStatus
+  status: AssetStatus // operational state
+  exposure: AssetExposure
+  riskScore: number // 0–100, driven by active incidents on this asset
+  posture: AssetPosture
+  activeIncidentIds: string[]
   lastSeen: string
 }
 
@@ -201,7 +229,8 @@ export interface Incident {
   mitreTechniqueId: string | null
   detectionSource: DetectionSource
   eventIds: string[]
-  eventCount: number
+  eventCount: number // total correlated events (eventIds holds representative samples)
+  containedAt: string | null
   firstSeen: string
   lastSeen: string
   riskAssessmentId: string | null
@@ -293,29 +322,57 @@ export interface CyberMemoryEntry {
 // Dashboard
 // ---------------------------------------------------------------------------
 
+export type TrendRange = '24h' | '7d'
+
+/** One bucket of the system risk / activity trend. */
 export interface RiskTrendPoint {
-  timestamp: string
-  riskScore: number // 0–100
-  incidentCount: number
+  timestamp: string // bucket start
+  riskScore: number // 0–100 system risk at bucket end
+  activeIncidents: number
+  events: Record<Exclude<DetectionSource, 'HYBRID'>, number> // event volume by source
 }
 
 export interface SystemComponentHealth {
-  component: 'COLLECTOR' | 'SURICATA' | 'DETECTION_ENGINE' | 'DATABASE' | 'API'
+  component:
+    | 'SURICATA'
+    | 'COLLECTOR'
+    | 'DETECTION_ENGINE'
+    | 'RISK_ENGINE'
+    | 'DATABASE'
+    | 'CYBER_MEMORY'
   name: string
   status: HealthStatus
   latencyMs: number | null
+  throughput: string | null // e.g. "1.4k events/min"
+  uptime: number // 0–1 over last 30 days
   lastHeartbeat: string
   message: string | null
+}
+
+/** GET /threat-intel/observed — ATT&CK techniques seen in NETRA incidents. */
+export interface TechniqueObservation {
+  technique: MitreTechnique
+  incidentCount: number
+  activeIncidentCount: number
+  incidentIds: string[]
+  eventCount: number
+  highestSeverity: Severity
+  lastSeen: string
 }
 
 export interface DashboardStats {
   overallRisk: number // 0–100
   overallRiskLevel: Severity
-  incidentsBySeverity: Record<Severity, number>
+  overallRiskChange: number // % change vs 24h ago, e.g. 8.4 or -3.1
+  incidentsBySeverity: Record<Severity, number> // active incidents only
   activeIncidents: number
-  containedThreats: number
+  criticalThreats: number // active CRITICAL incidents
+  containedThreats: number // contained in the last 7 days
+  assetsAtRisk: number
+  totalAssets: number
+  criticalAssets: number
   eventsLast24h: number
-  riskTrend: RiskTrendPoint[]
+  riskDrivers: RiskFactor[] // factors aggregated across active incidents
   systemHealth: SystemComponentHealth[]
 }
 
@@ -340,6 +397,10 @@ export interface LoginResponse {
   accessToken: string
   tokenType: 'bearer'
   user: User
+}
+
+export interface AuthorizationRejectRequest {
+  reason: string
 }
 
 export interface OtpVerifyRequest {

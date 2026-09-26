@@ -57,6 +57,8 @@ All types are defined in **`frontend/src/api/types.ts`** — this is the contrac
 | POST   | `/auth/login`                          | `LoginResponse`                  |
 | GET    | `/auth/me`                             | `User`                           |
 | GET    | `/dashboard/stats`                     | `DashboardStats`                 |
+| GET    | `/dashboard/risk-trend?range=24h\|7d`   | `RiskTrendPoint[]`               |
+| GET    | `/system/health`                       | `SystemComponentHealth[]`        |
 | GET    | `/events`                              | `PaginatedResponse<SecurityEvent>` (query: `SecurityEventFilters`) |
 | GET    | `/events/{id}`                         | `SecurityEvent`                  |
 | GET    | `/incidents`                           | `PaginatedResponse<Incident>` (query: `IncidentFilters`) |
@@ -69,6 +71,8 @@ All types are defined in **`frontend/src/api/types.ts`** — this is the contrac
 | GET    | `/assets`                              | `Asset[]`                        |
 | GET    | `/assets/{id}`                         | `Asset`                          |
 | GET    | `/threat-intel/techniques`             | `MitreTechnique[]`               |
+| GET    | `/threat-intel/observed`               | `TechniqueObservation[]`         |
+| GET    | `/threat-intel/indicators`             | `ThreatIndicator[]`              |
 | GET    | `/memory`                              | `CyberMemoryEntry[]`             |
 | GET    | `/memory/{id}`                         | `CyberMemoryEntry`               |
 
@@ -83,21 +87,41 @@ pages/  ──▶ hooks/ ──▶ services/ ──▶ mocks/       (now)
 - Each service function returns `Promise<T>` of a contract type, so swapping mock → FastAPI changes only `services/`.
 - Toggle via `VITE_USE_MOCKS=true|false` and `VITE_API_BASE_URL`.
 
+### Mock world (`frontend/src/mocks/`)
+
+| File           | Role                                                                 |
+|----------------|----------------------------------------------------------------------|
+| `scenarios.ts` | Incident narratives: events, risk inputs, decision → authorization → containment → memory |
+| `assets.ts`    | Asset inventory (criticality, exposure, CVEs)                        |
+| `mitre.ts`     | ATT&CK techniques                                                    |
+| `intel.ts`     | Threat indicators (safe RFC 5737 / `.example` values) linked to incidents |
+| `db.ts`        | Derives every record + aggregate from the above (risk scores, trends, dashboard stats) |
+| `api.ts`       | Mock endpoint implementations with simulated latency                 |
+
+Workflow actions (request authorization → OTP approve/reject → execute → verify → memory)
+are simulated in `db.ts` (`db.actions`). The demo OTP is `246810`. After any mutation the
+service layer dispatches `netra:data-changed`, and every `useQuery` refetches, so the
+dashboard, sidebar badge and lists stay consistent. A page reload resets the demo.
+
+Risk model used by the mock (backend should match): weighted factors —
+asset criticality 25%, vulnerability CVSS 20%, behavioural novelty 20%,
+detection confidence 15%, ATT&CK technique 10%, threat intel 10%.
+System risk = 40 + 60 × (1 − Π(1 − 0.17 × riskᵢ/100)) over active incidents.
+
 ### Routes
 
-| Path               | Page                |
-|--------------------|---------------------|
-| `/login`           | Login               |
-| `/`                | Dashboard           |
-| `/events`          | Security Events     |
-| `/incidents`       | Incidents           |
-| `/incidents/:id`   | Incident Details    |
-| `/authorization`   | Authorization       |
-| `/containment`     | Containment         |
-| `/memory`          | Cyber Memory        |
-| `/assets`          | Assets              |
-| `/threat-intel`    | Threat Intelligence |
-| `/settings`        | Settings            |
+| Path                   | Page                                          |
+|------------------------|-----------------------------------------------|
+| `/login`               | Login                                         |
+| `/dashboard`           | Command Center (`/` redirects here)           |
+| `/events`              | Security Events                               |
+| `/incidents`           | Incidents                                     |
+| `/incidents/:id`       | Incident Details                              |
+| `/assets`              | Assets                                        |
+| `/threat-intelligence` | Threat Intelligence                           |
+| `/cyber-memory`        | Cyber Memory                                  |
+| `/settings`            | Settings                                      |
+| `/design-system`       | Internal component reference (not in nav)     |
 
 ### Severity colours
 

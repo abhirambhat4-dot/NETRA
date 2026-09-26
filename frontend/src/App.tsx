@@ -1,12 +1,14 @@
-import { ShieldCheck } from 'lucide-react'
+import { RouterProvider } from 'react-router-dom'
+import { Toaster } from '@/components/ui/sonner'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { router } from '@/router'
 
-// Temporary foundation check — replaced by the router in the routing step.
 function App() {
   return (
-    <div className="flex min-h-screen items-center justify-center gap-3 bg-background text-foreground">
-      <ShieldCheck className="size-8" />
-      <h1 className="text-2xl font-semibold tracking-widest">NETRA</h1>
-    </div>
+    <TooltipProvider delayDuration={150}>
+      <RouterProvider router={router} />
+      <Toaster theme="dark" position="bottom-right" />
+    </TooltipProvider>
   )
 }
 

@@ -6,6 +6,8 @@ import { defineConfig } from 'vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // React + Radix + router + mock world; routes with charts are lazy-loaded.
+  build: { chunkSizeWarningLimit: 700 },
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),
