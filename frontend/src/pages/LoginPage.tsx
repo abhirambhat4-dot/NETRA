@@ -1,25 +1,17 @@
 import type * as React from 'react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Eye, EyeOff, Loader2, Lock, ShieldCheck } from 'lucide-react'
-import { NetraLogo, StatusDot } from '@/components/netra'
+import { ArrowRight, Eye, EyeOff, Loader2, LockKeyhole } from 'lucide-react'
+import { NetraLogo } from '@/components/netra'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useNow } from '@/hooks/useNow'
 import { ROUTES } from '@/lib/navigation'
-import { STAGE_ORDER, stageMeta } from '@/lib/stages'
+import { CyberBackdrop } from './login/CyberBackdrop'
 
-const STAGE_TEXT: Record<(typeof STAGE_ORDER)[number], string> = {
-  DETECT: 'Suricata signatures and ML anomaly detection',
-  UNDERSTAND: 'Events correlated into incidents with asset context',
-  PRIORITISE: 'Explainable risk scoring on a 0–100 scale',
-  VERIFY: 'Human authorization with OTP before any action',
-  CONTAIN: 'Targeted containment with post-action verification',
-  LEARN: 'Outcomes captured in Cyber Memory',
-}
-
-const COMPONENTS = ['Suricata IDS', 'ML Detection', 'Risk Engine', 'Cyber Memory']
+const STATUS = ['Authentication service operational', 'Secure session channel', 'Audit logging enabled']
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -27,6 +19,7 @@ export function LoginPage() {
   const [email, setEmail] = useState('admin@netra.local')
   const [password, setPassword] = useState('')
   const [show, setShow] = useState(false)
+  const [remember, setRemember] = useState(true)
   const [loading, setLoading] = useState(false)
 
   // MOCK authentication — any credentials succeed. Real JWT auth arrives with the backend.
@@ -37,128 +30,136 @@ export function LoginPage() {
   }
 
   return (
-    <div className="relative grid min-h-svh bg-background lg:grid-cols-[1.15fr_1fr]">
-      <div aria-hidden className="netra-atmosphere pointer-events-none fixed inset-0" />
-      <div aria-hidden className="netra-grid pointer-events-none fixed inset-0" />
+    <div className="relative isolate flex min-h-svh flex-col overflow-hidden bg-background">
+      <CyberBackdrop />
 
-      {/* Brand panel */}
-      <section className="relative hidden flex-col justify-between overflow-hidden border-r border-border p-12 lg:flex">
-        <span aria-hidden className="pointer-events-none absolute -top-40 -left-40 size-[520px] rounded-full bg-primary/10 blur-3xl" />
-        <span aria-hidden className="pointer-events-none absolute -bottom-48 left-1/3 size-[420px] rounded-full bg-violet/8 blur-3xl" />
+      <main className="relative z-10 flex flex-1 items-center justify-center px-4 py-10 sm:px-6">
+        <div className="relative w-full max-w-[420px]">
+          {/* Soft outer glow */}
+          <div aria-hidden className="absolute -inset-6 -z-10 rounded-[2rem] bg-[radial-gradient(ellipse_at_top,rgb(79_140_255/0.22),transparent_65%),radial-gradient(ellipse_at_bottom,rgb(139_92_246/0.14),transparent_60%)] blur-2xl" />
 
-        <NetraLogo className="relative" />
+          <section
+            aria-labelledby="login-title"
+            className="relative overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgb(21_26_35/0.82),rgb(10_13_19/0.86))] shadow-[inset_0_1px_0_rgb(255_255_255/0.06),0_1px_2px_rgb(0_0_0/0.5),0_24px_60px_-20px_rgb(0_0_0/0.85),0_0_0_1px_rgb(79_140_255/0.06)] backdrop-blur-xl"
+          >
+            {/* Top accent line */}
+            <span aria-hidden className="absolute inset-x-10 top-0 h-px bg-linear-to-r from-transparent via-primary/70 to-transparent" />
 
-        <div className="relative max-w-md space-y-9">
-          <div className="space-y-4">
-            <div className="text-[11px] font-semibold tracking-[0.2em] text-primary uppercase">Cyber Decision Intelligence</div>
-            <h1 className="text-[2.5rem] leading-[1.1] font-semibold tracking-tight text-balance">
-              From detection to decision — with a human in the loop.
-            </h1>
-            <p className="text-[15px] leading-relaxed text-muted-foreground">
-              Collaborative risk prioritisation and explainable security decision support.
-            </p>
-          </div>
+            <div className="px-7 pt-7 pb-6 sm:px-8">
+              <NetraLogo />
 
-          <ol className="space-y-3.5">
-            {STAGE_ORDER.map((s) => {
-              const meta = stageMeta[s]
-              return (
-                <li key={s} className="flex items-start gap-3.5">
-                  <span className="surface-inset grid size-8 shrink-0 place-items-center rounded-lg text-primary">
-                    <meta.icon className="size-4" />
-                  </span>
-                  <div>
-                    <div className="text-sm font-medium">{meta.label}</div>
-                    <div className="text-xs text-muted-foreground">{STAGE_TEXT[s]}</div>
+              <div className="mt-7 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/8 px-2.5 py-1 text-[10px] font-semibold tracking-[0.18em] text-primary uppercase">
+                <LockKeyhole className="size-3" /> Secure command access
+              </div>
+              <h1 id="login-title" className="mt-3 text-[1.625rem] leading-tight font-semibold tracking-tight">
+                Sign in to NETRA
+              </h1>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                Authenticate to access the Cyber Decision Intelligence Center.
+              </p>
+
+              <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="email" className="text-xs text-foreground/85">
+                    Email
+                  </Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    autoComplete="username"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="h-10 bg-black/25"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="password" className="text-xs text-foreground/85">
+                    Password
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={show ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="h-10 bg-black/25 pr-10"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShow((s) => !s)}
+                      className="absolute top-1/2 right-2 grid size-7 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
+                      aria-label={show ? 'Hide password' : 'Show password'}
+                    >
+                      {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    </button>
                   </div>
-                </li>
-              )
-            })}
-          </ol>
-        </div>
+                </div>
 
-        <div className="relative text-xs text-muted-foreground">© 2026 NETRA · Final-year Cyber Security project</div>
-      </section>
+                <div className="flex items-center justify-between gap-3 pt-0.5">
+                  <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground select-none">
+                    <Checkbox checked={remember} onCheckedChange={(v) => setRemember(v === true)} aria-label="Remember this session" />
+                    Remember this session
+                  </label>
+                  <a
+                    href="#"
+                    onClick={(e) => e.preventDefault()}
+                    className="text-xs text-muted-foreground transition-colors hover:text-primary"
+                    title="Not available in the demo environment"
+                  >
+                    Forgot password?
+                  </a>
+                </div>
 
-      {/* Sign-in */}
-      <section className="relative flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-sm">
-          <NetraLogo className="mb-10 lg:hidden" />
-
-          <div className="space-y-2">
-            <div className="text-[11px] font-semibold tracking-[0.2em] text-primary uppercase lg:hidden">Cyber Decision Intelligence</div>
-            <h2 className="text-[1.75rem] font-semibold tracking-tight">Sign in to NETRA</h2>
-            <p className="text-sm text-muted-foreground">Secure access to the security command center.</p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="surface-panel mt-8 space-y-5 rounded-xl p-6">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} className="h-10" required />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <button type="button" className="text-xs text-muted-foreground transition-colors hover:text-primary">
-                  Forgot password?
-                </button>
-              </div>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={show ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  placeholder="••••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="h-10 pr-10"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShow((s) => !s)}
-                  className="absolute top-1/2 right-2.5 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  aria-label={show ? 'Hide password' : 'Show password'}
+                <Button
+                  type="submit"
+                  size="lg"
+                  disabled={loading}
+                  className="mt-1 h-11 w-full text-[13px] font-semibold tracking-[0.14em] shadow-[0_10px_28px_-10px] shadow-primary/70"
                 >
-                  {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                </button>
+                  {loading ? (
+                    <>
+                      <Loader2 className="animate-spin" /> VERIFYING
+                    </>
+                  ) : (
+                    <>
+                      SIGN IN <ArrowRight />
+                    </>
+                  )}
+                </Button>
+              </form>
+
+              <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
+                <span className="rounded border border-medium/30 bg-medium/10 px-1.5 py-px text-[9px] font-semibold tracking-wider text-medium uppercase">
+                  Demo environment
+                </span>
+                Any credentials are accepted
               </div>
             </div>
-            <Button type="submit" size="lg" disabled={loading} className="h-10 w-full font-semibold tracking-[0.12em] shadow-[0_8px_24px_-8px] shadow-primary/60">
-              {loading ? <Loader2 className="animate-spin" /> : null}
-              {loading ? 'VERIFYING' : 'SIGN IN'}
-              {!loading && <ArrowRight />}
-            </Button>
-            <p className="text-center text-[11px] text-muted-foreground">Demo build — any credentials sign in.</p>
-          </form>
 
-          {/* Subtle system status */}
-          <div className="surface-inset mt-6 rounded-lg px-4 py-3">
-            <div className="flex items-center justify-between text-xs">
-              <span className="inline-flex items-center gap-2 font-medium text-low">
-                <StatusDot tone="low" pulse /> All systems operational
-              </span>
-              <span className="font-mono text-muted-foreground">{now.toISOString().slice(11, 19)} UTC</span>
-            </div>
-            <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1">
-              {COMPONENTS.map((c) => (
-                <span key={c} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <span className="size-1.5 rounded-full bg-low" /> {c}
-                </span>
+            {/* Security status */}
+            <ul className="space-y-1.5 border-t border-white/6 bg-black/20 px-7 py-4 sm:px-8">
+              {STATUS.map((s) => (
+                <li key={s} className="flex items-center gap-2.5 text-[11px] text-muted-foreground">
+                  <span className="relative flex size-1.5">
+                    <span className="absolute inset-0 animate-status-pulse rounded-full bg-low" />
+                    <span className="relative size-1.5 rounded-full bg-low" />
+                  </span>
+                  {s}
+                </li>
               ))}
-            </div>
-          </div>
+            </ul>
+          </section>
 
-          <div className="mt-5 space-y-1.5 text-xs text-muted-foreground">
-            <p className="flex items-center gap-2">
-              <ShieldCheck className="size-3.5 text-low" /> Containment actions require OTP authorization
-            </p>
-            <p className="flex items-center gap-2">
-              <Lock className="size-3.5" /> Sessions are monitored and audited
-            </p>
-          </div>
+          <p className="mt-5 text-center font-mono text-[10px] tracking-wider text-muted-foreground/70">
+            NETRA GATEWAY · TLS 1.3 · {now.toISOString().slice(11, 19)} UTC
+          </p>
         </div>
-      </section>
+      </main>
     </div>
   )
 }

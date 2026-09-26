@@ -226,3 +226,83 @@
         animation: none;
     }
 }
+
+/* ==========================================================================
+   Login gateway backdrop (pages/login/CyberBackdrop.tsx)
+   Opacity / transform / dash-offset only — cheap to animate.
+   ========================================================================== */
+
+@keyframes cb-spin {
+    to { transform: rotate(360deg); }
+}
+.cb-spin {
+    transform-box: view-box;
+    animation: cb-spin 14s linear infinite;
+}
+
+/* A short highlight travelling along a path (pathLength = 1000) */
+@keyframes cb-flow {
+    0% { stroke-dashoffset: 80; opacity: 0; }
+    6% { opacity: 0.85; }
+    55% { stroke-dashoffset: -1000; opacity: 0.85; }
+    60%, 100% { stroke-dashoffset: -1000; opacity: 0; }
+}
+.cb-flow {
+    stroke-dasharray: 80 1100;
+    opacity: 0;
+    animation: cb-flow 12s linear infinite;
+}
+
+@keyframes cb-pulse {
+    0% { transform: scale(1); opacity: 0.8; }
+    55%, 100% { transform: scale(5); opacity: 0; }
+}
+.cb-pulse {
+    transform-box: fill-box;
+    transform-origin: center;
+    opacity: 0;
+    animation: cb-pulse 5.5s ease-out infinite;
+}
+
+@keyframes cb-node {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 1; }
+}
+.cb-node {
+    animation: cb-node 3.6s ease-in-out infinite;
+}
+
+@keyframes cb-label {
+    0%, 100% { opacity: 0.16; }
+    50% { opacity: 0.42; }
+}
+.cb-label {
+    animation: cb-label 9s ease-in-out infinite;
+}
+
+@keyframes cb-alert {
+    0%, 100% { opacity: 0; }
+    4%, 28% { opacity: 1; }
+    34% { opacity: 0; }
+}
+.cb-alert {
+    opacity: 0;
+    animation: cb-alert 12s ease-in-out infinite;
+}
+
+@keyframes cb-stream {
+    to { stroke-dashoffset: -400; }
+}
+.cb-stream {
+    animation: cb-stream 14s linear infinite;
+}
+.cb-stream-rev {
+    animation-direction: reverse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cb-spin, .cb-flow, .cb-pulse, .cb-node, .cb-label, .cb-alert, .cb-stream {
+        animation: none;
+    }
+    .cb-label { opacity: 0.3; }
+}
