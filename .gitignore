@@ -1,0 +1,24 @@
+# Dependencies / builds
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Python (backend / detection)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Logs / OS / editor
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
