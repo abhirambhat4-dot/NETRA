@@ -18,10 +18,11 @@ import {
   SurfaceCard,
 } from '@/components/netra'
 import { Button } from '@/components/ui/button'
+import { useNow } from '@/hooks/useNow'
 import { useQuery } from '@/hooks/useQuery'
-import { formatClock, formatNumber } from '@/lib/format'
+import { formatClock, formatNumber, timeAgo } from '@/lib/format'
 import { EVENT_SOURCES, detectionSourceMeta } from '@/lib/sources'
-import { SEVERITY_ORDER, severityTone, toneStyles } from '@/lib/tones'
+import { SEVERITY_ORDER, severityRowAccent, severityTone, toneStyles } from '@/lib/tones'
 import { cn } from '@/lib/utils'
 import { assetService, dashboardService, eventService } from '@/services'
 import { EventDetailSheet } from './events/EventDetailSheet'
@@ -38,6 +39,7 @@ export function SecurityEventsPage() {
   const [source, setSource] = useState<SrcFilter>('ALL')
   const [status, setStatus] = useState<StatusFilter>('ALL')
   const [page, setPage] = useState(1)
+  const now = useNow(60_000)
 
   const events = useQuery('events-all', () => eventService.list({ pageSize: 1000 }))
   const assets = useQuery('events-assets', assetService.list)
@@ -77,28 +79,44 @@ export function SecurityEventsPage() {
 
   const count = (pred: (e: SecurityEvent) => boolean) => all.filter(pred).length
   const correlated = count((e) => e.incidentId !== null)
+  const lastHour = count((e) => now.getTime() - Date.parse(e.timestamp) < 3_600_000)
   const filtersActive = severity !== 'ALL' || source !== 'ALL' || status !== 'ALL' || search !== ''
 
   return (
     <PageContainer>
       <PageHeader
         title="Security Events"
-        description="Notable detections from Suricata, the ML anomaly detector and threat intelligence — correlated into incidents by NETRA."
+        description="The raw signals NETRA investigates — detections from Suricata, the ML anomaly detector and threat intelligence. Open any event for full technical detail."
       />
 
+      {/* Event activity */}
       <MetricStrip
         metrics={[
-          { label: 'Notable events', value: all.length || '—', hint: 'retained for investigation' },
-          { label: 'Raw detections · 24h', value: stats.data ? formatNumber(stats.data.eventsLast24h) : '—', hint: 'all sensor alerts' },
-          { label: 'Correlated', value: correlated, hint: `${all.length ? Math.round((correlated / all.length) * 100) : 0}% linked to incidents` },
-          { label: 'Critical / High', value: `${count((e) => e.severity === 'CRITICAL')} / ${count((e) => e.severity === 'HIGH')}`, valueClassName: 'text-critical' },
-          { label: 'Awaiting triage', value: count((e) => e.status === 'NEW'), hint: 'status NEW' },
+          {
+            label: 'Notable events',
+            value: all.length || '—',
+            hint: `${correlated} correlated · ${count((e) => e.status === 'NEW')} awaiting triage`,
+          },
+          { label: 'Critical', value: count((e) => e.severity === 'CRITICAL'), valueClassName: 'text-critical', hint: 'highest-severity signals' },
+          { label: 'High', value: count((e) => e.severity === 'HIGH'), valueClassName: 'text-high', hint: 'need analyst attention' },
+          {
+            label: 'Last hour',
+            value: lastHour,
+            valueClassName: 'text-cyan',
+            hint: stats.data ? `${formatNumber(stats.data.eventsLast24h)} raw detections · 24h` : 'recent activity',
+          },
         ]}
       />
 
-      <SurfaceCard flush className="overflow-hidden">
+      <SurfaceCard flush className="overflow-hidden" data-guide-target="event-stream">
         {/* Filter bar */}
         <div className="flex flex-col gap-3 border-b border-border px-5 py-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-[15px] font-semibold tracking-tight">Event stream</h2>
+            <span className="font-mono text-[11px] text-muted-foreground">
+              {filtered.length} of {all.length}
+            </span>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <SearchInput
               value={search}
@@ -165,17 +183,15 @@ export function SecurityEventsPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-left text-[13px]">
+              <table className="w-full min-w-190 text-left text-[13px]">
                 <thead>
                   <tr className="border-b border-border text-[11px] text-muted-foreground">
-                    <th className="py-2.5 pr-3 pl-5 font-medium">Time (UTC)</th>
-                    <th className="px-3 font-medium">Severity</th>
+                    <th className="w-28 py-2.5 pr-3 pl-5 font-medium">Severity</th>
                     <th className="px-3 font-medium">Event</th>
-                    <th className="px-3 font-medium">Source</th>
-                    <th className="px-3 font-medium">Source → Destination</th>
-                    <th className="px-3 font-medium">Asset</th>
-                    <th className="px-3 font-medium">Status</th>
-                    <th className="py-2.5 pr-5 pl-3 text-right font-medium">Incident</th>
+                    <th className="w-32 px-3 font-medium">Source</th>
+                    <th className="w-40 px-3 font-medium">Affected asset</th>
+                    <th className="w-28 px-3 font-medium">Time (UTC)</th>
+                    <th className="w-36 py-2.5 pr-5 pl-3 text-right font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -185,48 +201,47 @@ export function SecurityEventsPage() {
                     return (
                       <tr
                         key={e.id}
+                        tabIndex={0}
+                        aria-label={`${e.severity} ${e.eventType}, open details`}
                         onClick={() => openEvent(e.id)}
+                        onKeyDown={(k) => {
+                          if (k.key === 'Enter' || k.key === ' ') {
+                            k.preventDefault()
+                            openEvent(e.id)
+                          }
+                        }}
                         className={cn(
-                          'group cursor-pointer border-b border-border/60 transition-colors last:border-b-0 hover:bg-foreground/2.5',
+                          'group cursor-pointer border-b border-border/60 transition-colors outline-none last:border-b-0 hover:bg-foreground/2.5 focus-visible:bg-primary/6',
                           selectedId === e.id && 'bg-primary/6',
                         )}
                       >
-                        <td className="py-2.5 pr-3 pl-5 align-top">
-                          <div className="font-mono text-xs text-foreground/90 tabular-nums">{formatClock(e.timestamp)}</div>
-                          <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{e.id}</div>
-                        </td>
-                        <td className="px-3 py-2.5 align-top">
+                        <td className={cn('py-3 pr-3 pl-5 align-middle', severityRowAccent[e.severity])}>
                           <SeverityBadge severity={e.severity} size="sm" />
                         </td>
-                        <td className="max-w-[340px] px-3 py-2.5 align-top">
+                        <td className="max-w-0 px-3 py-3 align-middle">
                           <div className="truncate font-medium">{e.eventType}</div>
-                          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{e.signature ?? `Anomaly score ${Math.round(e.anomalyScore * 100)}%`}</div>
+                          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                            <span className="font-mono">{e.id}</span> · {e.signature ?? `Anomaly score ${Math.round(e.anomalyScore * 100)}%`}
+                          </div>
                         </td>
-                        <td className="px-3 py-2.5 align-top">
+                        <td className="px-3 py-3 align-middle">
                           <span className="inline-flex items-center gap-1.5 text-xs text-foreground/85">
                             <span className="size-1.5 rounded-full" style={{ background: src.color }} />
                             {src.short}
                           </span>
-                          <div className="mt-0.5 text-[11px] text-muted-foreground">{e.protocol}</div>
                         </td>
-                        <td className="px-3 py-2.5 align-top font-mono text-xs text-foreground/85">
-                          {e.sourceIp}
-                          <span className="text-muted-foreground"> → </span>
-                          {e.destinationIp}
-                          {e.destinationPort && <span className="text-muted-foreground">:{e.destinationPort}</span>}
+                        <td className="max-w-0 truncate px-3 py-3 align-middle text-xs">{asset?.name ?? <span className="text-muted-foreground">—</span>}</td>
+                        <td className="px-3 py-3 align-middle">
+                          <div className="font-mono text-xs text-foreground/90 tabular-nums">{formatClock(e.timestamp)}</div>
+                          <div className="mt-0.5 text-[10px] text-muted-foreground">{timeAgo(e.timestamp, now.getTime())}</div>
                         </td>
-                        <td className="px-3 py-2.5 align-top text-xs">{asset?.name ?? <span className="text-muted-foreground">—</span>}</td>
-                        <td className="px-3 py-2.5 align-top">
+                        <td className="py-3 pr-5 pl-3 text-right align-middle">
                           <StatusBadge status={e.status} size="sm" />
-                        </td>
-                        <td className="py-2.5 pr-5 pl-3 text-right align-top">
-                          {e.incidentId ? (
-                            <span className="inline-flex items-center gap-1 rounded border border-primary/20 bg-primary/8 px-1.5 py-0.5 font-mono text-[10px] text-primary">
+                          {e.incidentId && (
+                            <div className="mt-1 flex items-center justify-end gap-1 font-mono text-[10px] text-primary/90">
                               <Link2 className="size-3" />
                               {e.incidentId}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
+                            </div>
                           )}
                         </td>
                       </tr>

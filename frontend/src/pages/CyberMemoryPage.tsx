@@ -1,11 +1,13 @@
 import type * as React from 'react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowRight, BrainCircuit } from 'lucide-react'
-import type { Asset, CyberMemoryEntry, Incident, IncidentDetail } from '@/api/types'
+import type { LucideIcon } from 'lucide-react'
+import { ArrowRight, BrainCircuit, ChevronDown, CircleCheck, Scale, ShieldAlert, ShieldCheck, UserCheck, Zap } from 'lucide-react'
+import type { Asset, CyberMemoryEntry, IncidentDetail } from '@/api/types'
 import { DecisionTimeline, type TimelineItem } from '@/components/incidents/DecisionTimeline'
 import { RiskTile } from '@/components/incidents/IncidentRow'
 import {
+  Disclosure,
   EmptyState,
   LifecycleStepper,
   LoadingState,
@@ -24,8 +26,12 @@ import { ROUTES } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 import { assetService, incidentService, memoryService } from '@/services'
 
+const JOURNAL_PREVIEW = 5
+const JOURNAL_MAX = 10
+
 export function CyberMemoryPage() {
   const [params, setParams] = useSearchParams()
+  const [journalOpen, setJournalOpen] = useState(false)
   const memory = useQuery('memory-all', memoryService.list)
   const incidents = useQuery('memory-incidents', () => incidentService.list({ pageSize: 500 }))
   const assets = useQuery('memory-assets', assetService.list)
@@ -56,22 +62,27 @@ export function CyberMemoryPage() {
       })),
     )
     .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))
-    .slice(0, 10)
+    .slice(0, JOURNAL_MAX)
 
   return (
     <PageContainer>
       <PageHeader
+        eyebrow="Learn"
         title="Cyber Memory"
-        description="NETRA remembers what happened, why it was prioritised, what was decided, who authorized it, what action ran and what the result was."
+        description="What happened, what NETRA decided, who authorized it, what ran, how it ended — and the lesson carried into the next response."
       />
 
       <MetricStrip
         metrics={[
-          { label: 'Memory records', value: memory.data?.length ?? '—', hint: 'lessons stored', valueClassName: 'text-violet' },
+          {
+            label: 'Memory records',
+            value: memory.data?.length ?? '—',
+            valueClassName: 'text-violet',
+            hint: memory.data ? `${memory.data.filter((m) => m.outcome === 'FALSE_POSITIVE').length} false-positive lesson(s)` : 'lessons stored',
+          },
           { label: 'Decisions recorded', value: entries.length || '—', hint: `across ${all.length} incidents` },
           { label: 'Human authorizations', value: humanDecisions, hint: 'analyst / approver actions' },
           { label: 'Mean time to contain', value: mttc ? `${Math.floor(mttc / 60)}h ${mttc % 60}m` : '—', hint: `${contained.length} contained incidents` },
-          { label: 'False positives learned', value: memory.data?.filter((m) => m.outcome === 'FALSE_POSITIVE').length ?? '—', hint: 'suppressed next time' },
         ]}
       />
 
@@ -81,14 +92,15 @@ export function CyberMemoryPage() {
           {!incidents.data ? (
             <LoadingState className="px-5" count={8} />
           ) : (
-            <ul className="border-t border-border">
+            <ul className="max-h-144 overflow-y-auto border-t border-border max-xl:max-h-80">
               {all.map((i) => (
                 <li key={i.id}>
                   <button
                     type="button"
+                    aria-pressed={selectedId === i.id}
                     onClick={() => setParams({ incident: i.id }, { replace: true })}
                     className={cn(
-                      'relative flex w-full items-center gap-3 border-b border-border/70 px-5 py-2.5 text-left transition-colors hover:bg-foreground/2.5',
+                      'relative flex w-full items-center gap-3 border-b border-border/70 px-5 py-2.5 text-left transition-colors outline-none hover:bg-foreground/2.5 focus-visible:bg-primary/6',
                       selectedId === i.id && 'bg-primary/7',
                     )}
                   >
@@ -109,9 +121,9 @@ export function CyberMemoryPage() {
           )}
         </Panel>
 
-        <div className="xl:col-span-8">
+        <div className="rounded-xl xl:col-span-8" data-guide-target="memory-trail">
           {selectedId ? (
-            <DecisionTrail id={selectedId} asset={assetsById} />
+            <DecisionTrail id={selectedId} assets={assetsById} memory={memory.data ?? []} />
           ) : (
             <SurfaceCard>
               <EmptyState title="No incidents yet" />
@@ -122,27 +134,121 @@ export function CyberMemoryPage() {
 
       {/* Knowledge records + journal */}
       <div className="grid items-start gap-4 xl:grid-cols-12">
-        <Panel title="Knowledge records" description="Lessons NETRA reuses when prioritising similar incidents" className="xl:col-span-7">
+        <Panel title="Knowledge records" description="Lessons NETRA reuses when prioritising similar incidents · expand a record for details" flush className="xl:col-span-7">
           {!memory.data ? (
-            <LoadingState count={4} />
+            <LoadingState className="px-5" count={4} />
           ) : (
-            <div className="grid gap-3 md:grid-cols-2">
+            <ul className="border-t border-border">
               {memory.data.map((m) => (
                 <MemoryRecord key={m.id} entry={m} asset={assetsById.get(m.assetId)} />
               ))}
-            </div>
+            </ul>
           )}
         </Panel>
-        <Panel title="Decision journal" description="Latest workflow entries across all incidents" className="xl:col-span-5">
-          {journal.length ? <DecisionTimeline entries={journal} /> : <LoadingState count={6} />}
+        <Panel
+          title="Decision journal"
+          description="Latest workflow entries across all incidents"
+          className="xl:col-span-5"
+          actions={
+            journal.length > JOURNAL_PREVIEW && (
+              <Button variant="ghost" size="sm" className="text-muted-foreground" aria-expanded={journalOpen} onClick={() => setJournalOpen((o) => !o)}>
+                {journalOpen ? 'Show less' : `Show ${journal.length - JOURNAL_PREVIEW} more`}
+              </Button>
+            )
+          }
+        >
+          {journal.length ? <DecisionTimeline entries={journalOpen ? journal : journal.slice(0, JOURNAL_PREVIEW)} /> : <LoadingState count={6} />}
         </Panel>
       </div>
     </PageContainer>
   )
 }
 
-/** Full journey of one incident: lifecycle + the six things NETRA remembers + timeline. */
-function DecisionTrail({ id, asset }: { id: string; asset: Map<string, Asset> }) {
+// ---------------------------------------------------------------------------
+// Intelligence trail
+
+type NodeState = 'done' | 'current' | 'pending' | 'skipped'
+
+interface TrailNode {
+  key: string
+  label: string
+  icon: LucideIcon
+  state: NodeState
+  title: React.ReactNode
+  detail?: React.ReactNode
+  memory?: boolean
+}
+
+function trailFor(d: IncidentDetail, lesson?: CyberMemoryEntry): TrailNode[] {
+  const i = d.incident
+  const auth = d.authorization
+  const c = d.containmentAction
+  const fp = i.status === 'FALSE_POSITIVE'
+  const needsAuth = !!d.decision?.requiresAuthorization
+
+  const nodes: TrailNode[] = [
+    {
+      key: 'incident',
+      label: 'Incident',
+      icon: ShieldAlert,
+      state: 'done',
+      title: `${i.threatName} · risk ${i.riskScore}`,
+      detail: i.description,
+    },
+    {
+      key: 'decision',
+      label: 'Decision',
+      icon: Scale,
+      state: d.decision ? 'done' : 'pending',
+      title: recommendationHeadline(d),
+      detail: d.riskAssessment ? decisionReasoning(d) : undefined,
+    },
+    {
+      key: 'authorization',
+      label: 'Authorization',
+      icon: UserCheck,
+      state: !needsAuth || fp ? 'skipped' : auth?.status === 'APPROVED' ? 'done' : 'pending',
+      title: auth
+        ? auth.status === 'APPROVED'
+          ? `Approved by ${auth.approver} · OTP verified`
+          : `${auth.status.replace('_', ' ').toLowerCase()} — requested by ${auth.requestedBy}`
+        : needsAuth && !fp
+          ? 'Not yet requested'
+          : 'Not required',
+      detail: auth?.respondedAt ? formatDateTime(auth.respondedAt) : auth?.comment ?? undefined,
+    },
+    {
+      key: 'action',
+      label: 'Action',
+      icon: Zap,
+      state: c ? (['EXECUTED', 'VERIFIED'].includes(c.status) ? 'done' : 'pending') : fp || !needsAuth ? 'skipped' : 'pending',
+      title: c ? `${ACTION_LABEL[c.actionType]} ${c.target}` : fp ? 'No containment — benign activity' : 'None yet',
+      detail: c ? `${c.status.replace('_', ' ').toLowerCase()}${c.executedAt ? ` · ${formatDateTime(c.executedAt)}` : ''}` : undefined,
+    },
+    {
+      key: 'outcome',
+      label: 'Outcome',
+      icon: ShieldCheck,
+      state: c?.verificationResult || fp ? 'done' : 'pending',
+      title: c?.verificationResult ?? (fp ? 'Confirmed benign — suppressed in future' : 'Pending verification'),
+    },
+    {
+      key: 'lesson',
+      label: 'Lesson',
+      icon: BrainCircuit,
+      state: lesson ? 'done' : 'pending',
+      title: lesson ? lesson.lessonsLearned : 'Recorded once the incident is closed',
+      detail: lesson ? `${lesson.id} · ${timeAgo(lesson.recordedAt)}` : undefined,
+      memory: true,
+    },
+  ]
+  const firstPending = nodes.find((n) => n.state === 'pending')
+  if (firstPending) firstPending.state = 'current'
+  return nodes
+}
+
+/** One incident's journey as a connected trail; lifecycle and raw audit log on demand. */
+function DecisionTrail({ id, assets, memory }: { id: string; assets: Map<string, Asset>; memory: CyberMemoryEntry[] }) {
   const detail = useQuery(`memory-trail-${id}`, () => incidentService.get(id))
   const d = detail.data
   if (!d || d.incident.id !== id) {
@@ -152,14 +258,16 @@ function DecisionTrail({ id, asset }: { id: string; asset: Map<string, Asset> })
       </SurfaceCard>
     )
   }
-  const i: Incident = d.incident
+  const i = d.incident
+  const nodes = trailFor(d, memory.find((m) => m.incidentId === i.id))
+
   return (
     <SurfaceCard className="p-0">
       <div className="flex flex-wrap items-center gap-4 border-b border-border px-5 py-4">
         <RiskTile score={i.riskScore} severity={i.severity} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="font-mono text-[11px] text-muted-foreground">
-            {i.id} · {asset.get(i.assetId)?.name} · first seen {formatDateTime(i.firstSeen)}
+            {i.id} · {assets.get(i.assetId)?.name} · first seen {formatDateTime(i.firstSeen)}
           </div>
           <h2 className="mt-0.5 text-lg font-semibold tracking-tight">{i.threatName}</h2>
         </div>
@@ -170,78 +278,130 @@ function DecisionTrail({ id, asset }: { id: string; asset: Map<string, Asset> })
         </Button>
       </div>
 
-      <div className="border-b border-border px-5 py-5">
-        <LifecycleStepper steps={buildLifecycle(d)} />
-      </div>
-
-      <div className="grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-3">
-        {rememberedFacts(d).map((f) => (
-          <div key={f.q} className="bg-surface px-5 py-3.5">
-            <div className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{f.q}</div>
-            <div className="mt-1 text-[13px] leading-snug text-foreground/90">{f.a}</div>
-          </div>
+      <ol key={i.id} className="px-5 py-5">
+        {nodes.map((n, idx) => (
+          <TrailStep key={n.key} node={n} last={idx === nodes.length - 1} index={idx} />
         ))}
-      </div>
+      </ol>
 
-      <div className="border-t border-border px-5 py-5">
-        <DecisionTimeline entries={[...i.timeline].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))} />
+      <div className="border-t border-border px-5 py-2">
+        <Disclosure label="Full audit trail" hint={`${i.timeline.length} entries · lifecycle`}>
+          <div className="space-y-6 pb-3">
+            <LifecycleStepper steps={buildLifecycle(d)} />
+            <DecisionTimeline entries={[...i.timeline].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))} />
+          </div>
+        </Disclosure>
       </div>
     </SurfaceCard>
   )
 }
 
-function rememberedFacts(d: IncidentDetail): { q: string; a: React.ReactNode }[] {
-  const auth = d.authorization
-  const c = d.containmentAction
-  return [
-    { q: 'What happened', a: d.incident.description },
-    { q: 'Why prioritised', a: `Risk ${d.incident.riskScore} — ${decisionReasoning(d)}` },
-    { q: 'Decision', a: recommendationHeadline(d) },
-    {
-      q: 'Who authorized',
-      a: auth
-        ? auth.status === 'APPROVED'
-          ? `${auth.approver} (OTP verified) · ${auth.respondedAt ? formatDateTime(auth.respondedAt) : ''}`
-          : `${auth.status.replace('_', ' ').toLowerCase()} — requested by ${auth.requestedBy}`
-        : d.decision?.requiresAuthorization
-          ? 'Not yet requested'
-          : 'Not required',
-    },
-    { q: 'Action taken', a: c ? `${ACTION_LABEL[c.actionType]} ${c.target} · ${c.status.replace('_', ' ').toLowerCase()}` : 'None yet' },
-    {
-      q: 'Result',
-      a: c?.verificationResult ?? (d.incident.status === 'FALSE_POSITIVE' ? 'Confirmed benign — suppressed in future' : 'Pending'),
-    },
-  ]
+function TrailStep({ node: n, last, index }: { node: TrailNode; last: boolean; index: number }) {
+  const done = n.state === 'done'
+  return (
+    <li
+      className="relative grid grid-cols-[32px_minmax(0,1fr)] gap-x-4 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-left-1 motion-safe:fill-mode-both"
+      style={{ animationDelay: `${index * 60}ms` }}
+    >
+      <div className="relative flex justify-center">
+        {!last && (
+          <span
+            aria-hidden
+            className={cn('absolute top-8 -bottom-1 w-px', done ? (n.memory ? 'bg-violet/40' : 'bg-linear-to-b from-primary/50 to-primary/25') : 'bg-border')}
+          />
+        )}
+        <span
+          className={cn(
+            'relative grid size-8 place-items-center rounded-lg border transition-colors',
+            done && !n.memory && 'border-primary/35 bg-primary/12 text-primary',
+            done && n.memory && 'border-violet/40 bg-violet/12 text-violet shadow-[0_0_16px_-4px_rgb(139_92_246/0.6)]',
+            n.state === 'current' && 'border-medium/40 bg-medium/10 text-medium',
+            n.state === 'pending' && 'border-border bg-surface text-muted-foreground',
+            n.state === 'skipped' && 'border-dashed border-border bg-surface text-muted-foreground/60',
+          )}
+        >
+          <n.icon className="size-4" />
+        </span>
+      </div>
+      <div className={cn('min-w-0', !last && 'pb-5')}>
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              'text-[10px] font-semibold tracking-[0.16em] uppercase',
+              done ? (n.memory ? 'text-violet' : 'text-foreground/80') : n.state === 'current' ? 'text-medium' : 'text-muted-foreground/70',
+            )}
+          >
+            {n.label}
+          </span>
+          {done && <CircleCheck className={cn('size-3', n.memory ? 'text-violet' : 'text-primary/80')} aria-label="complete" />}
+          {n.state === 'current' && <span className="text-[10px] text-medium">in progress</span>}
+          {n.state === 'skipped' && <span className="text-[10px] text-muted-foreground/70">not required</span>}
+        </div>
+        <p className={cn('mt-1 text-[13px] leading-snug', done || n.state === 'current' ? 'text-foreground/90' : 'text-muted-foreground')}>{n.title}</p>
+        {n.detail && <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{n.detail}</p>}
+      </div>
+    </li>
+  )
 }
 
+// ---------------------------------------------------------------------------
+
+/** Collapsed: what was learned. Expanded: action, tags and related incidents. */
 function MemoryRecord({ entry: m, asset }: { entry: CyberMemoryEntry; asset?: Asset }) {
+  const [open, setOpen] = useState(false)
   return (
-    <article className="surface-inset flex flex-col rounded-lg p-4 transition-colors hover:border-violet/25">
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-[11px] text-violet">{m.id}</span>
-        <StatusBadge status={m.outcome} size="sm" />
+    <li className="border-b border-border/70 last:border-b-0">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="group flex w-full items-start gap-3 px-5 py-3.5 text-left transition-colors outline-none hover:bg-foreground/2.5 focus-visible:bg-primary/6"
+      >
+        <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md border border-violet/25 bg-violet/8 text-violet">
+          <BrainCircuit className="size-3.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[13px] font-medium">{m.threatName}</span>
+            <span className="font-mono text-[11px] text-violet">{m.id}</span>
+          </div>
+          <p className={cn('mt-1 text-xs leading-relaxed text-foreground/80', !open && 'line-clamp-1')}>{m.lessonsLearned}</p>
+        </div>
+        <StatusBadge status={m.outcome} size="sm" className="mt-0.5" />
+        <ChevronDown className={cn('mt-1 size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </button>
+
+      <div className="netra-disclosure-body" data-open={open}>
+        <div inert={!open}>
+          <div className="space-y-3 px-5 pb-4 pl-15">
+            <div className="text-[11px] text-muted-foreground">
+              <Link to={ROUTES.incident(m.incidentId)} className="font-mono text-foreground/85 hover:text-primary">
+                {m.incidentId}
+              </Link>{' '}
+              · {asset?.name ?? m.assetId} · risk {m.riskScore} · recorded {timeAgo(m.recordedAt)}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="rounded border border-border px-1.5 text-[10px] text-foreground/80">{ACTION_LABEL[m.actionTaken]}</span>
+              {m.mitreTechniqueId && <span className="rounded border border-primary/20 bg-primary/8 px-1.5 font-mono text-[10px] text-primary">{m.mitreTechniqueId}</span>}
+              {m.tags.map((t) => (
+                <span key={t} className="rounded bg-foreground/5 px-1.5 text-[10px] text-muted-foreground">
+                  #{t}
+                </span>
+              ))}
+            </div>
+            {m.similarIncidentIds.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                Reused for
+                {m.similarIncidentIds.map((id) => (
+                  <Link key={id} to={ROUTES.incident(id)} className="font-mono text-primary hover:underline">
+                    ↻ {id}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-      <Link to={ROUTES.incident(m.incidentId)} className="mt-2 text-sm font-medium hover:text-primary">
-        {m.threatName}
-      </Link>
-      <div className="mt-0.5 text-[11px] text-muted-foreground">
-        <span className="font-mono">{m.incidentId}</span> · {asset?.name ?? m.assetId} · risk {m.riskScore} · {timeAgo(m.recordedAt)}
-      </div>
-      <p className="mt-2.5 flex-1 text-xs leading-relaxed text-foreground/80">{m.lessonsLearned}</p>
-      <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border pt-2.5">
-        <span className="rounded border border-border px-1.5 text-[10px] text-foreground/80">{ACTION_LABEL[m.actionTaken]}</span>
-        {m.tags.map((t) => (
-          <span key={t} className="rounded bg-foreground/5 px-1.5 text-[10px] text-muted-foreground">
-            #{t}
-          </span>
-        ))}
-        {m.similarIncidentIds.map((id) => (
-          <Link key={id} to={ROUTES.incident(id)} className="ml-auto font-mono text-[10px] text-primary hover:underline">
-            ↻ {id}
-          </Link>
-        ))}
-      </div>
-    </article>
+    </li>
   )
 }

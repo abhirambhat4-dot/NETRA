@@ -1,16 +1,15 @@
 import type { SystemComponentHealth } from '@/api/types'
-import { LoadingState, Panel, StatusDot } from '@/components/netra'
+import { LoadingState, StatusDot } from '@/components/netra'
 import { statusMeta } from '@/lib/tones'
 import { cn } from '@/lib/utils'
 
-export function SystemHealthPanel({ health }: { health?: SystemComponentHealth[] }) {
+/** NETRA pipeline component health (Command Center → Detection intelligence). */
+export function HealthSummary({ health }: { health?: SystemComponentHealth[] }) {
   const healthy = health?.filter((c) => c.status === 'HEALTHY').length ?? 0
   const allOk = health && healthy === health.length
   const avgUptime = health ? health.reduce((s, c) => s + c.uptime, 0) / health.length : 0
 
-  return (
-    <Panel title="System health" description="NETRA pipeline components" className="h-full">
-      {!health ? (
+  return !health ? (
         <LoadingState count={6} />
       ) : (
         <div className="flex flex-col gap-4">
@@ -50,7 +49,5 @@ export function SystemHealthPanel({ health }: { health?: SystemComponentHealth[]
             <span className="font-mono text-foreground/90">{(avgUptime * 100).toFixed(2)}%</span>
           </div>
         </div>
-      )}
-    </Panel>
-  )
+      )
 }

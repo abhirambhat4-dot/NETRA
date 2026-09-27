@@ -3,16 +3,13 @@ import type { IncidentDetail } from '@/api/types'
 import { StatusBadge } from '@/components/netra'
 import { ACTION_LABEL } from '@/lib/format'
 import { decisionReasoning, recommendationHeadline } from '@/lib/incident'
-import { severityTone, toneStyles } from '@/lib/tones'
-import { cn } from '@/lib/utils'
 
-/** WHAT NETRA RECOMMENDS — decision intelligence. */
+/** WHAT NETRA RECOMMENDS — decision intelligence. Risk itself lives in the page header. */
 export function DecisionPanel({ detail: d }: { detail: IncidentDetail }) {
-  const tone = toneStyles[severityTone[d.incident.severity]]
   const decision = d.decision
 
   return (
-    <section className="relative overflow-hidden rounded-xl border border-primary/25 bg-linear-to-b from-primary/10 via-surface/90 to-surface/90 shadow-[0_12px_32px_-16px_rgb(0_0_0/0.6)]">
+    <section id="decision" className="relative scroll-mt-20 overflow-hidden rounded-xl border border-primary/25 bg-linear-to-b from-primary/10 via-surface/90 to-surface/90 shadow-[0_12px_32px_-16px_rgb(0_0_0/0.6)]">
       <span aria-hidden className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-primary/70 to-transparent" />
       <div className="px-5 pt-4.5 pb-5">
         <div className="flex items-center justify-between gap-3">
@@ -20,20 +17,6 @@ export function DecisionPanel({ detail: d }: { detail: IncidentDetail }) {
             <Sparkles className="size-4 text-primary" /> Decision intelligence
           </h2>
           {decision && <StatusBadge status={decision.status} size="sm" />}
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="surface-inset rounded-lg px-3.5 py-3">
-            <div className="text-[11px] text-muted-foreground">Current risk</div>
-            <div className="mt-1 flex items-baseline gap-1">
-              <span className={cn('metric text-2xl', tone.text)}>{d.incident.riskScore}</span>
-              <span className="text-xs text-muted-foreground">/100</span>
-            </div>
-          </div>
-          <div className="surface-inset rounded-lg px-3.5 py-3">
-            <div className="text-[11px] text-muted-foreground">Risk level</div>
-            <div className={cn('mt-1.5 text-sm font-semibold tracking-[0.12em]', tone.text)}>{d.incident.severity}</div>
-          </div>
         </div>
 
         <div className="mt-4">

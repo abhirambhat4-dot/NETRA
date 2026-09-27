@@ -7,7 +7,8 @@ function App() {
   return (
     <TooltipProvider delayDuration={150}>
       <RouterProvider router={router} />
-      <Toaster theme="dark" position="bottom-right" />
+      {/* Offset clears the NETRA Guide robot docked bottom-right */}
+      <Toaster theme="dark" position="bottom-right" offset={{ bottom: 92, right: 20 }} mobileOffset={{ bottom: 76, right: 12 }} />
     </TooltipProvider>
   )
 }

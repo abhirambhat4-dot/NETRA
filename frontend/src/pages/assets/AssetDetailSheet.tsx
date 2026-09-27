@@ -2,6 +2,7 @@ import type { Asset } from '@/api/types'
 import { Link } from 'react-router-dom'
 import { RiskTile } from '@/components/incidents/IncidentRow'
 import { DetailSection, DetailSheet, KeyValueList, LoadingState, RiskScore, StatusBadge, ToneBadge } from '@/components/netra'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useQuery } from '@/hooks/useQuery'
 import { CRITICALITY_TONE } from '@/lib/assets'
 import { timeAgo } from '@/lib/format'
@@ -18,11 +19,12 @@ export function AssetDetailSheet({ asset, onClose }: { asset?: Asset; onClose: (
       title={asset?.name ?? ''}
       description={asset && `${asset.operatingSystem} · owned by ${asset.owner}`}
     >
-      {asset && <Body asset={asset} />}
+      {asset && <Body key={asset.id} asset={asset} />}
     </DetailSheet>
   )
 }
 
+/** Risk and prioritisation context first; technical inventory behind tabs. */
 function Body({ asset: a }: { asset: Asset }) {
   const incidents = useQuery('asset-sheet-incidents', () => incidentService.list({ pageSize: 500 }))
   const related = (incidents.data?.items ?? []).filter((i) => i.assetId === a.id)
@@ -63,60 +65,74 @@ function Body({ asset: a }: { asset: Asset }) {
         />
       </DetailSection>
 
-      <DetailSection title="Services">
-        <div className="flex flex-wrap gap-1.5">
-          {a.services.map((s) => (
-            <span key={s} className="rounded-md border border-border bg-foreground/3 px-2 py-0.5 font-mono text-[11px] text-foreground/85">
-              {s}
-            </span>
-          ))}
-        </div>
-      </DetailSection>
+      <Tabs defaultValue="vulns" className="gap-4">
+        <TabsList variant="line" className="w-full justify-start gap-0 border-b border-border pb-px">
+          <TabsTrigger value="vulns" className="flex-none px-2.5 text-xs">
+            Vulnerabilities · {a.vulnerabilities.length}
+          </TabsTrigger>
+          <TabsTrigger value="services" className="flex-none px-2.5 text-xs">
+            Services · {a.services.length}
+          </TabsTrigger>
+          <TabsTrigger value="incidents" className="flex-none px-2.5 text-xs">
+            Incidents{incidents.data ? ` · ${related.length}` : ''}
+          </TabsTrigger>
+        </TabsList>
 
-      <DetailSection title={`Vulnerabilities (${a.vulnerabilities.length})`}>
-        {a.vulnerabilities.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No open vulnerabilities.</p>
-        ) : (
-          <ul className="surface-inset divide-y divide-border/70 rounded-lg">
-            {a.vulnerabilities.map((v) => (
-              <li key={v.cveId} className="flex items-center gap-3 px-3.5 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <div className="font-mono text-xs">{v.cveId}</div>
-                  <div className="truncate text-[11px] text-muted-foreground">{v.title}</div>
-                </div>
-                <span className={cn('font-mono text-sm font-semibold', v.cvss >= 9 ? 'text-critical' : v.cvss >= 7 ? 'text-high' : 'text-medium')}>
-                  {v.cvss.toFixed(1)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </DetailSection>
-
-      <DetailSection title="Incidents on this asset">
-        {!incidents.data ? (
-          <LoadingState count={2} />
-        ) : related.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No incidents recorded.</p>
-        ) : (
-          <ul className="surface-inset divide-y divide-border/70 overflow-hidden rounded-lg">
-            {related.map((i) => (
-              <li key={i.id}>
-                <Link to={ROUTES.incident(i.id)} className="flex items-center gap-3 px-3.5 py-2.5 transition-colors hover:bg-foreground/3">
-                  <RiskTile score={i.riskScore} severity={i.severity} />
+        <TabsContent value="vulns" className="motion-safe:animate-in motion-safe:fade-in-0">
+          {a.vulnerabilities.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No open vulnerabilities.</p>
+          ) : (
+            <ul className="surface-inset divide-y divide-border/70 rounded-lg">
+              {a.vulnerabilities.map((v) => (
+                <li key={v.cveId} className="flex items-center gap-3 px-3.5 py-2.5">
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-medium">{i.threatName}</div>
-                    <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                      {i.id} · {timeAgo(i.lastSeen)}
-                    </div>
+                    <div className="font-mono text-xs">{v.cveId}</div>
+                    <div className="truncate text-[11px] text-muted-foreground">{v.title}</div>
                   </div>
-                  <StatusBadge status={i.status} size="sm" />
-                </Link>
-              </li>
+                  <span className={cn('font-mono text-sm font-semibold', v.cvss >= 9 ? 'text-critical' : v.cvss >= 7 ? 'text-high' : 'text-medium')}>
+                    {v.cvss.toFixed(1)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </TabsContent>
+
+        <TabsContent value="services" className="motion-safe:animate-in motion-safe:fade-in-0">
+          <div className="flex flex-wrap gap-1.5">
+            {a.services.map((s) => (
+              <span key={s} className="rounded-md border border-border bg-foreground/3 px-2 py-0.5 font-mono text-[11px] text-foreground/85">
+                {s}
+              </span>
             ))}
-          </ul>
-        )}
-      </DetailSection>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="incidents" className="motion-safe:animate-in motion-safe:fade-in-0">
+          {!incidents.data ? (
+            <LoadingState count={2} />
+          ) : related.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No incidents recorded.</p>
+          ) : (
+            <ul className="surface-inset divide-y divide-border/70 overflow-hidden rounded-lg">
+              {related.map((i) => (
+                <li key={i.id}>
+                  <Link to={ROUTES.incident(i.id)} className="flex items-center gap-3 px-3.5 py-2.5 transition-colors hover:bg-foreground/3">
+                    <RiskTile score={i.riskScore} severity={i.severity} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-medium">{i.threatName}</div>
+                      <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                        {i.id} · {timeAgo(i.lastSeen)}
+                      </div>
+                    </div>
+                    <StatusBadge status={i.status} size="sm" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </TabsContent>
+      </Tabs>
     </>
   )
 }

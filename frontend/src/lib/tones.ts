@@ -26,6 +26,18 @@ interface ToneStyle {
   glow: string
 }
 
+/**
+ * Leading accent bar for queue rows, reserved for the severities that must
+ * stand out. Apply to the row's first cell (box-shadow on <tr> is unreliable).
+ */
+export const severityRowAccent: Record<Severity, string> = {
+  CRITICAL: 'shadow-[inset_2px_0_0_var(--sev-critical)]',
+  HIGH: 'shadow-[inset_2px_0_0_rgb(251_140_60/0.7)]',
+  MEDIUM: '',
+  LOW: '',
+  INFO: '',
+}
+
 // Full literal class names so Tailwind can detect them.
 export const toneStyles: Record<Tone, ToneStyle> = {
   critical: {

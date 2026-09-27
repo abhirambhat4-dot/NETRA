@@ -19,7 +19,7 @@ import {
 } from '@/components/netra'
 import { useQuery } from '@/hooks/useQuery'
 import { ASSET_ICON, ASSET_TYPE_LABEL, CRITICALITY_TONE } from '@/lib/assets'
-import { riskToSeverity, severityTone, toneStyles } from '@/lib/tones'
+import { riskToSeverity, severityRowAccent, severityTone, toneStyles } from '@/lib/tones'
 import { cn } from '@/lib/utils'
 import { assetService } from '@/services'
 import { AssetDetailSheet } from './assets/AssetDetailSheet'
@@ -32,7 +32,8 @@ const BAND: Record<Exclude<RiskBand, 'ALL'>, [number, number]> = {
   LOW: [0, 40],
 }
 
-const COLS = 'lg:grid-cols-[minmax(0,1.8fr)_90px_96px_92px_80px_minmax(110px,1fr)_104px]'
+// Asset · Risk · Criticality · Exposure · Status — vulnerabilities, services and incidents live in the drawer.
+const COLS = 'lg:grid-cols-[minmax(0,1.8fr)_minmax(140px,1fr)_100px_100px_104px]'
 
 export function AssetsPage() {
   const [params, setParams] = useSearchParams()
@@ -70,7 +71,7 @@ export function AssetsPage() {
     <PageContainer>
       <PageHeader
         title="Assets"
-        description="Protected infrastructure and the business context NETRA uses to prioritise risk — criticality, exposure and open vulnerabilities."
+        description="Protected infrastructure and the business context NETRA uses to prioritise risk — criticality, exposure and open vulnerabilities. Open an asset for services, CVEs and incidents."
       />
 
       <MetricStrip
@@ -78,12 +79,15 @@ export function AssetsPage() {
           { label: 'Monitored assets', value: all.length || '—', hint: `${all.filter((a) => a.criticality === 'CRITICAL').length} rated critical` },
           { label: 'At risk', value: all.filter((a) => a.posture === 'AT_RISK').length, valueClassName: 'text-critical', hint: 'active incident, risk ≥ 75' },
           { label: 'Internet-exposed', value: all.filter((a) => a.exposure === 'EXTERNAL').length, valueClassName: 'text-high', hint: 'external attack surface' },
-          { label: 'Open vulnerabilities', value: vulns.length, hint: `${vulns.filter((v) => v.cvss >= 9).length} with CVSS ≥ 9.0` },
-          { label: 'Isolated', value: all.filter((a) => a.status === 'ISOLATED').length, hint: 'by NETRA containment' },
+          {
+            label: 'Open vulnerabilities',
+            value: vulns.length,
+            hint: `${vulns.filter((v) => v.cvss >= 9).length} with CVSS ≥ 9.0 · ${all.filter((a) => a.status === 'ISOLATED').length} isolated`,
+          },
         ]}
       />
 
-      <SurfaceCard flush className="overflow-hidden">
+      <SurfaceCard flush className="overflow-hidden" data-guide-target="asset-inventory">
         <div className="flex flex-col gap-3 border-b border-border px-5 py-4">
           <div className="flex flex-wrap items-center gap-2">
             <SearchInput value={search} onChange={setSearch} placeholder="Search asset, host, IP, CVE…" className="w-full sm:w-80" />
@@ -134,12 +138,10 @@ export function AssetsPage() {
           <>
             <div className={cn('hidden gap-4 border-b border-border px-5 py-2.5 text-[11px] font-medium text-muted-foreground lg:grid', COLS)}>
               <span>Asset</span>
-              <span>Type</span>
+              <span>Risk score</span>
               <span>Criticality</span>
               <span>Exposure</span>
-              <span>Vulns</span>
-              <span>Risk score</span>
-              <span className="text-right">Posture</span>
+              <span className="text-right">Status</span>
             </div>
             <ul>
               {filtered.map((a) => (
@@ -158,21 +160,28 @@ export function AssetsPage() {
 function AssetRow({ asset: a, onOpen, active }: { asset: Asset; onOpen: () => void; active: boolean }) {
   const Icon = ASSET_ICON[a.type]
   const riskTone = severityTone[riskToSeverity(a.riskScore)]
-  const maxCvss = Math.max(0, ...a.vulnerabilities.map((v) => v.cvss))
+  const critical = a.criticality === 'CRITICAL'
 
   return (
     <li className="border-b border-border/70 last:border-b-0">
       <button
         type="button"
         onClick={onOpen}
+        aria-label={`${a.name}, ${a.criticality.toLowerCase()} criticality, risk ${a.riskScore} — open details`}
         className={cn(
-          'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-5 py-3 text-left transition-colors hover:bg-foreground/2.5',
+          'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-5 py-3 text-left transition-colors outline-none hover:bg-foreground/2.5 focus-visible:bg-primary/6',
           COLS,
+          critical && severityRowAccent.CRITICAL,
           active && 'bg-primary/6',
         )}
       >
         <div className="flex min-w-0 items-center gap-3">
-          <span className="surface-inset grid size-9 shrink-0 place-items-center rounded-md text-muted-foreground">
+          <span
+            className={cn(
+              'grid size-9 shrink-0 place-items-center rounded-md',
+              critical ? 'border border-critical/25 bg-critical/8 text-critical' : 'surface-inset text-muted-foreground',
+            )}
+          >
             <Icon className="size-4" />
           </span>
           <div className="min-w-0">
@@ -180,13 +189,22 @@ function AssetRow({ asset: a, onOpen, active }: { asset: Asset; onOpen: () => vo
               <span className="truncate text-[13px] font-medium">{a.name}</span>
               {a.status === 'ISOLATED' && <StatusBadge status="ISOLATED" size="sm" />}
             </div>
-            <div className="truncate font-mono text-[11px] text-muted-foreground">
-              {a.hostname} · {a.ipAddress}
+            <div className="truncate text-[11px] text-muted-foreground">
+              <span className="font-mono">{a.hostname}</span> · {ASSET_TYPE_LABEL[a.type]}
+              {a.vulnerabilities.length > 0 && (
+                <span className="hidden xl:inline">
+                  {' '}
+                  · {a.vulnerabilities.length} CVE{a.vulnerabilities.length > 1 ? 's' : ''}
+                </span>
+              )}
             </div>
           </div>
         </div>
 
-        <span className="text-xs text-muted-foreground max-lg:hidden">{ASSET_TYPE_LABEL[a.type]}</span>
+        <div className="flex items-center gap-2.5 max-lg:col-span-2 max-lg:row-start-2">
+          <span className={cn('w-6 font-mono text-[13px] font-semibold tabular-nums', toneStyles[riskTone].text)}>{a.riskScore}</span>
+          <MeterBar value={a.riskScore} tone={riskTone} className="max-w-40 flex-1" />
+        </div>
         <span className="max-lg:hidden">
           <ToneBadge tone={CRITICALITY_TONE[a.criticality]} size="sm" className="bg-transparent capitalize">
             {a.criticality.toLowerCase()}
@@ -196,20 +214,6 @@ function AssetRow({ asset: a, onOpen, active }: { asset: Asset; onOpen: () => vo
           {a.exposure === 'EXTERNAL' ? <Globe className="size-3.5" /> : <Lock className="size-3.5" />}
           {a.exposure === 'EXTERNAL' ? 'External' : 'Internal'}
         </span>
-        <span className="text-xs max-lg:hidden">
-          {a.vulnerabilities.length ? (
-            <>
-              <span className="font-mono">{a.vulnerabilities.length}</span>
-              <span className={cn('ml-1.5 font-mono text-[11px]', maxCvss >= 9 ? 'text-critical' : 'text-high')}>{maxCvss.toFixed(1)}</span>
-            </>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          )}
-        </span>
-        <div className="flex items-center gap-2.5 max-lg:col-span-2 max-lg:row-start-2">
-          <span className={cn('w-6 font-mono text-[13px] font-semibold tabular-nums', toneStyles[riskTone].text)}>{a.riskScore}</span>
-          <MeterBar value={a.riskScore} tone={riskTone} className="flex-1" />
-        </div>
         <div className="flex justify-end max-lg:col-start-2 max-lg:row-start-1">
           <StatusBadge status={a.posture} size="sm" />
         </div>

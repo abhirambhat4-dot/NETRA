@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 
 export function RiskPosturePanel({ stats }: { stats?: DashboardStats }) {
   return (
-    <Panel title="Risk posture" description="Aggregated from all active incidents" className="h-full">
+    <Panel title="Security posture" description="Overall risk aggregated from all active incidents" className="h-full">
       {!stats ? (
         <LoadingState variant="inline" label="Scoring…" />
       ) : (

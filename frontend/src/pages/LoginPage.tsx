@@ -2,12 +2,14 @@ import type * as React from 'react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Eye, EyeOff, Loader2, LockKeyhole } from 'lucide-react'
+import { NetraGuide } from '@/components/guide'
 import { NetraLogo } from '@/components/netra'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useNow } from '@/hooks/useNow'
+import { hasCompletedBriefing } from '@/lib/briefing'
 import { ROUTES } from '@/lib/navigation'
 import { CyberBackdrop } from './login/CyberBackdrop'
 
@@ -23,10 +25,11 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false)
 
   // MOCK authentication — any credentials succeed. Real JWT auth arrives with the backend.
+  // First sign-in on this browser goes through the security briefing.
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
-    setTimeout(() => navigate(ROUTES.dashboard), 700)
+    setTimeout(() => navigate(hasCompletedBriefing() ? ROUTES.dashboard : ROUTES.briefing), 700)
   }
 
   return (
@@ -160,6 +163,8 @@ export function LoginPage() {
           </p>
         </div>
       </main>
+
+      <NetraGuide page="login" />
     </div>
   )
 }

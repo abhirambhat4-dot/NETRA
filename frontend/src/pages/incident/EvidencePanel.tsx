@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import type { IncidentDetail } from '@/api/types'
-import { Panel, SeverityBadge } from '@/components/netra'
+import { SeverityBadge } from '@/components/netra'
 import { formatClock, formatDateTime } from '@/lib/format'
 import { ROUTES } from '@/lib/navigation'
 import { detectionSourceMeta } from '@/lib/sources'
@@ -11,11 +11,10 @@ function duration(fromIso: string, toIso: string) {
   return m < 90 ? `${m} min` : m < 2880 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`
 }
 
-/** WHAT HAPPENED — detection evidence. */
-export function EvidencePanel({ detail: d }: { detail: IncidentDetail }) {
+/** WHAT HAPPENED — behavioural evidence (Attack & behaviour → Behaviour tab). */
+export function BehaviourEvidence({ detail: d }: { detail: IncidentDetail }) {
   const i = d.incident
   const peak = Math.max(...d.events.map((e) => e.anomalyScore), 0)
-  const src = detectionSourceMeta[i.detectionSource]
   const sources = [...new Set(d.events.map((e) => e.detectionSource))]
 
   const facts = [
@@ -26,15 +25,7 @@ export function EvidencePanel({ detail: d }: { detail: IncidentDetail }) {
   ]
 
   return (
-    <Panel
-      title="What happened"
-      description="Detection evidence correlated into this incident"
-      actions={
-        <span className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] text-foreground/85">
-          <src.icon className="size-3.5" /> {src.label}
-        </span>
-      }
-    >
+    <div>
       <p className="mb-4 max-w-3xl text-[13px] leading-relaxed text-foreground/85">{i.description}</p>
 
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-4">
@@ -46,10 +37,13 @@ export function EvidencePanel({ detail: d }: { detail: IncidentDetail }) {
         ))}
       </div>
 
-      <div className="mt-4 grid gap-3 text-xs sm:grid-cols-3">
-        <Fact label="Source" value={i.sourceIp} mono />
-        <Fact label="Destination" value={i.destinationIp} mono />
-        <Fact label="Sensors" value={sources.map((s) => detectionSourceMeta[s].short).join(' + ')} />
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span>
+          Flow <span className="font-mono text-foreground/85">{i.sourceIp}</span> → <span className="font-mono text-foreground/85">{i.destinationIp}</span>
+        </span>
+        <span>
+          Sensors <span className="text-foreground/85">{sources.map((s) => detectionSourceMeta[s].short).join(' + ')}</span>
+        </span>
       </div>
 
       <div className="mt-5">
@@ -81,15 +75,6 @@ export function EvidencePanel({ detail: d }: { detail: IncidentDetail }) {
           })}
         </ul>
       </div>
-    </Panel>
-  )
-}
-
-function Fact({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="surface-inset rounded-lg px-3.5 py-2.5">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className={cn('mt-0.5 truncate text-[13px]', mono && 'font-mono text-xs')}>{value}</div>
     </div>
   )
 }

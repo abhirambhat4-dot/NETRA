@@ -12,6 +12,7 @@ import type { Params } from 'react-router-dom'
 
 export const ROUTES = {
   login: '/login',
+  briefing: '/briefing',
   dashboard: '/dashboard',
   events: '/events',
   incidents: '/incidents',

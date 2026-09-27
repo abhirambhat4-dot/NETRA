@@ -11,23 +11,40 @@ import { cn } from '@/lib/utils'
 interface IncidentRowProps {
   incident: Incident
   asset?: Asset
-  /** `full` adds technique, event count and risk meter columns (Incidents page). */
+  /**
+   * `compact`: Command Center list.
+   * `full`: Incidents queue — adds affected asset and recommended-action columns;
+   * technique, source and timing move to a quiet metadata line.
+   */
   variant?: 'compact' | 'full'
+  /** Recommended action, e.g. "Block IP 192.168.1.25" (full variant). */
+  action?: string
 }
 
 /** Risk-ranked incident row — shared by the Command Center and Incidents page. */
-export function IncidentRow({ incident: i, asset, variant = 'compact' }: IncidentRowProps) {
+export function IncidentRow({ incident: i, asset, variant = 'compact', action }: IncidentRowProps) {
   const tone = toneStyles[severityTone[i.severity]]
   const source = detectionSourceMeta[i.detectionSource]
   const full = variant === 'full'
+  const urgent = i.severity === 'CRITICAL'
 
   return (
     <li className="border-b border-border/70 last:border-b-0">
       <Link
         to={ROUTES.incident(i.id)}
-        className="group relative flex items-center gap-4 px-5 py-3 transition-colors hover:bg-foreground/2.5 focus-visible:bg-foreground/3 focus-visible:outline-none"
+        className={cn(
+          'group relative flex items-center gap-4 px-5 py-3 transition-colors hover:bg-foreground/2.5 focus-visible:bg-foreground/3 focus-visible:outline-none',
+          full && urgent && 'bg-critical/3',
+        )}
       >
-        <span aria-hidden className={cn('absolute inset-y-2.5 left-0 w-0.5 rounded-full opacity-70 transition-opacity group-hover:opacity-100', tone.solid)} />
+        <span
+          aria-hidden
+          className={cn(
+            'absolute inset-y-2.5 left-0 rounded-full transition-opacity group-hover:opacity-100',
+            tone.solid,
+            urgent ? 'w-0.75 opacity-90' : 'w-0.5 opacity-60',
+          )}
+        />
 
         <RiskTile score={i.riskScore} severity={i.severity} />
 
@@ -38,8 +55,23 @@ export function IncidentRow({ incident: i, asset, variant = 'compact' }: Inciden
           </div>
           <div className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
             <span className="font-mono text-foreground/70">{i.id}</span>
-            <Sep />
-            <span className="truncate">{asset?.name ?? i.assetId}</span>
+            {full ? (
+              <>
+                <Sep className="lg:hidden" />
+                <span className="truncate lg:hidden">{asset?.name ?? i.assetId}</span>
+                {i.mitreTechniqueId && (
+                  <>
+                    <Sep className="hidden md:inline" />
+                    <span className="hidden font-mono text-[11px] text-primary/80 md:inline">{i.mitreTechniqueId}</span>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <Sep />
+                <span className="truncate">{asset?.name ?? i.assetId}</span>
+              </>
+            )}
             <Sep className="hidden md:inline" />
             <span className="hidden items-center gap-1 md:inline-flex">
               <source.icon className="size-3" />
@@ -52,17 +84,21 @@ export function IncidentRow({ incident: i, asset, variant = 'compact' }: Inciden
 
         {full && (
           <>
-            <div className="hidden w-20 shrink-0 xl:block">
-              <div className="font-mono text-[11px] text-primary">{i.mitreTechniqueId}</div>
-              <div className="mt-0.5 text-[11px] text-muted-foreground">technique</div>
+            <div className="hidden w-36 shrink-0 lg:block">
+              <div className="truncate text-[13px] text-foreground/90">{asset?.name ?? i.assetId}</div>
+              <div className="mt-0.5 text-[11px] text-muted-foreground capitalize">
+                {asset ? `${asset.criticality.toLowerCase()} · ${asset.exposure.toLowerCase()}` : 'asset'}
+              </div>
             </div>
-            <div className="hidden w-20 shrink-0 text-right lg:block">
-              <div className="font-mono text-[13px] tabular-nums">{i.eventCount}</div>
-              <div className="mt-0.5 text-[11px] text-muted-foreground">events</div>
-            </div>
-            <div className="hidden w-24 shrink-0 text-right xl:block">
-              <div className="font-mono text-[11px] text-foreground/85">{i.sourceIp}</div>
-              <div className="mt-0.5 text-[11px] text-muted-foreground">source</div>
+            <div className="hidden w-52 shrink-0 xl:block">
+              {action ? (
+                <>
+                  <div className="truncate text-[13px] font-medium text-foreground/90">{action}</div>
+                  <div className="mt-0.5 text-[11px] text-muted-foreground">recommended action</div>
+                </>
+              ) : (
+                <span className="text-xs text-muted-foreground">—</span>
+              )}
             </div>
           </>
         )}

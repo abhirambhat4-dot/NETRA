@@ -1,35 +1,17 @@
-import { Link } from 'react-router-dom'
-import { ArrowRight } from 'lucide-react'
 import type { TechniqueObservation } from '@/api/types'
-import { LoadingState, MeterBar, Panel } from '@/components/netra'
-import { Button } from '@/components/ui/button'
+import { LoadingState, MeterBar } from '@/components/netra'
 import { formatNumber } from '@/lib/format'
-import { ROUTES } from '@/lib/navigation'
 import { severityTone, toneStyles } from '@/lib/tones'
 import { cn } from '@/lib/utils'
 
-export function ThreatIntelPanel({ techniques }: { techniques?: TechniqueObservation[] }) {
+/** Top observed ATT&CK techniques (Command Center → Detection intelligence). */
+export function TechniqueList({ techniques }: { techniques?: TechniqueObservation[] }) {
   const maxEvents = Math.max(1, ...(techniques ?? []).map((t) => t.eventCount))
-  const tactics = new Set((techniques ?? []).map((t) => t.technique.tactic)).size
 
-  return (
-    <Panel
-      title="MITRE ATT&CK activity"
-      description={techniques ? `${techniques.length} techniques across ${tactics} tactics · last 7 days` : 'Observed techniques'}
-      flush
-      className="h-full"
-      actions={
-        <Button variant="ghost" size="sm" asChild className="text-muted-foreground">
-          <Link to={ROUTES.threatIntelligence}>
-            Intel <ArrowRight />
-          </Link>
-        </Button>
-      }
-    >
-      {!techniques ? (
+  return !techniques ? (
         <LoadingState className="px-5 py-2" count={6} />
       ) : (
-        <ul className="border-t border-border">
+        <ul>
           {techniques.slice(0, 6).map((t) => {
             const tone = toneStyles[severityTone[t.highestSeverity]]
             return (
@@ -59,7 +41,5 @@ export function ThreatIntelPanel({ techniques }: { techniques?: TechniqueObserva
             )
           })}
         </ul>
-      )}
-    </Panel>
-  )
+      )
 }

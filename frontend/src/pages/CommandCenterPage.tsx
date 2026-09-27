@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Gauge, ServerCrash, ShieldAlert, Siren } from 'lucide-react'
+import { useGuideTone } from '@/components/guide'
 import { ErrorState, PageContainer, PageHeader, StatCard, SurfaceCard } from '@/components/netra'
 import { Button } from '@/components/ui/button'
 import { useNow } from '@/hooks/useNow'
@@ -10,12 +11,10 @@ import { riskToSeverity, severityTone } from '@/lib/tones'
 import { assetService, dashboardService, eventService, incidentService, threatIntelService } from '@/services'
 import { AssetRiskPanel } from './dashboard/AssetRiskPanel'
 import { PrioritizedIncidentsPanel } from './dashboard/PrioritizedIncidentsPanel'
-import { RecentEventsPanel } from './dashboard/RecentEventsPanel'
 import { RiskPosturePanel } from './dashboard/RiskPosturePanel'
 import { RiskTrendPanel } from './dashboard/RiskTrendPanel'
 import { SeverityDistributionPanel } from './dashboard/SeverityDistributionPanel'
-import { SystemHealthPanel } from './dashboard/SystemHealthPanel'
-import { ThreatIntelPanel } from './dashboard/ThreatIntelPanel'
+import { DetectionIntelPanel } from './dashboard/DetectionIntelPanel'
 
 const ACTIVE = new Set(['NEW', 'INVESTIGATING', 'AWAITING_AUTHORIZATION', 'CONTAINING'])
 
@@ -40,6 +39,7 @@ export function CommandCenterPage() {
   const riskSpark = trend.data?.map((p) => p.riskScore)
   const activeSpark = trend.data?.map((p) => p.activeIncidents)
   const bySev = s?.incidentsBySeverity
+  useGuideTone(!s ? 'normal' : s.overallRisk >= 85 ? 'critical' : s.overallRisk >= 65 ? 'warning' : 'normal')
 
   if (stats.error) {
     return (
@@ -77,7 +77,7 @@ export function CommandCenterPage() {
         }
       />
 
-      {/* KPIs */}
+      {/* 1 · Executive summary */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Overall risk"
@@ -120,43 +120,33 @@ export function CommandCenterPage() {
         />
       </div>
 
-      {/* Posture + trend */}
+      {/* 2 · Security posture + risk trend */}
       <div className="grid gap-4 xl:grid-cols-12">
-        <div className="xl:col-span-4">
+        <div className="min-w-0 rounded-xl xl:col-span-4" data-guide-target="security-posture">
           <RiskPosturePanel stats={s} />
         </div>
-        <div className="xl:col-span-8">
+        <div className="min-w-0 xl:col-span-8">
           <RiskTrendPanel />
         </div>
       </div>
 
-      {/* Incidents + distribution */}
+      {/* 3 · Priority incidents + distribution */}
       <div className="grid gap-4 xl:grid-cols-12">
-        <div className="xl:col-span-8">
+        <div className="min-w-0 xl:col-span-8">
           <PrioritizedIncidentsPanel incidents={activeIncidents} assetsById={assetsById} />
         </div>
-        <div className="xl:col-span-4">
+        <div className="min-w-0 xl:col-span-4">
           <SeverityDistributionPanel incidents={activeIncidents} />
         </div>
       </div>
 
-      {/* Assets + intelligence */}
+      {/* 4 · Asset risk + secondary detection analytics (tabbed) */}
       <div className="grid gap-4 xl:grid-cols-12">
-        <div className="xl:col-span-7">
+        <div className="min-w-0 xl:col-span-7">
           <AssetRiskPanel assets={assets.data} />
         </div>
-        <div className="xl:col-span-5">
-          <ThreatIntelPanel techniques={techniques.data} />
-        </div>
-      </div>
-
-      {/* Events + health */}
-      <div className="grid gap-4 xl:grid-cols-12">
-        <div className="xl:col-span-8">
-          <RecentEventsPanel events={events.data?.items} />
-        </div>
-        <div className="xl:col-span-4">
-          <SystemHealthPanel health={s?.systemHealth} />
+        <div className="min-w-0 xl:col-span-5">
+          <DetectionIntelPanel techniques={techniques.data} events={events.data?.items} health={s?.systemHealth} />
         </div>
       </div>
     </PageContainer>

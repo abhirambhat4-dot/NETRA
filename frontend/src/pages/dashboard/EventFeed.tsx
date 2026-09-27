@@ -1,28 +1,14 @@
 import { Link } from 'react-router-dom'
-import { ArrowRight } from 'lucide-react'
 import type { SecurityEvent } from '@/api/types'
-import { LoadingState, Panel, SeverityBadge } from '@/components/netra'
-import { Button } from '@/components/ui/button'
+import { LoadingState, SeverityBadge } from '@/components/netra'
 import { formatClock } from '@/lib/format'
 import { ROUTES } from '@/lib/navigation'
 import { detectionSourceMeta } from '@/lib/sources'
 import { cn } from '@/lib/utils'
 
-export function RecentEventsPanel({ events }: { events?: SecurityEvent[] }) {
-  return (
-    <Panel
-      title="Recent security events"
-      description="Live detections from Suricata, ML detector and threat intelligence"
-      className="h-full"
-      actions={
-        <Button variant="ghost" size="sm" asChild className="text-muted-foreground">
-          <Link to={ROUTES.events}>
-            Event stream <ArrowRight />
-          </Link>
-        </Button>
-      }
-    >
-      {!events ? (
+/** Latest detections as a compact rail (Command Center → Detection intelligence). */
+export function EventFeed({ events }: { events?: SecurityEvent[] }) {
+  return !events ? (
         <LoadingState count={7} />
       ) : (
         <ol className="relative">
@@ -72,7 +58,5 @@ export function RecentEventsPanel({ events }: { events?: SecurityEvent[] }) {
             )
           })}
         </ol>
-      )}
-    </Panel>
-  )
+      )
 }

@@ -16,6 +16,11 @@ const page =
 export const router = createBrowserRouter([
   { path: ROUTES.login, element: <LoginPage /> },
   {
+    path: ROUTES.briefing,
+    lazy: page(() => import('@/pages/BriefingPage'), 'BriefingPage'),
+    hydrateFallbackElement: <div className="min-h-svh bg-background" />,
+  },
+  {
     element: <AppLayout />,
     hydrateFallbackElement: <div className="min-h-svh bg-background" />,
     children: [
