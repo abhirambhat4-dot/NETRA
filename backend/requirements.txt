@@ -1,0 +1,22 @@
+# Core web framework
+fastapi==0.141.1
+uvicorn==0.54.0
+
+# Configuration
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-dotenv==1.2.3
+email-validator==2.2.0
+
+# Authentication and migrations
+pwdlib[argon2]==0.3.0
+PyJWT==2.10.1
+alembic==1.16.5
+
+# Database (PostgreSQL) - installed for upcoming milestones
+SQLAlchemy==2.1.1
+psycopg[binary]==3.3.6
+
+# Testing
+pytest==9.1.1
+httpx==0.28.1

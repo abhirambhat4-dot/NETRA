@@ -1,0 +1,17 @@
+# Virtual environment
+.venv/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Environment / secrets
+.env
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+
+# Build artifacts
+dist/
+build/

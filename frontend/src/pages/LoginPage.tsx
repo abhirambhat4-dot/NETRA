@@ -1,7 +1,8 @@
 import type * as React from 'react'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowRight, Eye, EyeOff, Loader2, LockKeyhole } from 'lucide-react'
+import { useAuth } from '@/auth/AuthProvider'
 import { NetraGuide } from '@/components/guide'
 import { NetraLogo } from '@/components/netra'
 import { Button } from '@/components/ui/button'
@@ -11,25 +12,38 @@ import { Label } from '@/components/ui/label'
 import { useNow } from '@/hooks/useNow'
 import { hasCompletedBriefing } from '@/lib/briefing'
 import { ROUTES } from '@/lib/navigation'
+import { HttpError } from '@/services/http'
 import { CyberBackdrop } from './login/CyberBackdrop'
 
 const STATUS = ['Authentication service operational', 'Secure session channel', 'Audit logging enabled']
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const { login } = useAuth()
   const now = useNow()
-  const [email, setEmail] = useState('admin@netra.local')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [show, setShow] = useState(false)
   const [remember, setRemember] = useState(true)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const registered = (location.state as { registered?: boolean } | null)?.registered === true
 
-  // MOCK authentication — any credentials succeed. Real JWT auth arrives with the backend.
-  // First sign-in on this browser goes through the security briefing.
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setError('')
     setLoading(true)
-    setTimeout(() => navigate(hasCompletedBriefing() ? ROUTES.dashboard : ROUTES.briefing), 700)
+    try {
+      await login(email.trim(), password, remember)
+      navigate(hasCompletedBriefing() ? ROUTES.dashboard : ROUTES.briefing, { replace: true })
+    } catch (cause) {
+      setError(cause instanceof HttpError && cause.status === 401
+        ? 'Email or password is incorrect.'
+        : 'Unable to sign in right now. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -62,6 +76,8 @@ export function LoginPage() {
               </p>
 
               <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+                {registered && <p role="status" className="rounded-md border border-low/30 bg-low/10 px-3 py-2 text-xs text-low">Account created. Sign in with your new credentials.</p>}
+                {error && <p role="alert" className="rounded-md border border-critical/30 bg-critical/10 px-3 py-2 text-xs text-critical">{error}</p>}
                 <div className="space-y-1.5">
                   <Label htmlFor="email" className="text-xs text-foreground/85">
                     Email
@@ -136,11 +152,8 @@ export function LoginPage() {
                 </Button>
               </form>
 
-              <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
-                <span className="rounded border border-medium/30 bg-medium/10 px-1.5 py-px text-[9px] font-semibold tracking-wider text-medium uppercase">
-                  Demo environment
-                </span>
-                Any credentials are accepted
+              <div className="mt-4 text-center text-xs text-muted-foreground">
+                Need an account? <Link to={ROUTES.register} className="font-medium text-primary hover:underline">Create one</Link>
               </div>
             </div>
 

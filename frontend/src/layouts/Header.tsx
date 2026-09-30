@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { Link, useMatches, useNavigate } from 'react-router-dom'
 import { Bell, ChevronRight, LogOut, Menu, Settings, User } from 'lucide-react'
+import { useAuth } from '@/auth/AuthProvider'
 import { StatusDot } from '@/components/netra'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -24,12 +25,15 @@ const Divider = () => <span aria-hidden className="hidden h-5 w-px bg-border sm:
 
 export function Header({ onOpenNav }: { onOpenNav: () => void }) {
   const navigate = useNavigate()
+  const { user, logout } = useAuth()
   const now = useNow()
   const { data: incidents } = useQuery('header-alerts', () => incidentService.list({ pageSize: 50 }))
   const alerts = (incidents?.items ?? [])
     .filter((i) => i.status === 'NEW' || i.status === 'INVESTIGATING' || i.status === 'AWAITING_AUTHORIZATION')
     .filter((i) => i.severity === 'CRITICAL' || i.severity === 'HIGH')
     .slice(0, 4)
+  const displayName = user?.full_name ?? 'User'
+  const initials = displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
 
   const crumbs = useMatches()
     .filter((m) => isRouteHandle(m.handle))
@@ -114,19 +118,19 @@ export function Header({ onOpenNav }: { onOpenNav: () => void }) {
             <button className="flex items-center gap-2.5 rounded-lg p-1 transition-colors outline-none hover:bg-foreground/4 focus-visible:ring-2 focus-visible:ring-ring lg:pr-2">
               <Avatar className="size-7 rounded-md">
                 <AvatarFallback className="rounded-md bg-linear-to-br from-primary/30 to-violet/30 text-[11px] font-semibold text-foreground">
-                  AD
+                  {initials || 'U'}
                 </AvatarFallback>
               </Avatar>
               <div className="hidden text-left leading-tight lg:block">
-                <div className="text-[13px] font-medium">Admin</div>
-                <div className="text-[11px] text-muted-foreground">Security Administrator</div>
+                <div className="text-[13px] font-medium">{displayName}</div>
+                <div className="text-[11px] text-muted-foreground">{user?.role ?? 'Authenticated user'}</div>
               </div>
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>
-              <div className="text-sm font-medium">Admin</div>
-              <div className="text-xs font-normal text-muted-foreground">admin@netra.local</div>
+              <div className="text-sm font-medium">{displayName}</div>
+              <div className="text-xs font-normal text-muted-foreground">{user?.email}</div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem>
@@ -136,7 +140,7 @@ export function Header({ onOpenNav }: { onOpenNav: () => void }) {
               <Settings /> Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={() => navigate(ROUTES.login)}>
+            <DropdownMenuItem variant="destructive" onSelect={() => { logout(); navigate(ROUTES.login, { replace: true }) }}>
               <LogOut /> Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
