@@ -11,7 +11,8 @@ from app.db.dependencies import get_db
 from app.models.enums import DetectionSource, Severity
 from app.models.event import SecurityEvent
 from app.models.user import User
-from app.schemas.core import EventResponse, PageResponse
+from app.schemas.core import EventIngestRequest, EventResponse, PageResponse
+from app.services.intake import create_event
 
 router = APIRouter(prefix="/events", tags=["events"])
 SEVERITY_ORDER = (
@@ -83,6 +84,16 @@ def list_events(
         page=page,
         page_size=page_size,
     )
+
+
+@router.post("/ingest", response_model=EventResponse, status_code=status.HTTP_201_CREATED)
+def ingest_event(
+    request: EventIngestRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+) -> EventResponse:
+    event = create_event(db, request.model_dump(exclude_none=True))
+    return event_response(event)
 
 
 @router.get(

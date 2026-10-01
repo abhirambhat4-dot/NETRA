@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -57,6 +57,43 @@ class EventResponse(CoreResponse):
     incident_ids: list[UUID]
     asset_id: UUID | None
     asset: AssetReference | None
+
+
+class EventIngestRequest(CoreResponse):
+    event_uid: str
+    occurred_at: datetime
+    source: str
+    event_type: str
+    signature: str | None = None
+    severity: str
+    src_ip: str | None = None
+    dest_ip: str | None = None
+    src_port: int | None = Field(default=None, ge=0, le=65535)
+    dest_port: int | None = Field(default=None, ge=0, le=65535)
+    protocol: str | None = None
+    anomaly_score: float | None = Field(default=None, ge=0, le=1)
+    asset_id: UUID | None = None
+    raw_data: dict[str, Any] | None = None
+
+
+class IncidentCreateRequest(CoreResponse):
+    title: str
+    description: str | None = None
+    severity: str | None = None
+    detection_source: str | None = None
+    asset_id: UUID | None = None
+    event_ids: list[UUID] | None = None
+
+
+class IncidentEventLinkRequest(CoreResponse):
+    event_id: UUID
+
+
+class IncidentEventLinkResponse(CoreResponse):
+    incident_id: UUID
+    event_id: UUID
+    linked_at: datetime
+    status: str = "linked"
 
 
 class IncidentResponse(CoreResponse):

@@ -12,6 +12,7 @@ from app.api.core_serializers import (
     authorization_response,
     containment_response,
     cyber_memory_reference,
+        cyber_memory_response,
     decision_response,
     enum_text,
     event_response,
@@ -29,11 +30,25 @@ from app.models.incident import Incident, IncidentEvent, IncidentHistory
 from app.models.user import User
 from app.models.vulnerability import Vulnerability
 from app.schemas.core import (
+        CyberMemoryResponse,
+    DecisionResponse,
+    IncidentCreateRequest,
     IncidentDetailResponse,
+    IncidentEventLinkRequest,
+    IncidentEventLinkResponse,
     IncidentResponse,
     PageResponse,
     TimelineEntryResponse,
 )
+from app.schemas.enrichment import IncidentContextBundle
+from app.schemas.risk import RiskScoreResult
+from app.services.context_enrichment import enrich_incident_context
+from app.services.controlled_response import create_incident_cyber_memory
+from app.services.decision_workflow import recommend_incident_decision
+from app.services.event_correlation import correlate_incident_events
+from app.services.intake import create_incident, link_event_to_incident
+from app.services.prioritization import get_prioritized_incidents
+from app.services.risk_engine import calculate_incident_risk
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 ACTIVE_STATES = tuple(state for state in IncidentState if state not in (IncidentState.CONTAINED, IncidentState.LEARNED))
@@ -154,6 +169,124 @@ def list_incidents(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/prioritized")
+def list_prioritized_incidents(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+) -> list[dict[str, object]]:
+    return get_prioritized_incidents(db)
+
+
+@router.post("", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
+def create_incident_endpoint(
+    request: IncidentCreateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+) -> IncidentResponse:
+    incident = create_incident(db, request.model_dump(exclude_none=True))
+    return incident_response(incident, event_count=len(incident.events))
+
+
+@router.post(
+    "/{incident_id}/events",
+    response_model=IncidentEventLinkResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def link_event_to_incident_endpoint(
+    incident_id: UUID,
+    request: IncidentEventLinkRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+) -> IncidentEventLinkResponse:
+    link = link_event_to_incident(db, incident_id, request.event_id)
+    return IncidentEventLinkResponse(
+        incident_id=link.incident_id,
+        event_id=link.event_id,
+        linked_at=link.linked_at,
+        status="linked",
+    )
+
+
+@router.post(
+    "/{incident_id}/enrich",
+    response_model=IncidentContextBundle,
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Incident not found"}},
+)
+def enrich_incident(
+    incident_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> IncidentContextBundle:
+    return enrich_incident_context(db, incident_id, actor=current_user.email)
+
+
+@router.post(
+    "/{incident_id}/correlate",
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Incident not found"},
+        status.HTTP_409_CONFLICT: {"description": "Incident is not eligible for correlation"},
+    },
+)
+def correlate_incident(
+    incident_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, object]:
+    return correlate_incident_events(db, incident_id, actor=current_user.email)
+
+
+@router.post(
+    "/{incident_id}/risk-score",
+    response_model=RiskScoreResult,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Incident not found"},
+        status.HTTP_409_CONFLICT: {"description": "Incident must be UNDERSTOOD before risk calculation"},
+    },
+)
+def calculate_incident_risk_endpoint(
+    incident_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> RiskScoreResult:
+    return calculate_incident_risk(db, incident_id, actor=current_user.email)
+
+
+@router.post(
+    "/{incident_id}/decision",
+    response_model=DecisionResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Incident not found"},
+        status.HTTP_409_CONFLICT: {"description": "Incident is not eligible for a decision recommendation"},
+    },
+)
+def recommend_incident_decision_endpoint(
+    incident_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> DecisionResponse:
+    decision = recommend_incident_decision(db, incident_id, actor=current_user.email)
+    return decision_response(decision)
+
+
+@router.post(
+    "/{incident_id}/cyber-memory",
+    response_model=CyberMemoryResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Incident not found"},
+        status.HTTP_409_CONFLICT: {"description": "Incident is not eligible for Cyber Memory"},
+    },
+)
+def create_cyber_memory_endpoint(
+    incident_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> CyberMemoryResponse:
+    memory = create_incident_cyber_memory(db, incident_id, actor=current_user.email)
+    return cyber_memory_response(memory)
 
 
 @router.get(
