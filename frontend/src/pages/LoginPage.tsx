@@ -25,6 +25,7 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const registered = (location.state as { registered?: boolean } | null)?.registered === true
+  const passwordReset = (location.state as { passwordReset?: boolean } | null)?.passwordReset === true
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -77,6 +78,7 @@ export function LoginPage() {
 
               <form onSubmit={handleSubmit} className="mt-6 space-y-4">
                 {registered && <p role="status" className="rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">Account created. Sign in with your new credentials.</p>}
+                {passwordReset && <p role="status" className="rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">Password reset. Sign in with your new password.</p>}
                 {error && <p role="alert" className="rounded-xl border border-critical/30 bg-critical/10 px-3 py-2 text-xs text-critical">{error}</p>}
 
                 <div className="space-y-2">
@@ -121,10 +123,15 @@ export function LoginPage() {
                   </div>
                 </div>
 
-                <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground select-none">
-                  <Checkbox checked={remember} onCheckedChange={(v) => setRemember(v === true)} aria-label="Remember this session" />
-                  Remember this session
-                </label>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground select-none">
+                    <Checkbox checked={remember} onCheckedChange={(v) => setRemember(v === true)} aria-label="Remember this session" />
+                    Remember this session
+                  </label>
+                  <Link to={ROUTES.forgotPassword} className="text-xs font-medium text-primary hover:underline">
+                    Forgot password?
+                  </Link>
+                </div>
 
                 <Button type="submit" size="lg" disabled={loading} className="mt-1 h-11 w-full rounded-full text-[11px] font-semibold tracking-[0.16em] uppercase">
                   {loading ? (

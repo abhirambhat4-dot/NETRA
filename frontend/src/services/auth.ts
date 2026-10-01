@@ -21,9 +21,16 @@ export interface RegisterRequest {
   password: string
 }
 
+export interface MessageResponse {
+  message: string
+}
+
 export const authService = {
   login: (email: string, password: string) =>
     http.post<AuthTokenResponse>('/auth/login', { email, password }),
   register: (request: RegisterRequest) => http.post<AuthUser>('/auth/register', request),
   me: () => http.get<AuthUser>('/auth/me'),
+  forgotPassword: (email: string) => http.post<MessageResponse>('/auth/forgot-password', { email }),
+  resetPassword: (token: string, newPassword: string) =>
+    http.post<MessageResponse>('/auth/reset-password', { token, new_password: newPassword }),
 }

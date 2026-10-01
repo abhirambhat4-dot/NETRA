@@ -3,10 +3,12 @@ import { Outlet, createBrowserRouter } from 'react-router-dom'
 import { RedirectAuthenticated, RequireAuth } from '@/auth/RouteGuards'
 import { AppLayout } from '@/layouts/AppLayout'
 import { ROUTES, type RouteHandle } from '@/lib/navigation'
+import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { PublicLandingPage } from '@/pages/PublicLandingPage'
 import { RegisterPage } from '@/pages/RegisterPage'
+import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
 
 const handle = (h: RouteHandle) => h
 
@@ -20,6 +22,9 @@ export const router = createBrowserRouter([
   { path: ROUTES.home, element: <RedirectAuthenticated><PublicLandingPage /></RedirectAuthenticated> },
   { path: ROUTES.login, element: <RedirectAuthenticated><LoginPage /></RedirectAuthenticated> },
   { path: ROUTES.register, element: <RedirectAuthenticated><RegisterPage /></RedirectAuthenticated> },
+  { path: ROUTES.forgotPassword, element: <RedirectAuthenticated><ForgotPasswordPage /></RedirectAuthenticated> },
+  // Unguarded so an emailed link works even in a browser that is still signed in.
+  { path: ROUTES.resetPassword, element: <ResetPasswordPage /> },
   {
     path: ROUTES.briefing,
     element: <RequireAuth><Outlet /></RequireAuth>,

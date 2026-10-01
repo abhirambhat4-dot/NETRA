@@ -7,6 +7,7 @@ from app.models.cyber_memory import CyberMemory
 from app.models.decision import Decision
 from app.models.event import SecurityEvent
 from app.models.incident import Incident, IncidentEvent, IncidentHistory
+from app.models.password_reset_token import PasswordResetToken
 from app.models.threat_indicator import ThreatIndicator
 from app.models.user import User
 from app.models.vulnerability import Vulnerability
@@ -20,6 +21,7 @@ __all__ = [
     "Incident",
     "IncidentEvent",
     "IncidentHistory",
+    "PasswordResetToken",
     "SecurityEvent",
     "ThreatIndicator",
     "User",

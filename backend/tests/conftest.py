@@ -21,6 +21,7 @@ from app.db.dependencies import get_db
 from app.db.base import Base
 from app.db.session import engine as postgres_engine
 from app.models import *  # noqa: F403
+from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
 from app.main import app
 from app.services.auth import create_access_token
@@ -72,6 +73,7 @@ def auth_db() -> sessionmaker[Session]:
         poolclass=StaticPool,
     )
     User.__table__.create(engine)
+    PasswordResetToken.__table__.create(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     yield factory
     engine.dispose()
