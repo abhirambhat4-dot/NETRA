@@ -57,7 +57,7 @@ interface ErrorStateProps {
 
 export function ErrorState({
   title = 'Unable to load data',
-  message = 'The NETRA service did not respond. Check your connection and try again.',
+  message,
   onRetry,
   className,
 }: ErrorStateProps) {
@@ -66,14 +66,22 @@ export function ErrorState({
       icon={AlertTriangle}
       iconClassName="border-critical/25 bg-critical/10 text-critical"
       title={title}
-      description={message}
+      description="NETRA could not load this information. Check your connection and try again."
       className={className}
       action={
-        onRetry && (
-          <Button variant="outline" size="sm" onClick={onRetry}>
-            <RotateCw /> Retry
-          </Button>
-        )
+        <div className="flex flex-col items-center gap-3">
+          {onRetry && (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <RotateCw /> Retry
+            </Button>
+          )}
+          {message && (
+            <details className="max-w-full text-left text-[11px] text-muted-foreground">
+              <summary className="cursor-pointer rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">Technical details</summary>
+              <p className="mt-2 max-w-md break-words rounded-md border border-border bg-background/70 p-2 font-mono text-[10px] leading-relaxed">{message}</p>
+            </details>
+          )}
+        </div>
       }
     />
   )

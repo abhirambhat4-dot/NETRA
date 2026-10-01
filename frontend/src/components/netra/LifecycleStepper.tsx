@@ -43,7 +43,7 @@ export function LifecycleStepper({ steps, orientation = 'responsive', className 
               className={cn(
                 'relative z-10 grid size-7 shrink-0 place-items-center rounded-full border text-[11px] font-semibold transition-colors',
                 s.state === 'done' && 'border-primary/40 bg-primary/15 text-primary',
-                s.state === 'current' && 'border-primary bg-primary text-primary-foreground shadow-[0_0_0_4px_rgb(79_140_255/0.15)]',
+                s.state === 'current' && 'border-primary bg-primary text-primary-foreground',
                 s.state === 'upcoming' && 'border-border bg-surface text-muted-foreground',
                 s.state === 'skipped' && 'border-dashed border-border bg-surface text-muted-foreground/60',
               )}
@@ -55,7 +55,7 @@ export function LifecycleStepper({ steps, orientation = 'responsive', className 
             <div className={cn('min-w-0', h ? 'pr-1' : 'pt-0.5 lg:pt-0 lg:pr-3')}>
               <div
                 className={cn(
-                  'font-semibold tracking-widest uppercase',
+                  'font-semibold tracking-wide uppercase',
                   h ? 'text-[10px]' : 'text-[11px]',
                   s.state === 'upcoming' || s.state === 'skipped' ? 'text-muted-foreground/70' : 'text-foreground',
                   s.state === 'current' && 'text-primary',

@@ -1,7 +1,8 @@
 import type { LucideIcon } from 'lucide-react'
-import { Bug, CheckCircle2, Crosshair, Globe, Lock, Radar, Server, Target, Waypoints } from 'lucide-react'
+import { ArrowDown, ArrowRight, Bug, CheckCircle2, Crosshair, Globe, Lock, Radar, Server, Target, Waypoints } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import type { Asset, RiskAssessment, RiskFactorKey } from '@/api/types'
-import { Disclosure, Panel } from '@/components/netra'
+import { Disclosure, Panel, RiskGauge } from '@/components/netra'
 import { severityTone, toneStyles } from '@/lib/tones'
 import { cn } from '@/lib/utils'
 
@@ -30,74 +31,74 @@ function strength(v: number): { label: string; className: string } {
 export function RiskBreakdownPanel({ risk, asset }: { risk: RiskAssessment; asset: Asset }) {
   const tone = toneStyles[severityTone[risk.severity]]
   const factors = [...risk.factors].sort((a, b) => b.contribution - a.contribution)
+  const [revealed, setRevealed] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  )
+
+  useEffect(() => {
+    if (revealed) return
+    const frame = requestAnimationFrame(() => setRevealed(true))
+    return () => cancelAnimationFrame(frame)
+  }, [revealed])
 
   return (
     <Panel
-      title="Why NETRA prioritised this"
-      description={`Contextual factors behind the risk score · ${risk.modelVersion}`}
-      actions={
-        <div className="text-right">
-          <span className={cn('metric text-2xl', tone.text)}>{risk.riskScore}</span>
-          <span className="text-xs text-muted-foreground"> /100</span>
-        </div>
-      }
+      title="Risk explanation"
+      description={`Mock risk model inputs · ${risk.modelVersion}`}
     >
-      {/* Composition bar: each factor's share of the score */}
-      <div className="mb-5">
-        <div className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-foreground/6" role="img" aria-label={`Risk score composition, ${risk.riskScore} of 100 points`}>
-          {factors.map((f, idx) => (
-            <div
-              key={f.key}
-              className="h-full bg-primary transition-[width] duration-700"
-              style={{ width: `${f.contribution}%`, opacity: 1 - idx * 0.13 }}
-              title={`${f.label}: ${f.contribution.toFixed(1)} pts`}
-            />
-          ))}
-        </div>
-        <div className="mt-1.5 flex justify-between font-mono text-[10px] text-muted-foreground">
-          <span>0</span>
-          <span>{risk.riskScore} of 100 points</span>
-          <span>100</span>
-        </div>
-      </div>
-
-      <ul className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-        {factors.map((f) => {
+      <div className="grid items-center gap-4 lg:grid-cols-[minmax(0,1fr)_28px_156px]">
+        <ul className="relative divide-y divide-border/70 before:absolute before:inset-y-3 before:left-3.5 before:w-px before:bg-primary/25">
+          {factors.map((f, index) => {
           const Icon = FACTOR_ICON[f.key]
           const s = strength(f.value)
           return (
-            <li key={f.key} className="surface-inset flex flex-col rounded-lg p-3.5 transition-colors hover:border-primary/20">
-              <div className="flex items-start justify-between gap-3">
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="grid size-7 shrink-0 place-items-center rounded-md border border-primary/20 bg-primary/8 text-primary">
-                    <Icon className="size-3.5" />
-                  </span>
+            <li
+              key={f.key}
+              className="group relative grid grid-cols-[28px_minmax(0,1fr)] gap-2 py-3 first:pt-0 last:pb-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-left-2 motion-safe:duration-500"
+              style={{ animationDelay: `${index * 75}ms` }}
+            >
+              <span className="relative z-10 grid size-7 place-items-center rounded-full border border-primary/25 bg-surface text-primary">
+                <Icon className="size-3.5" />
+              </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                   <span className="truncate text-[13px] font-medium">{f.label}</span>
-                </span>
-                <span className="shrink-0 font-mono text-xs tabular-nums">
-                  <span className="text-foreground">+{f.contribution.toFixed(1)}</span>
-                  <span className="text-muted-foreground"> pts</span>
-                </span>
-              </div>
-              <div className="mt-3 flex items-center gap-2.5">
-                <div className="h-1 flex-1 overflow-hidden rounded-full bg-foreground/6">
-                  <div className="h-full rounded-full bg-primary transition-[width] duration-700" style={{ width: `${f.value * 100}%` }} />
+                  <span className="font-mono text-[10px] text-muted-foreground">weight {Math.round(f.weight * 100)}%</span>
                 </div>
-                <span className={cn('w-16 shrink-0 text-right text-[11px] font-medium', s.className)}>{s.label}</span>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
+                  <span className={cn('font-medium', s.className)}>{s.label} · {Math.round(f.value * 100)}% input</span>
+                  <span className="font-mono font-semibold text-foreground/90">+{f.contribution.toFixed(1)} pts</span>
+                </div>
+                <div className="mt-2 h-1 overflow-hidden rounded-full bg-foreground/6">
+                  <div
+                    className="h-full origin-left rounded-full bg-primary transition-transform duration-500 ease-out"
+                    style={{ transform: `scaleX(${revealed ? f.value : 0})`, transitionDelay: `${index * 75}ms` }}
+                  />
+                </div>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground" title={f.explanation}>{f.explanation}</p>
+                {f.key === 'ASSET_CRITICALITY' && (
+                  <span className={cn('mt-1.5 inline-flex items-center gap-1 text-[10px]', asset.exposure === 'EXTERNAL' ? 'text-high' : 'text-muted-foreground')}>
+                    {asset.exposure === 'EXTERNAL' ? <Globe className="size-3" /> : <Lock className="size-3" />}
+                    {asset.exposure === 'EXTERNAL' ? 'Internet-exposed asset' : 'Internal asset'}
+                  </span>
+                )}
               </div>
-              <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground" title={f.explanation}>
-                {f.explanation}
-              </p>
-              {f.key === 'ASSET_CRITICALITY' && (
-                <span className={cn('mt-2 inline-flex items-center gap-1 text-[11px]', asset.exposure === 'EXTERNAL' ? 'text-high' : 'text-muted-foreground')}>
-                  {asset.exposure === 'EXTERNAL' ? <Globe className="size-3" /> : <Lock className="size-3" />}
-                  {asset.exposure === 'EXTERNAL' ? 'Internet-exposed asset' : 'Internal asset'}
-                </span>
-              )}
             </li>
           )
-        })}
-      </ul>
+          })}
+        </ul>
+
+        <div aria-hidden className="flex justify-center text-primary/60">
+          <ArrowRight className="hidden size-4 lg:block" />
+          <ArrowDown className="size-4 lg:hidden" />
+        </div>
+
+        <div className="flex flex-col items-center justify-center border-t border-border pt-4 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-4">
+          <div className="mb-1 text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">NETRA risk score</div>
+          <RiskGauge score={risk.riskScore} size={144} />
+          <div className={cn('mt-1 font-mono text-[10px]', tone.text)}>{risk.severity} · {risk.riskScore}/100</div>
+        </div>
+      </div>
 
       <Disclosure label="Analyst summary" hint={`${risk.explanation.length} findings`} className="mt-4 border-t border-border pt-2.5">
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">

@@ -1,8 +1,8 @@
-import type { DetectionSource, Incident, IncidentStatus, Severity } from '@/api/types'
+import type { BackendEventSource, DetectionSource, IncidentLifecycleState, IncidentQueueItem, IncidentStatus, Severity } from '@/api/types'
 import { LoadingState, MeterBar, Panel } from '@/components/netra'
 import { useCountUp } from '@/hooks/useCountUp'
-import { detectionSourceMeta } from '@/lib/sources'
-import { SEVERITY_ORDER, severityTone, statusMeta, toneStyles } from '@/lib/tones'
+import { eventSourceMeta } from '@/lib/sources'
+import { SEVERITY_ORDER, severityTone, statusMeta, toneStyles, type Tone } from '@/lib/tones'
 import { cn } from '@/lib/utils'
 
 const SEV_COLOR: Record<Severity, string> = {
@@ -14,25 +14,38 @@ const SEV_COLOR: Record<Severity, string> = {
 }
 
 const PIPELINE: IncidentStatus[] = ['NEW', 'INVESTIGATING', 'AWAITING_AUTHORIZATION', 'CONTAINING']
-const SOURCES: DetectionSource[] = ['HYBRID', 'SURICATA', 'ML_ANOMALY', 'THREAT_INTEL']
+const LIVE_PIPELINE: { state: IncidentLifecycleState; tone: Tone }[] = [
+  { state: 'DETECTED', tone: 'accent' },
+  { state: 'UNDERSTOOD', tone: 'accent' },
+  { state: 'PRIORITISED', tone: 'high' },
+  { state: 'VERIFIED', tone: 'medium' },
+  { state: 'AUTHORIZED', tone: 'medium' },
+]
+const MOCK_SOURCES: DetectionSource[] = ['HYBRID', 'SURICATA', 'ML_ANOMALY', 'THREAT_INTEL']
+const LIVE_SOURCES: BackendEventSource[] = ['SURICATA', 'ML_ANOMALY', 'THREAT_INTEL', 'VULNERABILITY_SCAN', 'MANUAL']
 
-export function SeverityDistributionPanel({ incidents }: { incidents?: Incident[] }) {
+export function SeverityDistributionPanel({ incidents, live }: { incidents?: IncidentQueueItem[]; live: boolean }) {
   return (
     <Panel title="Risk distribution" description="Active incidents by severity and response stage" className="h-full">
       {!incidents ? (
         <LoadingState variant="inline" />
       ) : (
-        <Content incidents={incidents} />
+        <Content incidents={incidents} live={live} />
       )}
     </Panel>
   )
 }
 
-function Content({ incidents }: { incidents: Incident[] }) {
+function Content({ incidents, live }: { incidents: IncidentQueueItem[]; live: boolean }) {
   const total = incidents.length
   const counts = SEVERITY_ORDER.map((s) => ({ severity: s, count: incidents.filter((i) => i.severity === s).length }))
-  const pipeline = PIPELINE.map((s) => ({ status: s, count: incidents.filter((i) => i.status === s).length }))
-  const sources = SOURCES.map((s) => ({ source: s, count: incidents.filter((i) => i.detectionSource === s).length }))
+  const pipeline = (live ? LIVE_PIPELINE : PIPELINE.map((state) => ({ state, tone: statusMeta[state].tone }))).map(
+    ({ state, tone }) => ({ state, tone, count: incidents.filter((incident) => incident.lifecycle === state).length }),
+  )
+  const sources = (live ? LIVE_SOURCES : MOCK_SOURCES).map((source) => ({
+    source,
+    count: incidents.filter((incident) => incident.detectionSource === source).length,
+  }))
 
   return (
     <div className="flex flex-col gap-6">
@@ -59,18 +72,18 @@ function Content({ incidents }: { incidents: Incident[] }) {
             .filter((p) => p.count > 0)
             .map((p) => (
               <div
-                key={p.status}
-                className={cn('h-full first:rounded-l-full last:rounded-r-full', toneStyles[statusMeta[p.status].tone].solid)}
+                key={p.state}
+                className={cn('h-full first:rounded-l-full last:rounded-r-full', toneStyles[p.tone].solid)}
                 style={{ flexGrow: p.count }}
-                title={`${statusMeta[p.status].label}: ${p.count}`}
+                title={`${pipelineLabel(p.state)}: ${p.count}`}
               />
             ))}
         </div>
         <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
           {pipeline.map((p) => (
-            <div key={p.status} className="flex items-center gap-2 text-xs">
-              <span className={cn('size-1.5 rounded-full', toneStyles[statusMeta[p.status].tone].solid)} />
-              <span className="flex-1 truncate text-muted-foreground">{statusMeta[p.status].label}</span>
+            <div key={p.state} className="flex items-center gap-2 text-xs">
+              <span className={cn('size-1.5 rounded-full', toneStyles[p.tone].solid)} />
+              <span className="flex-1 truncate text-muted-foreground">{pipelineLabel(p.state)}</span>
               <span className="font-mono font-medium tabular-nums">{p.count}</span>
             </div>
           ))}
@@ -81,14 +94,14 @@ function Content({ incidents }: { incidents: Incident[] }) {
         <div className="mb-2.5 text-xs font-medium text-foreground/85">Detected by</div>
         <ul className="space-y-2">
           {sources.map(({ source, count }) => {
-            const meta = detectionSourceMeta[source]
+            const meta = eventSourceMeta(source)
             return (
               <li key={source} className="grid grid-cols-[minmax(0,9rem)_1fr_1.5rem] items-center gap-3 text-xs">
                 <span className="inline-flex items-center gap-1.5 truncate text-muted-foreground">
                   <meta.icon className="size-3.5 shrink-0" />
                   {meta.short}
                 </span>
-                <MeterBar value={count} max={total} tone="neutral" />
+                <MeterBar value={count} max={Math.max(total, 1)} tone="neutral" />
                 <span className="text-right font-mono font-medium tabular-nums">{count}</span>
               </li>
             )
@@ -97,6 +110,10 @@ function Content({ incidents }: { incidents: Incident[] }) {
       </div>
     </div>
   )
+}
+
+function pipelineLabel(state: IncidentStatus | IncidentLifecycleState): string {
+  return state in statusMeta ? statusMeta[state as IncidentStatus].label : state.toLowerCase().replaceAll('_', ' ')
 }
 
 /** Donut with 2px surface gaps between segments; centre shows the total. */

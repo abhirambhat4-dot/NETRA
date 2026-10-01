@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { authService, type AuthUser, type RegisterRequest } from '@/services/auth'
-import { clearAuthToken, getAuthToken, saveAuthToken } from '@/services/http'
+import { AUTH_EXPIRED_EVENT, clearAuthToken, getAuthToken, saveAuthToken } from '@/services/http'
 
 interface AuthContextValue {
   user: AuthUser | null
@@ -50,6 +50,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false
     }
+  }, [])
+
+  useEffect(() => {
+    const expire = () => {
+      setToken(null)
+      setUser(null)
+    }
+    window.addEventListener(AUTH_EXPIRED_EVENT, expire)
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, expire)
   }, [])
 
   async function login(email: string, password: string, remember = true) {

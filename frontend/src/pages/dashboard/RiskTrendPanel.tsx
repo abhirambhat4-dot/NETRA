@@ -70,6 +70,8 @@ export function RiskTrendPanel() {
         <ErrorState onRetry={reload} />
       ) : !data ? (
         <LoadingState variant="inline" label="Loading trend…" className="h-[360px]" />
+      ) : rows.length === 0 ? (
+        <div className="grid h-[360px] place-items-center text-sm text-muted-foreground">Trend data unavailable</div>
       ) : (
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap gap-x-8 gap-y-2 text-xs">

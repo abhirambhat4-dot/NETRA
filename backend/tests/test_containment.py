@@ -15,6 +15,7 @@ from app.models.incident import Incident, IncidentHistory
 from tests.conftest import CoreApi
 from tests.test_authorization import request_authorization
 from tests.test_decision import request_decision, seed_prioritised_incident
+from tests.test_incident_verification import request_incident_verification
 
 
 def create_pending_authorization(core_api: CoreApi):
@@ -28,10 +29,8 @@ def create_pending_authorization(core_api: CoreApi):
 
 
 def approve_authorization(core_api: CoreApi, incident_id: UUID, authorization_id: UUID) -> None:
-    with core_api.session_factory() as session:
-        incident = session.get(Incident, incident_id)
-        incident.state = IncidentState.VERIFIED
-        session.commit()
+    verification = request_incident_verification(core_api, incident_id)
+    assert verification.status_code == 200
     response = core_api.client.post(
         f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
     )

@@ -29,6 +29,7 @@ function arcPath(cx: number, cy: number, r: number, fromPct: number, toPct: numb
 
 interface RiskGaugeProps {
   score: number
+  label?: string
   size?: number
   className?: string
 }
@@ -37,15 +38,21 @@ interface RiskGaugeProps {
  * Hero risk gauge: severity band ring, animated progress arc, tick marks,
  * count-up number. Colour of the value follows its severity band.
  */
-export function RiskGauge({ score, size = 220, className }: RiskGaugeProps) {
-  const [mounted, setMounted] = useState(false)
+export function RiskGauge({ score, label = 'Overall risk', size = 220, className }: RiskGaugeProps) {
+  const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const [mounted, setMounted] = useState(() => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+
   useEffect(() => {
+    if (prefersReducedMotion) {
+      return
+    }
+
     const id = requestAnimationFrame(() => setMounted(true))
     return () => cancelAnimationFrame(id)
-  }, [])
+  }, [prefersReducedMotion])
 
   const value = Math.max(0, Math.min(100, score))
-  const shown = useCountUp(value, 1100)
+  const shown = useCountUp(value, prefersReducedMotion ? 0 : 1100)
   const severity = riskToSeverity(value)
   const tone = toneStyles[severityTone[severity]]
   const color = BANDS.find((b) => value >= b.from && value <= b.to)?.color ?? 'var(--primary)'
@@ -63,7 +70,7 @@ export function RiskGauge({ score, size = 220, className }: RiskGaugeProps) {
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={value}
-      aria-label={`Overall risk ${value} of 100, ${severity}`}
+      aria-label={`${label} ${value} of 100, ${severity}`}
     >
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="overflow-visible">
         {/* severity bands */}
@@ -108,10 +115,10 @@ export function RiskGauge({ score, size = 220, className }: RiskGaugeProps) {
       </svg>
 
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="eyebrow text-[10px]">Overall risk</span>
-        <span className="metric mt-1.5 text-6xl">{Math.round(shown)}</span>
-        <span className={cn('mt-2 inline-flex items-center gap-1.5 text-xs font-semibold tracking-[0.14em]', tone.text)}>
-          <span className={cn('size-1.5 rounded-full', tone.solid)} />
+        <span className="eyebrow text-[10px] transition-opacity duration-500" style={{ opacity: mounted ? 1 : 0 }}>{label}</span>
+        <span className="metric mt-1.5 text-6xl transition-all duration-500" style={{ opacity: mounted ? 1 : 0, transform: mounted ? 'translateY(0)' : 'translateY(8px)' }}>{Math.round(shown)}</span>
+        <span className={cn('mt-2 inline-flex items-center gap-1.5 text-xs font-semibold tracking-[0.14em] transition-all duration-500', tone.text)} style={{ opacity: mounted ? 1 : 0, filter: mounted ? `drop-shadow(0 0 12px color-mix(in srgb, ${color} 55%, transparent))` : 'none' }}>
+          <span className={cn('size-1.5 rounded-full', tone.solid, mounted && 'animate-status-pulse')} />
           {severity}
         </span>
       </div>

@@ -1,19 +1,21 @@
 import { Link } from 'react-router-dom'
-import type { SecurityEvent } from '@/api/types'
+import type { EventsPageItem } from '@/api/types'
 import { LoadingState, SeverityBadge } from '@/components/netra'
 import { formatClock } from '@/lib/format'
 import { ROUTES } from '@/lib/navigation'
-import { detectionSourceMeta } from '@/lib/sources'
+import { eventSourceMeta } from '@/lib/sources'
 import { cn } from '@/lib/utils'
 
 /** Latest detections as a compact rail (Command Center → Detection intelligence). */
-export function EventFeed({ events }: { events?: SecurityEvent[] }) {
+export function EventFeed({ events }: { events?: EventsPageItem[] }) {
   return !events ? (
         <LoadingState count={7} />
+      ) : events.length === 0 ? (
+        <p className="px-5 py-4 text-xs text-muted-foreground">No events available.</p>
       ) : (
         <ol className="relative">
           {events.map((e, idx) => {
-            const src = detectionSourceMeta[e.detectionSource]
+            const src = eventSourceMeta(e.detectionSource)
             const last = idx === events.length - 1
             return (
               <li key={e.id} className="group relative grid grid-cols-[64px_20px_minmax(0,1fr)] gap-x-2 sm:grid-cols-[72px_20px_minmax(0,1fr)_auto]">
@@ -41,11 +43,11 @@ export function EventFeed({ events }: { events?: SecurityEvent[] }) {
                     </span>
                     <span className="text-muted-foreground/40">·</span>
                     <span className="font-mono">
-                      {e.sourceIp} → {e.destinationIp}
+                      {e.sourceIp ?? '—'} → {e.destinationIp ?? '—'}
                     </span>
-                    {e.incidentId && (
-                      <Link to={ROUTES.incident(e.incidentId)} className="ml-1 rounded border border-primary/20 bg-primary/8 px-1 font-mono text-[10px] text-primary transition-colors hover:bg-primary/15">
-                        {e.incidentId}
+                    {e.incidentIds[0] && (
+                      <Link to={ROUTES.incident(e.incidentIds[0])} className="ml-1 rounded border border-primary/20 bg-primary/8 px-1 font-mono text-[10px] text-primary transition-colors hover:bg-primary/15">
+                        {e.incidentIds[0]}
                       </Link>
                     )}
                   </div>

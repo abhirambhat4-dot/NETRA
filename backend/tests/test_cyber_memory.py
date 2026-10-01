@@ -4,12 +4,14 @@ from uuid import UUID
 from sqlalchemy import select
 
 from app.models.cyber_memory import CyberMemory
+from app.models.event import SecurityEvent
 from app.models.enums import IncidentState
 from app.models.incident import Incident, IncidentHistory
 from tests.conftest import CoreApi
 from tests.test_containment import contain, create_approved_authorization
 from tests.test_decision import request_decision, seed_prioritised_incident
 from tests.test_authorization import request_authorization
+from tests.test_incident_verification import request_incident_verification
 from tests.test_verification import verify
 
 
@@ -114,38 +116,58 @@ def test_duplicate_memory_is_rejected_and_history_is_written(core_api: CoreApi) 
 
 
 def test_full_batch_three_workflow_obeys_lifecycle(core_api: CoreApi) -> None:
-    incident_id = seed_prioritised_incident(core_api)
-    decision_response = request_decision(core_api, incident_id)
-    decision_id = UUID(decision_response.json()["id"])
-    authorization_response = request_authorization(core_api, decision_id)
-    authorization_id = UUID(authorization_response.json()["id"])
+    incident_id = seed_prioritised_incident(
+        core_api,
+        state=IncidentState.DETECTED,
+        with_risk_history=False,
+    )
     with core_api.session_factory() as session:
         incident = session.get(Incident, incident_id)
-        incident.state = IncidentState.VERIFIED
+        seed_event = incident.events[0]
         session.add(
-            IncidentHistory(
-                incident_id=incident_id,
-                from_state=IncidentState.PRIORITISED,
-                to_state=IncidentState.VERIFIED,
-                action="incident_verified",
-                actor="test-verifier",
+            SecurityEvent(
+                event_uid=f"evt-lifecycle-{incident_id}",
                 occurred_at=datetime.now(UTC),
-                details={"source": "pre-containment verification fixture"},
+                source=seed_event.source,
+                event_type=seed_event.event_type,
+                signature=seed_event.signature,
+                severity=seed_event.severity,
+                src_ip=seed_event.src_ip,
+                dest_ip=seed_event.dest_ip,
+                dest_port=seed_event.dest_port,
+                protocol=seed_event.protocol,
+                asset_id=incident.asset_id,
             )
         )
         session.commit()
+    correlation = core_api.client.post(
+        f"/api/incidents/{incident_id}/correlate",
+        headers=core_api.headers,
+    )
+    risk = core_api.client.post(
+        f"/api/incidents/{incident_id}/risk-score",
+        headers=core_api.headers,
+    )
+    decision_response = request_decision(core_api, incident_id)
+    decision_id = UUID(decision_response.json()["id"])
+    incident_verification = request_incident_verification(core_api, incident_id)
+    authorization_response = request_authorization(core_api, decision_id)
+    authorization_id = UUID(authorization_response.json()["id"])
     approval = core_api.client.post(
         f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
     )
     execution = contain(core_api, authorization_id)
-    verification = verify(core_api, UUID(execution.json()["id"]))
+    containment_verification = verify(core_api, UUID(execution.json()["id"]))
     memory_response = create_memory(core_api, incident_id)
 
+    assert correlation.status_code == 200
+    assert risk.status_code == 200
     assert decision_response.status_code == 201
+    assert incident_verification.status_code == 200
     assert authorization_response.status_code == 201
     assert approval.status_code == 200
     assert execution.status_code == 201
-    assert verification.status_code == 200
+    assert containment_verification.status_code == 200
     assert memory_response.status_code == 201
     with core_api.session_factory() as session:
         incident = session.get(Incident, incident_id)
@@ -157,8 +179,12 @@ def test_full_batch_three_workflow_obeys_lifecycle(core_api: CoreApi) -> None:
     assert incident.state == IncidentState.LEARNED
     transitions = [(row.from_state, row.to_state) for row in histories if row.from_state != row.to_state]
     required_transitions = [
+        (IncidentState.DETECTED, IncidentState.UNDERSTOOD),
+        (IncidentState.UNDERSTOOD, IncidentState.PRIORITISED),
+        (IncidentState.PRIORITISED, IncidentState.VERIFIED),
         (IncidentState.VERIFIED, IncidentState.AUTHORIZED),
         (IncidentState.AUTHORIZED, IncidentState.CONTAINED),
         (IncidentState.CONTAINED, IncidentState.LEARNED),
     ]
-    assert [transition for transition in transitions if transition in required_transitions] == required_transitions
+    assert len(transitions) == len(required_transitions)
+    assert set(transitions) == set(required_transitions)

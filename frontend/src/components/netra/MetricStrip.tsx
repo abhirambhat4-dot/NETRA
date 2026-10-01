@@ -13,7 +13,7 @@ export function MetricStrip({ metrics, className }: { metrics: Metric[]; classNa
   return (
     <div
       className={cn(
-        'grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border shadow-[0_12px_32px_-16px_rgb(0_0_0/0.6)] sm:grid-cols-3',
+        'grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3',
         metrics.length >= 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-4',
         className,
       )}

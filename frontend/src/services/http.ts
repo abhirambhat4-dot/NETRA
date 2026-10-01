@@ -1,13 +1,20 @@
 import type { ApiError } from '@/api/types'
 
-/** true (default) → mock operational data; set VITE_USE_MOCKS=false to call FastAPI. */
-export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS !== 'false'
+/** Mock data is opt-in for local demos; production calls FastAPI by default. */
+export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true'
 
-export const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000').replace(/\/+$/, '')
+/** The local FastAPI default applies to the dev server only; production builds must set VITE_API_BASE_URL. */
+export const BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL?.trim() || (import.meta.env.DEV ? 'http://127.0.0.1:8000' : '')
+).replace(/\/+$/, '')
+
+/** Fired when the API rejects the stored token. */
+export const AUTH_EXPIRED_EVENT = 'netra:auth-expired'
 
 type Query = Record<string, string | number | boolean | undefined>
 
 function buildUrl(path: string, query?: Query) {
+  if (!BASE_URL) throw new Error('VITE_API_BASE_URL is not configured for this build.')
   const url = new URL(`${BASE_URL}/api${path}`)
   Object.entries(query ?? {}).forEach(([k, v]) => v !== undefined && url.searchParams.set(k, String(v)))
   return url.toString()
@@ -54,6 +61,11 @@ async function request<T>(method: string, path: string, opts: { query?: Query; b
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   })
   if (!res.ok) {
+    if (res.status === 401 && token) {
+      // The stored session was rejected (expired or revoked): drop it so the route guards ask for sign-in.
+      clearAuthToken()
+      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+    }
     const err = (await res.json().catch(() => null)) as ApiError | null
     throw new HttpError(err?.detail ?? `Request failed (${res.status})`, res.status)
   }

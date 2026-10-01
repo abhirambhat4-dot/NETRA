@@ -1,10 +1,11 @@
 import type * as React from 'react'
-import { Navigate, Outlet, createBrowserRouter } from 'react-router-dom'
+import { Outlet, createBrowserRouter } from 'react-router-dom'
 import { RedirectAuthenticated, RequireAuth } from '@/auth/RouteGuards'
 import { AppLayout } from '@/layouts/AppLayout'
 import { ROUTES, type RouteHandle } from '@/lib/navigation'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
+import { PublicLandingPage } from '@/pages/PublicLandingPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 
 const handle = (h: RouteHandle) => h
@@ -16,6 +17,7 @@ const page =
     load().then((m) => ({ Component: m[name] }))
 
 export const router = createBrowserRouter([
+  { path: ROUTES.home, element: <RedirectAuthenticated><PublicLandingPage /></RedirectAuthenticated> },
   { path: ROUTES.login, element: <RedirectAuthenticated><LoginPage /></RedirectAuthenticated> },
   { path: ROUTES.register, element: <RedirectAuthenticated><RegisterPage /></RedirectAuthenticated> },
   {
@@ -33,7 +35,6 @@ export const router = createBrowserRouter([
     element: <RequireAuth><AppLayout /></RequireAuth>,
     hydrateFallbackElement: <div className="min-h-svh bg-background" />,
     children: [
-      { index: true, element: <Navigate to={ROUTES.dashboard} replace /> },
       {
         path: ROUTES.dashboard,
         lazy: page(() => import('@/pages/CommandCenterPage'), 'CommandCenterPage'),

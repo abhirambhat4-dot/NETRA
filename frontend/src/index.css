@@ -6,23 +6,18 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ==========================================================================
-   NETRA design tokens
-   Obsidian base · graphite surfaces · electric blue interactive accent ·
-   violet secondary · cyan reserved for live/technical indicators.
-   ========================================================================== */
-
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
-    --font-mono: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
+    --font-sans: 'Geist Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'Geist Mono Variable', 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
 
-    /* Risk / severity semantics — text-critical, bg-high/10, border-medium/30 … */
     --color-critical: var(--sev-critical);
     --color-high: var(--sev-high);
     --color-medium: var(--sev-medium);
     --color-low: var(--sev-low);
     --color-info: var(--sev-info);
+    --color-success: var(--success);
+    --color-warning: var(--warning);
 
     --color-violet: var(--brand-violet);
     --color-cyan: var(--tech-cyan);
@@ -72,146 +67,149 @@
 :root {
     color-scheme: dark;
 
-    /* Base layers — obsidian → graphite */
-    --background: #07090d;
-    --surface: #0d1118;
-    --surface-raised: #151a23;
+    --background: #05070B;
+    --surface: #101720;
+    --surface-raised: #0A0F16;
+    --foreground: #EAF3FF;
+    --card: #101720;
+    --card-foreground: #EAF3FF;
+    --popover: #0A0F16;
+    --popover-foreground: #EAF3FF;
 
-    --foreground: #f3f6fa;
-    --card: #0d1118;
-    --card-foreground: #f3f6fa;
-    --popover: #121720;
-    --popover-foreground: #f3f6fa;
+    --primary: #38D9FF;
+    --primary-foreground: #041118;
+    --secondary: #141C29;
+    --secondary-foreground: #DDEAFB;
+    --muted: #0D141C;
+    --muted-foreground: #8EA2B5;
+    --accent: #121B27;
+    --accent-foreground: #EAF3FF;
+    --destructive: #FF4D5E;
+    --brand-violet: #4F7CFF;
+    --tech-cyan: #38D9FF;
 
-    /* Brand */
-    --primary: #4f8cff;
-    --primary-foreground: #ffffff;
-    --brand-violet: #8b5cf6;
-    --tech-cyan: #22d3ee;
+    --border: rgba(160, 180, 200, 0.14);
+    --input: rgba(160, 180, 200, 0.18);
+    --ring: rgba(56, 217, 255, 0.5);
 
-    --secondary: #151a23;
-    --secondary-foreground: #e6ebf2;
-    --muted: #131821;
-    --muted-foreground: #8b95a7;
-    --accent: #171d28;
-    --accent-foreground: #f3f6fa;
-    --destructive: #f2555a;
+    --sev-critical: #FF4D5E;
+    --sev-high: #FF8A3D;
+    --sev-medium: #F5B942;
+    --sev-low: #39D98A;
+    --sev-info: #6DA3FF;
+    --success: #39D98A;
+    --warning: #F5B942;
 
-    --border: rgb(148 163 184 / 0.09);
-    --input: rgb(148 163 184 / 0.14);
-    --ring: rgb(79 140 255 / 0.6);
+    --chart-1: #38D9FF;
+    --chart-2: #4F7CFF;
+    --chart-3: #39D98A;
+    --chart-4: #F5B942;
+    --chart-5: #FF8A3D;
 
-    /* Severity — semantic only, never reused for categories */
-    --sev-critical: #f2555a;
-    --sev-high: #fb8c3c;
-    --sev-medium: #f5b83d;
-    --sev-low: #3ccb7f;
-    --sev-info: #7c93c3;
+    --radius: 0.9rem;
 
-    /* Categorical, validated CVD-safe on #0D1118 (order fixed):
-       1 Suricata · 2 Threat Intel · 3 ML detector */
-    --chart-1: #4f8cff;
-    --chart-2: #0fa89a;
-    --chart-3: #b45cf0;
-    --chart-4: #8b95a7;
-    --chart-5: #5a6478;
-
-    --radius: 0.625rem;
-
-    --sidebar: #090c11;
-    --sidebar-foreground: #c9d1dd;
-    --sidebar-primary: #4f8cff;
-    --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: rgb(79 140 255 / 0.1);
-    --sidebar-accent-foreground: #f3f6fa;
-    --sidebar-border: rgb(148 163 184 / 0.08);
-    --sidebar-ring: rgb(79 140 255 / 0.6);
+    --sidebar: #0A0F16;
+    --sidebar-foreground: #DDEAFB;
+    --sidebar-primary: #38D9FF;
+    --sidebar-primary-foreground: #041118;
+    --sidebar-accent: rgba(56, 217, 255, 0.08);
+    --sidebar-accent-foreground: #EAF3FF;
+    --sidebar-border: rgba(165, 180, 195, 0.12);
+    --sidebar-ring: rgba(56, 217, 255, 0.5);
 }
 
 @layer base {
     * {
         @apply border-border outline-ring/50;
+        box-sizing: border-box;
     }
+
     html {
         @apply font-sans antialiased;
+        scroll-behavior: smooth;
         font-feature-settings: 'ss01', 'cv11';
     }
+
     body {
         @apply bg-background text-foreground;
+        min-height: 100vh;
+        background:
+            radial-gradient(circle at top, rgba(56, 217, 255, 0.12), transparent 30%),
+            radial-gradient(circle at 80% 12%, rgba(79, 124, 255, 0.14), transparent 26%),
+            var(--background);
     }
+
+    #root {
+        min-height: 100vh;
+    }
+
     ::selection {
-        background: rgb(79 140 255 / 0.3);
+        background: rgba(56, 217, 255, 0.28);
     }
+
     * {
         scrollbar-width: thin;
-        scrollbar-color: rgb(148 163 184 / 0.16) transparent;
+        scrollbar-color: rgba(148, 163, 184, 0.22) transparent;
     }
 }
 
-/* ==========================================================================
-   NETRA utilities
-   ========================================================================== */
+@layer components {
+    .netra-panel {
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(16, 23, 32, 0.92), rgba(9, 13, 18, 0.9));
+        box-shadow: 0 14px 40px -28px rgba(56, 217, 255, 0.22);
+    }
 
-/* Micro-label for technical metadata — use sparingly */
+    .netra-section {
+        position: relative;
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(12, 18, 25, 0.9), rgba(8, 12, 18, 0.92));
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+    }
+}
+
 @utility eyebrow {
-    font-size: 0.6875rem;
+    font-size: 0.73rem;
     line-height: 1rem;
-    font-weight: 500;
-    letter-spacing: 0.12em;
+    font-weight: 600;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
     color: var(--muted-foreground);
 }
 
-/* Large metric numbers */
 @utility metric {
     font-weight: 600;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.04em;
     font-variant-numeric: tabular-nums;
     line-height: 1;
 }
 
-/* Layered panel: graphite surface, hairline border, top sheen, soft depth */
 @utility surface-panel {
-    background:
-        linear-gradient(180deg, rgb(255 255 255 / 0.028) 0%, rgb(255 255 255 / 0) 120px),
-        rgb(13 17 24 / 0.82);
+    background: var(--surface);
     border: 1px solid var(--border);
-    box-shadow:
-        inset 0 1px 0 0 rgb(255 255 255 / 0.035),
-        0 1px 2px 0 rgb(0 0 0 / 0.4),
-        0 12px 32px -16px rgb(0 0 0 / 0.6);
-    backdrop-filter: blur(14px);
 }
 
-/* Inset well inside a panel (list rows, mini tiles) */
 @utility surface-inset {
-    background: rgb(255 255 255 / 0.018);
-    border: 1px solid rgb(148 163 184 / 0.07);
+    background: rgba(255, 255, 255, 0.014);
+    border: 1px solid rgba(148, 163, 184, 0.08);
 }
 
-/* Glass: for chrome sitting above scrolling content */
 @utility surface-glass {
-    background: rgb(9 12 17 / 0.72);
-    backdrop-filter: blur(18px) saturate(140%);
+    background: rgba(10, 15, 22, 0.68);
+    backdrop-filter: blur(16px);
 }
 
-/* App background: restrained blue/violet lighting */
 @utility netra-atmosphere {
-    background-image:
-        radial-gradient(ellipse 60% 40% at 20% -8%, rgb(79 140 255 / 0.07), transparent 70%),
-        radial-gradient(ellipse 45% 35% at 95% 0%, rgb(139 92 246 / 0.055), transparent 70%);
+    background-color: var(--background);
 }
 
-/* Technical grid texture fading from the top */
 @utility netra-grid {
     background-image:
-        linear-gradient(to right, rgb(148 163 184 / 0.035) 1px, transparent 1px),
-        linear-gradient(to bottom, rgb(148 163 184 / 0.035) 1px, transparent 1px);
-    background-size: 48px 48px;
-    mask-image: radial-gradient(ellipse 75% 55% at 50% 0%, black 25%, transparent 80%);
+        linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+    background-size: 30px 30px;
 }
 
-/* Gentle pulsing status dot */
 @keyframes netra-pulse {
     0%, 100% { opacity: 0.5; transform: scale(1); }
     50% { opacity: 0; transform: scale(2.4); }
@@ -221,32 +219,22 @@
     animation: netra-pulse 2.4s ease-out infinite;
 }
 
-@media (prefers-reduced-motion: reduce) {
-    .animate-status-pulse {
-        animation: none;
-    }
-}
-
-/* ==========================================================================
-   Login gateway backdrop (pages/login/CyberBackdrop.tsx)
-   Opacity / transform / dash-offset only — cheap to animate.
-   ========================================================================== */
-
 @keyframes cb-spin {
     to { transform: rotate(360deg); }
 }
+
 .cb-spin {
     transform-box: view-box;
     animation: cb-spin 14s linear infinite;
 }
 
-/* A short highlight travelling along a path (pathLength = 1000) */
 @keyframes cb-flow {
     0% { stroke-dashoffset: 80; opacity: 0; }
     6% { opacity: 0.85; }
-    55% { stroke-dashoffset: -1000; opacity: 0.85; }
+    55% { stroke-dashoffset: -1000; opacity: 0.82; }
     60%, 100% { stroke-dashoffset: -1000; opacity: 0; }
 }
+
 .cb-flow {
     stroke-dasharray: 80 1100;
     opacity: 0;
@@ -257,6 +245,7 @@
     0% { transform: scale(1); opacity: 0.8; }
     55%, 100% { transform: scale(5); opacity: 0; }
 }
+
 .cb-pulse {
     transform-box: fill-box;
     transform-origin: center;
@@ -268,8 +257,84 @@
     0%, 100% { opacity: 0.45; }
     50% { opacity: 1; }
 }
+
+@keyframes netra-float {
+    0%, 100% { transform: translateY(0); opacity: 0.8; }
+    50% { transform: translateY(-6px); opacity: 1; }
+}
+
+@keyframes pipeline-signal {
+    0% { transform: translateX(-16px); opacity: 0; }
+    15% { opacity: 1; }
+    80% { opacity: 1; }
+    100% { transform: translateX(150px); opacity: 0; }
+}
+
+@keyframes reasoning-step {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+
+.netra-reasoning-step {
+    animation: reasoning-step 400ms ease-out forwards;
+}
+
+.netra-pipeline-track {
+    position: relative;
+}
+
+.netra-pipeline-track::before {
+    content: '';
+    position: absolute;
+    left: 2rem;
+    right: 2rem;
+    top: 50%;
+    height: 1px;
+    transform: translateY(-50%);
+    background: linear-gradient(90deg, rgba(56, 217, 255, 0.12), rgba(56, 217, 255, 0.5), rgba(79, 124, 255, 0.12));
+}
+
+.netra-pipeline-signal {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background: radial-gradient(circle, rgba(56, 217, 255, 1), rgba(56, 217, 255, 0.35));
+    box-shadow: 0 0 18px rgba(56, 217, 255, 0.65);
+    transform: translate(-40px, -50%);
+    animation: pipeline-signal 2.1s cubic-bezier(0.22, 1, 0.36, 1) 300ms forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+
 .cb-node {
     animation: cb-node 3.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+
+    .animate-status-pulse {
+        animation: none;
+    }
 }
 
 @keyframes cb-label {

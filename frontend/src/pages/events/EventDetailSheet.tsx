@@ -1,37 +1,52 @@
+import { ArrowRight, Copy, Link2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, Copy } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Asset, SecurityEvent } from '@/api/types'
-import { RiskTile } from '@/components/incidents/IncidentRow'
-import { DetailSection, DetailSheet, KeyValueList, LoadingState, MeterBar, SeverityBadge, StatusBadge } from '@/components/netra'
+import type { EventsPageItem } from '@/api/types'
+import { DetailSection, DetailSheet, ErrorState, KeyValueList, LoadingState, MeterBar, SeverityBadge, StatusBadge } from '@/components/netra'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useQuery } from '@/hooks/useQuery'
 import { formatDateTime } from '@/lib/format'
+import { eventSourceMeta } from '@/lib/sources'
 import { ROUTES } from '@/lib/navigation'
-import { detectionSourceMeta } from '@/lib/sources'
-import { incidentService } from '@/services'
 
 interface Props {
-  event?: SecurityEvent
-  asset?: Asset
+  event?: EventsPageItem
+  eventId: string | null
+  relatedEvents: EventsPageItem[]
+  onOpenRelated: (id: string | null) => void
   onClose: () => void
+  loading: boolean
+  error?: Error
+  onRetry: () => void
 }
 
 /**
  * Event drawer — the Summary tab answers "what is this and does it matter";
  * network, detection, anomaly and raw data are one tab away.
  */
-export function EventDetailSheet({ event, asset, onClose }: Props) {
+export function EventDetailSheet({ event, eventId, relatedEvents, onOpenRelated, onClose, loading, error, onRetry }: Props) {
   return (
     <DetailSheet
-      open={!!event}
+      open={!!eventId}
       onOpenChange={(o) => !o && onClose()}
-      eyebrow={event && `${event.id} · ${formatDateTime(event.timestamp)} UTC`}
-      title={event?.eventType ?? ''}
+      eyebrow={event ? `${event.eventUid ?? event.id} · ${formatDateTime(event.timestamp)} UTC` : eventId ?? undefined}
+      title={event?.eventType ?? (loading ? 'Loading event' : 'Security event')}
       description={event?.signature ?? undefined}
     >
-      {event && <Body key={event.id} event={event} asset={asset} />}
+      {loading && !event && <LoadingState variant="inline" label="Loading event details…" />}
+      {error && (
+        <ErrorState
+          title={error instanceof Error && 'status' in error && error.status === 401 ? 'Authentication required' : 'Event details unavailable'}
+          message={error instanceof Error && 'status' in error && error.status === 401 ? undefined : error.message}
+          onRetry={error instanceof Error && 'status' in error && error.status === 401 ? undefined : onRetry}
+        />
+      )}
+      {error instanceof Error && 'status' in error && error.status === 401 && (
+        <div className="-mt-8 pb-8 text-center">
+          <Button asChild><Link to={ROUTES.login}>Sign in</Link></Button>
+        </div>
+      )}
+      {event && <Body key={event.id} event={event} relatedEvents={relatedEvents} onOpenRelated={onOpenRelated} />}
     </DetailSheet>
   )
 }
@@ -50,12 +65,9 @@ function anomalyReading(score: number) {
   return 'Within normal variation for this source.'
 }
 
-function Body({ event: e, asset }: { event: SecurityEvent; asset?: Asset }) {
-  const src = detectionSourceMeta[e.detectionSource]
-  const incident = useQuery(`event-incident-${e.incidentId}`, () =>
-    e.incidentId ? incidentService.get(e.incidentId) : Promise.resolve(null),
-  )
-  const anomalyTone = e.anomalyScore >= 0.75 ? 'critical' : e.anomalyScore >= 0.5 ? 'high' : 'accent'
+function Body({ event: e, relatedEvents, onOpenRelated }: { event: EventsPageItem; relatedEvents: EventsPageItem[]; onOpenRelated: (id: string | null) => void }) {
+  const src = eventSourceMeta(e.detectionSource)
+  const anomalyTone = e.anomalyScore === null ? 'accent' : e.anomalyScore >= 0.75 ? 'critical' : e.anomalyScore >= 0.5 ? 'high' : 'accent'
 
   const copyRaw = () => {
     navigator.clipboard
@@ -86,45 +98,67 @@ function Body({ event: e, asset }: { event: SecurityEvent; asset?: Asset }) {
 
         {/* SUMMARY */}
         <TabsContent value="summary" className="space-y-6 motion-safe:animate-in motion-safe:fade-in-0">
-          <DetailSection title="Correlated incident">
-            {!e.incidentId ? (
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                Not correlated. NETRA keeps uncorrelated events for context; they do not affect risk scoring on their own.
-              </p>
-            ) : !incident.data ? (
-              <LoadingState count={2} />
-            ) : (
-              <div className="surface-inset space-y-3 rounded-lg p-3.5">
-                <div className="flex items-center gap-3">
-                  <RiskTile score={incident.data.incident.riskScore} severity={incident.data.incident.severity} />
-                  <div className="min-w-0">
-                    <div className="truncate text-[13px] font-medium">{incident.data.incident.threatName}</div>
-                    <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                      {incident.data.incident.id} · {incident.data.incident.eventCount} events
-                    </div>
-                  </div>
-                  <StatusBadge status={incident.data.incident.status} size="sm" className="ml-auto" />
-                </div>
-                <Button asChild size="sm" className="w-full">
-                  <Link to={ROUTES.incident(e.incidentId)}>
-                    Open incident <ArrowRight />
-                  </Link>
-                </Button>
+          <DetailSection title="Evidence relationship">
+            <div className="relative space-y-4 pl-4 before:absolute before:inset-y-2 before:left-[5px] before:w-px before:bg-border">
+              <div className="relative">
+                <span className="absolute -left-4 top-1 size-2.5 rounded-full border border-primary bg-background" />
+                <div className="text-[10px] font-medium text-primary">EVENT</div>
+                <div className="mt-1 font-mono text-[11px] text-foreground/85">{e.id} · {e.eventType}</div>
               </div>
-            )}
+              <div className="relative">
+                <span className="absolute -left-4 top-1 size-2.5 rounded-full border border-border bg-surface" />
+                <div className="text-[10px] font-medium text-muted-foreground">RELATED EVENTS</div>
+                {relatedEvents.length ? (
+                  <div className="mt-1.5 space-y-1">
+                    {relatedEvents.map((related) => (
+                      <button
+                        key={related.id}
+                        type="button"
+                        onClick={() => onOpenRelated(related.id)}
+                        className="flex w-full items-center justify-between gap-2 rounded-sm py-1 text-left transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-primary"
+                      >
+                        <span className="min-w-0 truncate text-[11px] text-foreground/85">{related.eventType}</span>
+                        <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+                          {related.id}<ArrowRight className="size-3" aria-hidden />
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-[11px] text-muted-foreground">No sibling events share this incident correlation.</p>
+                )}
+              </div>
+              <div className="relative">
+                <span className="absolute -left-4 top-1 size-2.5 rounded-full border border-primary/60 bg-primary/15" />
+                <div className="text-[10px] font-medium text-muted-foreground">INCIDENT</div>
+                {e.incidentIds.length ? (
+                  <div className="mt-1.5 space-y-1">
+                    {e.incidentIds.map((incidentId) => (
+                      <Link key={incidentId} to={ROUTES.incident(incidentId)} className="flex items-center gap-1.5 font-mono text-[11px] text-primary hover:underline">
+                        <Link2 className="size-3" aria-hidden />{incidentId}
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    Not correlated. This event remains evidence for context and does not affect incident risk by itself.
+                  </p>
+                )}
+              </div>
+            </div>
           </DetailSection>
 
           <DetailSection title="Affected asset">
-            {asset ? (
-              <Link to={`${ROUTES.assets}?asset=${asset.id}`} className="surface-inset flex items-center justify-between rounded-lg p-3.5 transition-colors hover:border-primary/25">
+            {e.asset ? (
+              <div className="surface-inset flex items-center justify-between gap-3 rounded-lg p-3.5">
                 <div>
-                  <div className="text-[13px] font-medium">{asset.name}</div>
+                  <div className="text-[13px] font-medium">{e.asset.name}</div>
                   <div className="font-mono text-[11px] text-muted-foreground">
-                    {asset.hostname} · {asset.ipAddress}
+                    {e.asset.hostname ?? '—'} · {e.asset.ipAddress ?? '—'}
                   </div>
+                  <div className="mt-1 text-[10px] text-muted-foreground">{e.asset.criticality} · {e.asset.status}</div>
                 </div>
-                <StatusBadge status={asset.posture} size="sm" />
-              </Link>
+              </div>
             ) : (
               <p className="text-xs text-muted-foreground">No managed asset matched this event.</p>
             )}
@@ -133,8 +167,8 @@ function Body({ event: e, asset }: { event: SecurityEvent; asset?: Asset }) {
           <KeyValueList
             columns={2}
             items={[
-              { label: 'Flow', value: `${e.sourceIp} → ${e.destinationIp}`, mono: true },
-              { label: 'Anomaly score', value: `${Math.round(e.anomalyScore * 100)}%`, mono: true },
+              { label: 'Flow', value: `${e.sourceIp ?? '—'} → ${e.destinationIp ?? '—'}`, mono: true },
+              { label: 'Anomaly score', value: e.anomalyScore === null ? '—' : `${Math.round(e.anomalyScore * 100)}%`, mono: true },
             ]}
           />
         </TabsContent>
@@ -144,12 +178,12 @@ function Body({ event: e, asset }: { event: SecurityEvent; asset?: Asset }) {
           <KeyValueList
             columns={2}
             items={[
-              { label: 'Source IP', value: e.sourceIp, mono: true },
+              { label: 'Source IP', value: e.sourceIp ?? '—', mono: true },
               { label: 'Source port', value: e.sourcePort ?? '—', mono: true },
-              { label: 'Destination IP', value: e.destinationIp, mono: true },
+              { label: 'Destination IP', value: e.destinationIp ?? '—', mono: true },
               { label: 'Destination port', value: e.destinationPort ?? '—', mono: true },
-              { label: 'Protocol', value: e.protocol },
-              { label: 'Destination asset', value: asset?.name ?? 'Unmanaged' },
+              { label: 'Protocol', value: e.protocol ?? '—' },
+              { label: 'Destination asset', value: e.asset?.name ?? 'Unmanaged' },
             ]}
           />
         </TabsContent>
@@ -176,14 +210,18 @@ function Body({ event: e, asset }: { event: SecurityEvent; asset?: Asset }) {
 
         {/* ANOMALY */}
         <TabsContent value="anomaly" className="motion-safe:animate-in motion-safe:fade-in-0">
-          <div className="surface-inset space-y-3 rounded-lg p-4">
-            <div className="flex items-baseline justify-between">
-              <span className="text-xs text-muted-foreground">ML anomaly score</span>
-              <span className="metric text-2xl">{Math.round(e.anomalyScore * 100)}%</span>
+          {e.anomalyScore === null ? (
+            <p className="text-xs text-muted-foreground">No anomaly score was recorded for this event.</p>
+          ) : (
+            <div className="surface-inset space-y-3 rounded-lg p-4">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs text-muted-foreground">ML anomaly score</span>
+                <span className="metric text-2xl">{Math.round(e.anomalyScore * 100)}%</span>
+              </div>
+              <MeterBar value={e.anomalyScore * 100} tone={anomalyTone} />
+              <p className="text-xs leading-relaxed text-foreground/80">{anomalyReading(e.anomalyScore)}</p>
             </div>
-            <MeterBar value={e.anomalyScore * 100} tone={anomalyTone} />
-            <p className="text-xs leading-relaxed text-foreground/80">{anomalyReading(e.anomalyScore)}</p>
-          </div>
+          )}
         </TabsContent>
 
         {/* RAW */}

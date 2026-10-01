@@ -5,11 +5,15 @@ import { severityTone, toneStyles } from '@/lib/tones'
 import { cn } from '@/lib/utils'
 
 /** Top observed ATT&CK techniques (Command Center → Detection intelligence). */
-export function TechniqueList({ techniques }: { techniques?: TechniqueObservation[] }) {
+export function TechniqueList({ techniques }: { techniques?: TechniqueObservation[] | null }) {
   const maxEvents = Math.max(1, ...(techniques ?? []).map((t) => t.eventCount))
 
-  return !techniques ? (
+  return techniques === null ? (
+        <p className="px-5 py-4 text-xs text-muted-foreground">ATT&amp;CK observations are unavailable from the live API.</p>
+      ) : !techniques ? (
         <LoadingState className="px-5 py-2" count={6} />
+      ) : techniques.length === 0 ? (
+        <p className="px-5 py-4 text-xs text-muted-foreground">No observed techniques.</p>
       ) : (
         <ul>
           {techniques.slice(0, 6).map((t) => {

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
 import { ChevronRight, FileCode2, Globe, Link2, Network } from 'lucide-react'
-import type { IndicatorType, TechniqueObservation, ThreatIndicator } from '@/api/types'
+import type { IndicatorType, TechniqueObservation, ThreatIndicatorInventoryItem } from '@/api/types'
 import {
   Disclosure,
   EmptyState,
@@ -17,16 +17,19 @@ import {
   SearchInput,
   SegmentedControl,
   SeverityBadge,
+  ToneBadge,
 } from '@/components/netra'
+import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useNow } from '@/hooks/useNow'
 import { useQuery } from '@/hooks/useQuery'
+import { useCountUp } from '@/hooks/useCountUp'
 import { defang, shortHash } from '@/lib/defang'
 import { formatClock, formatNumber, timeAgo } from '@/lib/format'
 import { ROUTES } from '@/lib/navigation'
 import { SEVERITY_ORDER, severityRowAccent } from '@/lib/tones'
 import { cn } from '@/lib/utils'
-import { eventService, threatIntelService } from '@/services'
+import { eventService, threatIntelInventoryService, threatIntelService } from '@/services'
+import { HttpError, USE_MOCKS } from '@/services/http'
 import { IndicatorDetailSheet } from './intel/IndicatorDetailSheet'
 
 const TYPE_META: Record<IndicatorType, { label: string; icon: LucideIcon }> = {
@@ -48,73 +51,118 @@ const TACTIC_ORDER = [
 ]
 
 type Sort = 'priority' | 'recent'
-const sevRank = (i: ThreatIndicator) => SEVERITY_ORDER.indexOf(i.severity)
+const sevRank = (i: ThreatIndicatorInventoryItem) => SEVERITY_ORDER.indexOf(i.severity)
 
 export function ThreatIntelligencePage() {
   const [params, setParams] = useSearchParams()
   const [type, setType] = useState<IndicatorType | 'ALL'>('ALL')
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<Sort>('priority')
-  const now = useNow(60_000)
 
-  const indicators = useQuery('intel-indicators', threatIntelService.listIndicators)
-  const techniques = useQuery('intel-techniques', threatIntelService.getObservedTechniques)
-  const intelEvents = useQuery('intel-events', () => eventService.list({ detectionSource: 'THREAT_INTEL', pageSize: 8 }))
-  const allEvents = useQuery('intel-all-events', () => eventService.list({ pageSize: 1000 }))
+  const queryKey = JSON.stringify([type, search, sort])
+  const indicators = useQuery(`intel-indicators-${USE_MOCKS ? 'mock' : queryKey}`, () =>
+    threatIntelInventoryService.list(
+      USE_MOCKS
+        ? undefined
+        : {
+            indicatorType: type === 'ALL' ? undefined : type,
+            search: search.trim() || undefined,
+            sortBy: sort === 'recent' ? 'lastSeen' : 'severity',
+            sortOrder: 'desc',
+          },
+    ),
+  )
+  const techniques = useQuery('intel-techniques', () =>
+    USE_MOCKS ? threatIntelService.getObservedTechniques() : Promise.resolve([]),
+  )
+  const intelEvents = useQuery('intel-events', () => eventService.listForEventsPage({ detectionSource: 'THREAT_INTEL' }))
+  const allEvents = useQuery('intel-all-events', () => eventService.listForEventsPage())
 
   const all = useMemo(() => indicators.data ?? [], [indicators.data])
+  // Live filters run server-side, so metrics, type counts and the mix come from an unfiltered read.
+  const inventory = useQuery(`intel-inventory-${USE_MOCKS ? 'mock' : 'live'}`, () =>
+    USE_MOCKS ? Promise.resolve(undefined) : threatIntelInventoryService.list(),
+  )
+  const inventoryData = USE_MOCKS ? indicators.data : inventory.data
+  const inventoryItems = useMemo(() => inventoryData ?? [], [inventoryData])
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return all
       .filter(
         (i) =>
           (type === 'ALL' || i.type === type) &&
-          (!q || [i.value, i.source, i.description, ...i.tags, ...i.incidentIds].some((f) => f.toLowerCase().includes(q))),
+          (!q || [i.value, i.source, i.description ?? '', ...(i.tags ?? []), ...(i.incidentIds ?? [])].some((f) => f.toLowerCase().includes(q))),
       )
       .sort((a, b) =>
         sort === 'priority'
-          ? sevRank(a) - sevRank(b) || b.incidentIds.length - a.incidentIds.length || b.confidence - a.confidence
+          ? sevRank(a) - sevRank(b) ||
+            (b.incidentIds?.length ?? 0) - (a.incidentIds?.length ?? 0) ||
+            (b.confidence ?? -1) - (a.confidence ?? -1)
           : Date.parse(b.lastSeen) - Date.parse(a.lastSeen),
       )
   }, [all, type, search, sort])
 
-  const linked = all.filter((i) => i.incidentIds.length > 0)
-  const feeds = [...new Set(all.map((i) => i.source))]
-  const selected = all.find((i) => i.id === params.get('indicator'))
+  const selectedId = params.get('indicator')
+  const listedSelection = all.find((indicator) => indicator.id === selectedId)
+  const selectedDetail = useQuery(`intel-indicator-${USE_MOCKS ? 'mock' : selectedId ?? 'none'}`, () =>
+    !USE_MOCKS && selectedId ? threatIntelInventoryService.get(selectedId) : Promise.resolve(undefined),
+  )
+  const selected = USE_MOCKS
+    ? listedSelection
+    : selectedDetail.data?.id === selectedId
+      ? selectedDetail.data
+      : listedSelection
+
+  const confidenceAvailable = inventoryItems.every((i) => i.confidence !== null)
+  const activeAvailable = inventoryItems.every((i) => i.isActive !== undefined && i.isActive !== null)
+  const feeds = [...new Set(inventoryItems.map((i) => i.source))]
   const openIndicator = (id: string | null) => {
     const next = new URLSearchParams(params)
     if (id) next.set('indicator', id)
     else next.delete('indicator')
     setParams(next, { replace: true })
   }
-  const bySev = (s: ThreatIndicator['severity']) => all.filter((i) => i.severity === s).length
+  const bySev = (s: ThreatIndicatorInventoryItem['severity']) => inventoryItems.filter((i) => i.severity === s).length
+  const activeCount = inventoryItems.filter((indicator) => indicator.isActive === true).length
+  const highConfidenceCount = inventoryItems.filter((indicator) => indicator.confidence !== null && indicator.confidence >= 0.8).length
+  const highSeverityCount = bySev('CRITICAL') + bySev('HIGH')
+  const totalAnimated = useCountUp(inventoryItems.length, 650)
+  const activeAnimated = useCountUp(activeCount, 650)
+  const confidenceAnimated = useCountUp(highConfidenceCount, 650)
+  const severityAnimated = useCountUp(highSeverityCount, 650)
 
   return (
     <PageContainer>
       <PageHeader
         title="Threat Intelligence"
-        description="Indicators of compromise and ATT&CK techniques that NETRA correlates with detections to raise or lower incident risk."
+        description={USE_MOCKS
+          ? 'Indicators of compromise and ATT&CK techniques that NETRA correlates with detections to raise or lower incident risk.'
+          : 'Feed-reported indicators with source, severity, optional confidence and observed dates.'}
       />
 
       <MetricStrip
         metrics={[
           {
-            label: 'Indicators',
-            value: all.length || '—',
-            hint: `${feeds.length} sources · ${all.filter((i) => i.confidence >= 0.8).length} high confidence`,
+            label: 'Total indicators',
+            value: inventoryData ? formatNumber(Math.round(totalAnimated)) : '—',
+            hint: `${feeds.length} observed feeds`,
           },
           {
-            label: 'Critical / High',
-            value: indicators.data ? `${bySev('CRITICAL')} / ${bySev('HIGH')}` : '—',
-            valueClassName: 'text-high',
-            hint: 'priority indicators',
-          },
-          { label: 'Matched to incidents', value: linked.length, hint: `${new Set(linked.flatMap((i) => i.incidentIds)).size} incidents enriched` },
-          {
-            label: 'Recent matches · 24h',
-            value: all.filter((i) => now.getTime() - Date.parse(i.lastSeen) < 86_400_000).length,
+            label: 'Active indicators',
+            value: inventoryData && activeAvailable ? formatNumber(Math.round(activeAnimated)) : '—',
             valueClassName: 'text-cyan',
-            hint: 'indicator seen again',
+            hint: activeAvailable ? 'feed-reported status' : 'status not returned for all indicators',
+          },
+          {
+            label: 'High confidence',
+            value: inventoryData && confidenceAvailable ? formatNumber(Math.round(confidenceAnimated)) : '—',
+            hint: confidenceAvailable ? 'feed confidence ≥80%' : 'confidence not returned for all indicators',
+          },
+          {
+            label: 'High severity',
+            value: inventoryData ? formatNumber(Math.round(severityAnimated)) : '—',
+            valueClassName: 'text-high',
+            hint: `${bySev('CRITICAL')} critical · ${bySev('HIGH')} high`,
           },
         ]}
       />
@@ -144,26 +192,43 @@ export function ThreatIntelligencePage() {
                 value={type}
                 onChange={setType}
                 options={[
-                  { value: 'ALL', label: 'All', count: all.length },
+                  { value: 'ALL', label: 'All', count: inventoryItems.length },
                   ...(Object.keys(TYPE_META) as IndicatorType[]).map((t) => ({
                     value: t,
                     label: TYPE_META[t].label,
-                    count: all.filter((i) => i.type === t).length,
+                    count: inventoryItems.filter((i) => i.type === t).length,
                   })),
                 ]}
               />
-              <SearchInput value={search} onChange={setSearch} placeholder="Search indicator, tag, feed…" className="sm:w-64" />
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder={USE_MOCKS ? 'Search indicator, tag, feed…' : 'Search indicator or feed…'}
+                className="sm:w-64"
+              />
             </div>
             {indicators.error ? (
-              <ErrorState onRetry={indicators.reload} />
+              <div>
+                <ErrorState
+                  title={indicators.error instanceof HttpError && indicators.error.status === 401 ? 'Authentication required' : 'Threat indicators unavailable'}
+                  message={indicators.error instanceof HttpError && indicators.error.status === 401 ? undefined : indicators.error.message}
+                  onRetry={indicators.error instanceof HttpError && indicators.error.status === 401 ? undefined : indicators.reload}
+                />
+                {indicators.error instanceof HttpError && indicators.error.status === 401 && (
+                  <div className="-mt-8 pb-8 text-center"><Button asChild><Link to={ROUTES.login}>Sign in</Link></Button></div>
+                )}
+              </div>
             ) : !indicators.data ? (
               <LoadingState className="p-5" count={8} />
             ) : filtered.length === 0 ? (
-              <EmptyState title="No indicators match" />
+              <EmptyState
+                title={inventoryItems.length ? 'No indicators match' : 'No threat indicators'}
+                description={inventoryItems.length ? 'Adjust the type filter or search terms.' : 'No indicators are available from the current intelligence sources.'}
+              />
             ) : (
               <ul>
-                {filtered.map((i) => (
-                  <IndicatorRow key={i.id} indicator={i} active={selected?.id === i.id} onOpen={() => openIndicator(i.id)} />
+                {filtered.map((i, index) => (
+                  <IndicatorRow key={i.id} indicator={i} active={selected?.id === i.id} onOpen={() => openIndicator(i.id)} entryIndex={index} />
                 ))}
               </ul>
             )}
@@ -172,12 +237,16 @@ export function ThreatIntelligencePage() {
 
         {/* Recent matches first; the mix is secondary */}
         <div className="flex flex-col gap-4 xl:col-span-4">
-          <Panel title="Recent intelligence matches" description="Events raised by threat-intel correlation">
-            {!intelEvents.data ? (
+          <Panel title="Recent threat-intelligence events" description="Events reported with the THREAT_INTEL source">
+            {intelEvents.error ? (
+              <ErrorState onRetry={intelEvents.reload} />
+            ) : !intelEvents.data ? (
               <LoadingState count={4} />
+            ) : intelEvents.data.items.length === 0 ? (
+              <EmptyState title="No threat-intelligence events" description="No retained event references use the threat-intelligence detection source." />
             ) : (
               <ul className="space-y-3">
-                {intelEvents.data.items.map((e) => (
+                {intelEvents.data.items.slice(0, 8).map((e) => (
                   <li key={e.id} className="grid grid-cols-[56px_minmax(0,1fr)] gap-2.5">
                     <span className="pt-0.5 font-mono text-[11px] text-muted-foreground">{formatClock(e.timestamp)}</span>
                     <div className="min-w-0">
@@ -186,9 +255,9 @@ export function ThreatIntelligencePage() {
                       </Link>
                       <div className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
                         <span className="truncate">{e.signature}</span>
-                        {e.incidentId && (
-                          <Link to={ROUTES.incident(e.incidentId)} className="shrink-0 font-mono text-primary hover:underline">
-                            {e.incidentId}
+                        {e.incidentIds[0] && (
+                          <Link to={ROUTES.incident(e.incidentIds[0])} className="shrink-0 font-mono text-primary hover:underline">
+                            {e.incidentIds[0]}
                           </Link>
                         )}
                       </div>
@@ -202,14 +271,14 @@ export function ThreatIntelligencePage() {
           <Panel title="Indicator mix" description="By type and source">
             <ul className="space-y-2.5">
               {(Object.keys(TYPE_META) as IndicatorType[]).map((t) => {
-                const n = all.filter((i) => i.type === t).length
+                const n = inventoryItems.filter((i) => i.type === t).length
                 const Icon = TYPE_META[t].icon
                 return (
                   <li key={t} className="grid grid-cols-[88px_1fr_24px] items-center gap-3 text-xs">
                     <span className="inline-flex items-center gap-1.5 text-muted-foreground">
                       <Icon className="size-3.5" /> {TYPE_META[t].label}
                     </span>
-                    <MeterBar value={n} max={Math.max(1, all.length)} tone="accent" />
+                    <MeterBar value={n} max={Math.max(1, inventoryItems.length)} tone="accent" />
                     <span className="text-right font-mono">{n}</span>
                   </li>
                 )
@@ -219,7 +288,7 @@ export function ThreatIntelligencePage() {
               <div className="flex flex-wrap gap-1.5">
                 {feeds.map((f) => (
                   <span key={f} className="rounded-md border border-border bg-foreground/3 px-2 py-0.5 text-[11px] text-foreground/80">
-                    {f} <span className="font-mono text-muted-foreground">{all.filter((i) => i.source === f).length}</span>
+                    {f} <span className="font-mono text-muted-foreground">{inventoryItems.filter((i) => i.source === f).length}</span>
                   </span>
                 ))}
               </div>
@@ -228,24 +297,41 @@ export function ThreatIntelligencePage() {
         </div>
       </div>
 
-      <MitreSection techniques={techniques.data} />
+      {!USE_MOCKS && (
+        <Panel title="ATT&CK correlations" description="Correlation data is not returned by the live API.">
+          <p className="text-sm text-muted-foreground">Unavailable</p>
+        </Panel>
+      )}
 
-      <IndicatorDetailSheet indicator={selected} events={allEvents.data?.items ?? []} onClose={() => openIndicator(null)} />
+      {USE_MOCKS && <MitreSection techniques={techniques.data} />}
+
+      <IndicatorDetailSheet
+        indicator={selectedDetail.error ? undefined : selected}
+        indicatorId={selectedId}
+        loading={selectedDetail.loading}
+        error={selectedDetail.error}
+        onRetry={selectedDetail.reload}
+        events={allEvents.data?.items ?? []}
+        onClose={() => openIndicator(null)}
+      />
     </PageContainer>
   )
 }
 
 /** Primary fields only: indicator, severity, source, confidence, linked incident. */
-function IndicatorRow({ indicator: i, active, onOpen }: { indicator: ThreatIndicator; active: boolean; onOpen: () => void }) {
+function IndicatorRow({ indicator: i, active, onOpen, entryIndex }: { indicator: ThreatIndicatorInventoryItem; active: boolean; onOpen: () => void; entryIndex: number }) {
   const Icon = TYPE_META[i.type].icon
   return (
-    <li className="border-b border-border/70 last:border-b-0">
+    <li
+      className="border-b border-border/70 last:border-b-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1"
+      style={{ animationDelay: `${Math.min(entryIndex, 8) * 35}ms` }}
+    >
       <button
         type="button"
         onClick={onOpen}
         aria-label={`${TYPE_META[i.type].label} indicator, ${i.severity}, open details`}
         className={cn(
-          'group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-5 py-3 text-left transition-colors outline-none hover:bg-foreground/2.5 focus-visible:bg-primary/6 md:grid-cols-[minmax(0,1.6fr)_110px_84px_auto_16px]',
+          'group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-5 py-3 text-left transition-colors outline-none hover:bg-foreground/2.5 focus-visible:bg-primary/6 md:grid-cols-[minmax(0,1.6fr)_110px_84px_78px_auto_16px]',
           severityRowAccent[i.severity],
           active && 'bg-primary/6',
         )}
@@ -258,6 +344,7 @@ function IndicatorRow({ indicator: i, active, onOpen }: { indicator: ThreatIndic
             <div className="truncate font-mono text-xs text-foreground/95">{i.type === 'HASH' ? shortHash(i.value) : defang(i.value, i.type)}</div>
             <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
               {TYPE_META[i.type].label} · {i.source} · seen {timeAgo(i.lastSeen)}
+              <span className="md:hidden"> · {i.confidence === null ? 'confidence not provided' : `${Math.round(i.confidence * 100)}% confidence`}</span>
             </div>
           </div>
         </div>
@@ -265,13 +352,15 @@ function IndicatorRow({ indicator: i, active, onOpen }: { indicator: ThreatIndic
         <div className="max-md:hidden">
           <div className="mb-1 flex justify-between text-[11px]">
             <span className="text-muted-foreground">confidence</span>
-            <span className="font-mono">{Math.round(i.confidence * 100)}%</span>
+            <span className="font-mono">{i.confidence === null ? 'Not provided' : `${Math.round(i.confidence * 100)}%`}</span>
           </div>
-          <MeterBar value={i.confidence * 100} tone={i.confidence >= 0.8 ? 'accent' : 'neutral'} />
+          {i.confidence !== null && <MeterBar value={i.confidence * 100} tone={i.confidence >= 0.8 ? 'accent' : 'neutral'} />}
         </div>
 
         <div className="font-mono text-[11px] max-md:hidden">
-          {i.incidentIds.length ? (
+          {i.incidentIds === null ? (
+            <span className="font-sans text-muted-foreground">Not provided</span>
+          ) : i.incidentIds.length ? (
             <span className="text-foreground/85">
               {i.incidentIds[0]}
               {i.incidentIds.length > 1 && <span className="text-muted-foreground"> +{i.incidentIds.length - 1}</span>}
@@ -281,7 +370,15 @@ function IndicatorRow({ indicator: i, active, onOpen }: { indicator: ThreatIndic
           )}
         </div>
 
-        <div className="flex justify-end">
+        <div className="hidden justify-end md:flex">
+          <ToneBadge tone={i.isActive === true ? 'low' : 'neutral'} size="sm" className="bg-transparent">
+            {i.isActive === undefined || i.isActive === null ? 'Unreported' : i.isActive ? 'Active' : 'Inactive'}
+          </ToneBadge>
+        </div>
+        <div className="flex justify-end gap-2 md:col-auto">
+          <ToneBadge tone={i.isActive === true ? 'low' : 'neutral'} size="sm" className="bg-transparent md:hidden">
+            {i.isActive === undefined || i.isActive === null ? 'Unreported' : i.isActive ? 'Active' : 'Inactive'}
+          </ToneBadge>
           <SeverityBadge severity={i.severity} size="sm" />
         </div>
         <ChevronRight className="size-4 text-muted-foreground/40 transition-all group-hover:translate-x-0.5 group-hover:text-foreground max-md:hidden" />
@@ -305,6 +402,8 @@ function MitreSection({ techniques }: { techniques?: TechniqueObservation[] }) {
     >
       {!techniques ? (
         <LoadingState variant="inline" />
+      ) : techniques.length === 0 ? (
+        <EmptyState title="No observed ATT&CK activity" description="No techniques are linked to the current incident set." />
       ) : (
         <Tabs defaultValue="matrix" className="gap-4">
           <TabsList variant="line" className="justify-start gap-0 border-b border-border pb-px">

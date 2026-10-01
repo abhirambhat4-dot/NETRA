@@ -102,7 +102,7 @@ export interface MitreTechnique {
 
 export type IndicatorType = 'IP' | 'DOMAIN' | 'URL' | 'HASH'
 
-/** GET /threat-intel/indicators — indicator of compromise known to NETRA. */
+/** Mock indicator shape retained for demo-only intelligence panels. */
 export interface ThreatIndicator {
   id: string // IND-xxx
   type: IndicatorType
@@ -146,6 +146,359 @@ export interface SecurityEvent {
   anomalyScore: number // 0–1, from ML detector
   incidentId: string | null // set once correlated into an incident
   assetId: string | null // destination asset, if known
+  mitreTechniqueId: string | null
+}
+
+export type BackendEventSource =
+  | 'SURICATA'
+  | 'ML_ANOMALY'
+  | 'THREAT_INTEL'
+  | 'VULNERABILITY_SCAN'
+  | 'MANUAL'
+
+export interface BackendEventAssetReference {
+  id: string
+  assetKey?: string
+  name: string
+  hostname: string | null
+  ipAddress: string | null
+  criticality: string
+  status: string
+}
+
+export interface BackendEventResponse {
+  id: string
+  eventUid: string
+  occurredAt: string
+  sourceIp: string | null
+  sourcePort: number | null
+  destinationIp: string | null
+  destinationPort: number | null
+  protocol: string | null
+  eventType: string
+  signature: string | null
+  severity: Severity
+  detectionSource: BackendEventSource
+  status: 'NEW' | 'CORRELATED'
+  anomalyScore: number | null
+  incidentIds: string[]
+  assetId: string | null
+  asset: BackendEventAssetReference | null
+}
+
+export interface BackendEventsPage {
+  items: BackendEventResponse[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface BackendDatabaseHealthResponse {
+  status: 'healthy' | 'unhealthy'
+  service: string
+  version: string
+  database: 'connected' | 'unreachable'
+}
+
+export type IncidentLifecycleState =
+  | 'DETECTED'
+  | 'UNDERSTOOD'
+  | 'PRIORITISED'
+  | 'VERIFIED'
+  | 'AUTHORIZED'
+  | 'CONTAINED'
+  | 'LEARNED'
+
+export type BackendResponseAction =
+  | 'MONITOR'
+  | 'INVESTIGATE'
+  | 'ESCALATE'
+  | 'BLOCK_IP'
+  | 'ISOLATE_HOST'
+  | 'DISABLE_ACCOUNT'
+  | 'KILL_PROCESS'
+  | 'QUARANTINE_FILE'
+  | 'NO_ACTION'
+
+export interface BackendIncidentDecisionResponse {
+  id: string
+  incidentId: string
+  action: BackendResponseAction
+  rationale: string
+  riskScore: number
+  confidence: number
+  recommendation: string | null
+  createdAt: string
+}
+
+/** GET /incidents item as serialized by the backend. */
+export interface BackendIncidentResponse {
+  id: string
+  incidentKey: string
+  title: string
+  description: string | null
+  severity: Severity
+  riskScore: number | null
+  state: IncidentLifecycleState
+  detectionSource: BackendEventSource
+  recommendedAction: BackendResponseAction | null
+  assetId: string | null
+  asset: BackendEventAssetReference | null
+  eventCount: number
+  createdAt: string
+  updatedAt: string
+  latestDecision: BackendIncidentDecisionResponse | null
+}
+
+export interface BackendIncidentPage {
+  items: BackendIncidentResponse[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface BackendIncidentAsset extends BackendEventAssetReference {
+  assetKey: string
+  assetType: string
+  environment: string
+  exposure: string
+  owner: string | null
+  vulnerabilityCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BackendIncidentAuthorizationResponse {
+  id: string
+  incidentId: string
+  decisionId: string | null
+  requestedAction: string
+  status: string
+  requestedBy: string
+  approvedBy: string | null
+  reason: string | null
+  requestedAt: string
+  approvedAt: string | null
+}
+
+export interface BackendIncidentContainmentResponse {
+  id: string
+  incidentId: string
+  authorizationId: string
+  actionType: string
+  target: string
+  status: string
+  executedAt: string | null
+  verifiedAt: string | null
+  result: string | null
+  errorMessage: string | null
+  createdAt: string
+}
+
+export interface BackendIncidentTimelineEntry {
+  id: string
+  timestamp: string
+  source: string
+  stage: string | null
+  title: string
+  description: string
+  actor: string | null
+  eventId: string | null
+}
+
+export interface BackendIncidentCyberMemoryReference {
+  id: string
+  lesson: string
+  outcome: string | null
+}
+
+export interface BackendIncidentDetailResponse {
+  incident: BackendIncidentResponse
+  asset: BackendIncidentAsset | null
+  events: BackendEventResponse[]
+  timeline: BackendIncidentTimelineEntry[]
+  decisions: BackendIncidentDecisionResponse[]
+  authorizations: BackendIncidentAuthorizationResponse[]
+  containmentActions: BackendIncidentContainmentResponse[]
+  cyberMemories: BackendIncidentCyberMemoryReference[]
+}
+
+export type BackendAssetStatus = 'ACTIVE' | 'INACTIVE' | 'DECOMMISSIONED'
+export type BackendAssetExposure = 'INTERNAL' | 'DMZ' | 'INTERNET_FACING'
+
+export interface BackendAssetResponse {
+  id: string
+  assetKey: string
+  name: string
+  hostname: string | null
+  ipAddress: string | null
+  criticality: AssetCriticality
+  status: BackendAssetStatus
+  assetType: string
+  environment: string
+  exposure: BackendAssetExposure
+  owner: string | null
+  vulnerabilityCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BackendAssetPage {
+  items: BackendAssetResponse[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/** Page-facing asset data; null enrichment means the live endpoint omits it. */
+export interface AssetInventoryItem {
+  id: string
+  name: string
+  hostname: string | null
+  ipAddress: string | null
+  type: AssetType | null
+  criticality: AssetCriticality
+  owner: string | null
+  operatingSystem: string | null
+  services: string[] | null
+  vulnerabilities: Vulnerability[] | null
+  vulnerabilityCount: number | null
+  status: AssetStatus | BackendAssetStatus
+  exposure: AssetExposure | BackendAssetExposure
+  riskScore: number | null
+  posture: AssetPosture | null
+  activeIncidentIds: string[] | null
+  lastSeen: string | null
+  assetKey?: string
+  assetType?: string | null
+  environment?: string
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface AssetInventoryFilters {
+  search?: string
+  criticality?: AssetCriticality
+  exposure?: BackendAssetExposure
+  status?: BackendAssetStatus
+  sortBy?: 'name' | 'criticality' | 'createdAt' | 'updatedAt'
+  sortOrder?: 'asc' | 'desc'
+}
+
+export interface BackendThreatIndicatorResponse {
+  id: string
+  value: string
+  indicatorType: IndicatorType
+  source: string
+  confidence: number | null
+  severity: Severity
+  firstSeen: string
+  lastSeen: string
+  isActive: boolean
+}
+
+export interface BackendThreatIndicatorPage {
+  items: BackendThreatIndicatorResponse[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/** Page-facing indicator data; null enrichment means the live endpoint omits it. */
+export interface ThreatIndicatorInventoryItem {
+  id: string
+  type: IndicatorType
+  value: string
+  source: string
+  confidence: number | null
+  severity: Severity
+  description: string | null
+  tags: string[] | null
+  firstSeen: string
+  lastSeen: string
+  matchCount: number | null
+  incidentIds: string[] | null
+  mitreTechniqueIds: string[] | null
+  isActive?: boolean | null
+}
+
+export interface ThreatIndicatorInventoryFilters {
+  indicatorType?: IndicatorType
+  severity?: Severity
+  minConfidence?: number
+  maxConfidence?: number
+  source?: string
+  search?: string
+  sortBy?: 'firstSeen' | 'lastSeen' | 'confidence' | 'severity'
+  sortOrder?: 'asc' | 'desc'
+}
+
+/** UI-facing live model; retains backend names, nulls, enums, and collections. */
+export interface LiveIncidentDetailsViewModel {
+  incident: BackendIncidentResponse
+  asset: BackendIncidentAsset | null
+  events: BackendEventResponse[]
+  timeline: BackendIncidentTimelineEntry[]
+  decisions: BackendIncidentDecisionResponse[]
+  authorizations: BackendIncidentAuthorizationResponse[]
+  containmentActions: BackendIncidentContainmentResponse[]
+  cyberMemories: BackendIncidentCyberMemoryReference[]
+}
+
+/** Queue-facing model; retains backend lifecycle and mock statuses without inventing missing fields. */
+export interface IncidentQueueItem {
+  id: string
+  key: string
+  title: string
+  description: string | null
+  severity: Severity
+  riskScore: number | null
+  lifecycle: IncidentLifecycleState | IncidentStatus
+  detectionSource: BackendEventSource | DetectionSource
+  recommendedAction: BackendResponseAction | null
+  asset: BackendEventAssetReference | null
+  eventCount: number
+  createdAt: string
+  updatedAt: string
+  latestDecision: BackendIncidentDecisionResponse | null
+}
+
+export type IncidentQueueStateFilter = 'ALL' | 'ACTIVE' | 'CONTAINED' | 'LEARNED'
+export type IncidentQueueSort = 'risk' | 'recent'
+
+export interface IncidentQueueFilters {
+  search?: string
+  severity?: Severity
+  state?: IncidentQueueStateFilter
+  sort?: IncidentQueueSort
+}
+
+export type EventsPageItem = Omit<
+  SecurityEvent,
+  | 'id'
+  | 'timestamp'
+  | 'sourceIp'
+  | 'destinationIp'
+  | 'protocol'
+  | 'detectionSource'
+  | 'status'
+  | 'anomalyScore'
+  | 'incidentId'
+  | 'assetId'
+  | 'mitreTechniqueId'
+> & {
+  id: string
+  eventUid?: string
+  timestamp: string
+  sourceIp: string | null
+  destinationIp: string | null
+  protocol: string | null
+  detectionSource: BackendEventSource | DetectionSource
+  status: EventStatus
+  anomalyScore: number | null
+  incidentIds: string[]
+  assetId: string | null
+  asset: BackendEventAssetReference | null
   mitreTechniqueId: string | null
 }
 
@@ -304,18 +657,59 @@ export interface ContainmentAction {
 
 export interface CyberMemoryEntry {
   id: string // MEM-xxxx
-  incidentId: string
-  threatName: string
+  incidentId: string | null
+  threatName: string | null
   mitreTechniqueId: string | null
-  sourceIp: string
-  assetId: string
-  riskScore: number
-  actionTaken: ContainmentActionType
-  outcome: MemoryOutcome
+  sourceIp: string | null
+  assetId: string | null
+  riskScore: number | null
+  actionTaken: ContainmentActionType | BackendResponseAction | null
+  outcome: MemoryOutcome | string | null
   lessonsLearned: string
-  tags: string[]
-  similarIncidentIds: string[]
+  tags: string[] | null
+  similarIncidentIds: string[] | null
   recordedAt: string
+  effectiveness?: string | null
+}
+
+export type BackendMemoryEffectiveness = 'EFFECTIVE' | 'PARTIALLY_EFFECTIVE' | 'INEFFECTIVE' | 'UNKNOWN'
+
+export interface BackendCyberMemoryResponse {
+  id: string
+  incidentId: string | null
+  decisionId: string | null
+  lesson: string
+  outcome: string | null
+  actionTaken: BackendResponseAction | null
+  effectiveness: BackendMemoryEffectiveness
+  createdAt: string
+  incident: {
+    id: string
+    incidentKey: string
+    title: string
+    state: string
+    severity: Severity
+    riskScore: number | null
+  } | null
+  decision: BackendIncidentDecisionResponse | null
+  authorizations: BackendIncidentAuthorizationResponse[]
+  containmentActions: BackendIncidentContainmentResponse[]
+}
+
+export interface BackendCyberMemoryPage {
+  items: BackendCyberMemoryResponse[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface CyberMemoryFilters {
+  page?: number
+  pageSize?: number
+  incidentId?: string
+  effectiveness?: BackendMemoryEffectiveness
+  actionTaken?: BackendResponseAction
+  search?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -349,7 +743,7 @@ export interface SystemComponentHealth {
   message: string | null
 }
 
-/** GET /threat-intel/observed — ATT&CK techniques seen in NETRA incidents. */
+/** Mock-only ATT&CK observations; the backend does not expose this collection. */
 export interface TechniqueObservation {
   technique: MitreTechnique
   incidentCount: number
@@ -361,17 +755,20 @@ export interface TechniqueObservation {
 }
 
 export interface DashboardStats {
-  overallRisk: number // 0–100
-  overallRiskLevel: Severity
-  overallRiskChange: number // % change vs 24h ago, e.g. 8.4 or -3.1
-  incidentsBySeverity: Record<Severity, number> // active incidents only
+  overallRisk: number | null // 0–100; null when no system-level score is available
+  averageRiskScore?: number | null // mean score of active incidents, when provided by the backend
+  overallRiskLevel: Severity | null
+  overallRiskChange: number | null // % change vs 24h ago
+  incidentsBySeverity: Record<Severity, number | null> // active incidents only
   activeIncidents: number
-  criticalThreats: number // active CRITICAL incidents
-  containedThreats: number // contained in the last 7 days
-  assetsAtRisk: number
+  criticalThreats: number | null // unavailable when the backend does not report critical indicators
+  containedThreats: number | null
+  assetsAtRisk: number | null
   totalAssets: number
   criticalAssets: number
   eventsLast24h: number
+  criticalEvents?: number
+  highEvents?: number
   riskDrivers: RiskFactor[] // factors aggregated across active incidents
   systemHealth: SystemComponentHealth[]
 }

@@ -44,7 +44,7 @@ from app.schemas.enrichment import IncidentContextBundle
 from app.schemas.risk import RiskScoreResult
 from app.services.context_enrichment import enrich_incident_context
 from app.services.controlled_response import create_incident_cyber_memory
-from app.services.decision_workflow import recommend_incident_decision
+from app.services.decision_workflow import recommend_incident_decision, verify_incident
 from app.services.event_correlation import correlate_incident_events
 from app.services.intake import create_incident, link_event_to_incident
 from app.services.prioritization import get_prioritized_incidents
@@ -251,6 +251,23 @@ def calculate_incident_risk_endpoint(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> RiskScoreResult:
     return calculate_incident_risk(db, incident_id, actor=current_user.email)
+
+
+@router.post(
+    "/{incident_id}/verify",
+    response_model=IncidentResponse,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Incident not found"},
+        status.HTTP_409_CONFLICT: {"description": "Incident must be PRIORITISED before verification"},
+    },
+)
+def verify_incident_endpoint(
+    incident_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> IncidentResponse:
+    incident = verify_incident(db, incident_id, actor=current_user.email)
+    return incident_response(incident, event_count=len(incident.events))
 
 
 @router.post(

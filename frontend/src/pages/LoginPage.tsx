@@ -1,7 +1,7 @@
 import type * as React from 'react'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowRight, Eye, EyeOff, Loader2, LockKeyhole } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
 import { useAuth } from '@/auth/AuthProvider'
 import { NetraGuide } from '@/components/guide'
 import { NetraLogo } from '@/components/netra'
@@ -9,19 +9,15 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useNow } from '@/hooks/useNow'
 import { hasCompletedBriefing } from '@/lib/briefing'
 import { ROUTES } from '@/lib/navigation'
 import { HttpError } from '@/services/http'
 import { CyberBackdrop } from './login/CyberBackdrop'
 
-const STATUS = ['Authentication service operational', 'Secure session channel', 'Audit logging enabled']
-
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { login } = useAuth()
-  const now = useNow()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [show, setShow] = useState(false)
@@ -50,36 +46,41 @@ export function LoginPage() {
     <div className="relative isolate flex min-h-svh flex-col overflow-hidden bg-background">
       <CyberBackdrop />
 
-      <main className="relative z-10 flex flex-1 items-center justify-center px-4 py-10 sm:px-6">
-        <div className="relative w-full max-w-[420px]">
-          {/* Soft outer glow */}
-          <div aria-hidden className="absolute -inset-6 -z-10 rounded-[2rem] bg-[radial-gradient(ellipse_at_top,rgb(79_140_255/0.22),transparent_65%),radial-gradient(ellipse_at_bottom,rgb(139_92_246/0.14),transparent_60%)] blur-2xl" />
+      <header className="relative z-10 mx-auto w-full max-w-[1440px] px-4 pt-5 sm:px-6 lg:px-8">
+        <Link to={ROUTES.home} className="inline-flex items-center gap-3 text-foreground transition-opacity hover:opacity-90">
+          <NetraLogo className="h-8 w-auto" />
+        </Link>
+      </header>
 
+      <main className="relative z-10 flex flex-1 items-center justify-center px-4 py-10 sm:px-6">
+        <div className="w-full max-w-[430px]">
           <section
             aria-labelledby="login-title"
-            className="relative overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgb(21_26_35/0.82),rgb(10_13_19/0.86))] shadow-[inset_0_1px_0_rgb(255_255_255/0.06),0_1px_2px_rgb(0_0_0/0.5),0_24px_60px_-20px_rgb(0_0_0/0.85),0_0_0_1px_rgb(79_140_255/0.06)] backdrop-blur-xl"
+            className="relative overflow-hidden rounded-[28px] border border-border/80 bg-[linear-gradient(180deg,rgba(16,23,32,0.9),rgba(9,13,18,0.92))] shadow-[0_30px_90px_-40px_rgba(56,217,255,0.3)] backdrop-blur-sm"
           >
-            {/* Top accent line */}
-            <span aria-hidden className="absolute inset-x-10 top-0 h-px bg-linear-to-r from-transparent via-primary/70 to-transparent" />
-
-            <div className="px-7 pt-7 pb-6 sm:px-8">
-              <NetraLogo />
-
-              <div className="mt-7 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/8 px-2.5 py-1 text-[10px] font-semibold tracking-[0.18em] text-primary uppercase">
-                <LockKeyhole className="size-3" /> Secure command access
+            <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(56,217,255,0.9),transparent)]" />
+            <div className="px-5 py-5 sm:px-6 sm:py-6">
+              <div className="flex items-center justify-between gap-3">
+                <NetraLogo className="h-8 w-auto" />
+                <div className="inline-flex items-center gap-2 rounded-full border border-success/20 bg-success/10 px-2.5 py-1 text-[10px] font-medium tracking-[0.16em] text-success uppercase">
+                  <ShieldCheck className="size-3" />
+                  Secure access
+                </div>
               </div>
-              <h1 id="login-title" className="mt-3 text-[1.625rem] leading-tight font-semibold tracking-tight">
-                Sign in to NETRA
+
+              <h1 id="login-title" className="mt-6 text-[2rem] leading-tight font-semibold tracking-[-0.06em] text-foreground">
+                Sign in
               </h1>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-                Authenticate to access the Cyber Decision Intelligence Center.
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                Access the NETRA cyber decision workspace and continue your operational review.
               </p>
 
               <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-                {registered && <p role="status" className="rounded-md border border-low/30 bg-low/10 px-3 py-2 text-xs text-low">Account created. Sign in with your new credentials.</p>}
-                {error && <p role="alert" className="rounded-md border border-critical/30 bg-critical/10 px-3 py-2 text-xs text-critical">{error}</p>}
-                <div className="space-y-1.5">
-                  <Label htmlFor="email" className="text-xs text-foreground/85">
+                {registered && <p role="status" className="rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">Account created. Sign in with your new credentials.</p>}
+                {error && <p role="alert" className="rounded-xl border border-critical/30 bg-critical/10 px-3 py-2 text-xs text-critical">{error}</p>}
+
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-[11px] font-medium tracking-[0.12em] text-foreground/85 uppercase">
                     Email
                   </Label>
                   <Input
@@ -88,13 +89,14 @@ export function LoginPage() {
                     autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="h-10 bg-black/25"
+                    className="h-11 bg-background/45 text-sm text-foreground placeholder:text-muted-foreground/80"
+                    placeholder="name@organization.com"
                     required
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="password" className="text-xs text-foreground/85">
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-[11px] font-medium tracking-[0.12em] text-foreground/85 uppercase">
                     Password
                   </Label>
                   <div className="relative">
@@ -105,7 +107,7 @@ export function LoginPage() {
                       placeholder="Enter your password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="h-10 bg-black/25 pr-10"
+                      className="h-11 bg-background/45 pr-10 text-sm text-foreground placeholder:text-muted-foreground/80"
                       required
                     />
                     <button
@@ -119,60 +121,32 @@ export function LoginPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between gap-3 pt-0.5">
-                  <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground select-none">
-                    <Checkbox checked={remember} onCheckedChange={(v) => setRemember(v === true)} aria-label="Remember this session" />
-                    Remember this session
-                  </label>
-                  <a
-                    href="#"
-                    onClick={(e) => e.preventDefault()}
-                    className="text-xs text-muted-foreground transition-colors hover:text-primary"
-                    title="Not available in the demo environment"
-                  >
-                    Forgot password?
-                  </a>
-                </div>
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground select-none">
+                  <Checkbox checked={remember} onCheckedChange={(v) => setRemember(v === true)} aria-label="Remember this session" />
+                  Remember this session
+                </label>
 
-                <Button
-                  type="submit"
-                  size="lg"
-                  disabled={loading}
-                  className="mt-1 h-11 w-full text-[13px] font-semibold tracking-[0.14em] shadow-[0_10px_28px_-10px] shadow-primary/70"
-                >
+                <Button type="submit" size="lg" disabled={loading} className="mt-1 h-11 w-full rounded-full text-[11px] font-semibold tracking-[0.16em] uppercase">
                   {loading ? (
                     <>
-                      <Loader2 className="animate-spin" /> VERIFYING
+                      <Loader2 className="size-4 animate-spin" /> Signing in
                     </>
                   ) : (
                     <>
-                      SIGN IN <ArrowRight />
+                      Sign in <ArrowRight className="size-4" />
                     </>
                   )}
                 </Button>
               </form>
 
-              <div className="mt-4 text-center text-xs text-muted-foreground">
-                Need an account? <Link to={ROUTES.register} className="font-medium text-primary hover:underline">Create one</Link>
+              <div className="mt-5 text-center text-xs text-muted-foreground">
+                Need an account? <Link to={ROUTES.register} className="font-medium text-primary hover:underline">Create account</Link>
               </div>
             </div>
-
-            {/* Security status */}
-            <ul className="space-y-1.5 border-t border-white/6 bg-black/20 px-7 py-4 sm:px-8">
-              {STATUS.map((s) => (
-                <li key={s} className="flex items-center gap-2.5 text-[11px] text-muted-foreground">
-                  <span className="relative flex size-1.5">
-                    <span className="absolute inset-0 animate-status-pulse rounded-full bg-low" />
-                    <span className="relative size-1.5 rounded-full bg-low" />
-                  </span>
-                  {s}
-                </li>
-              ))}
-            </ul>
           </section>
 
-          <p className="mt-5 text-center font-mono text-[10px] tracking-wider text-muted-foreground/70">
-            NETRA GATEWAY · TLS 1.3 · {now.toISOString().slice(11, 19)} UTC
+          <p className="mt-5 text-center text-[10px] font-medium tracking-[0.22em] text-muted-foreground/80 uppercase">
+            NETRA · Cyber Decision Intelligence
           </p>
         </div>
       </main>

@@ -19,7 +19,7 @@ const TONE_COLOR: Record<Tone, string> = {
 
 interface StatCardProps {
   label: string
-  value: number
+  value: number | null
   /** Suffix shown small after the number, e.g. "/100" or "/ 10". */
   unit?: string
   icon?: LucideIcon
@@ -49,7 +49,7 @@ export function StatCard({
   className,
 }: StatCardProps) {
   const style = toneStyles[tone]
-  const shown = useCountUp(value)
+  const shown = useCountUp(value ?? 0)
   const TrendIcon = trend?.direction === 'up' ? ArrowUpRight : ArrowDownRight
 
   return (
@@ -69,7 +69,9 @@ export function StatCard({
 
       <div className="flex items-end justify-between gap-4 px-5 pt-2.5">
         <div className="flex items-baseline gap-1">
-          <span className={cn('metric text-[2.125rem]', toneValue && style.text)}>{Math.round(shown)}</span>
+          <span className={cn('metric text-[2.125rem]', toneValue && value !== null && style.text)}>
+            {value === null ? '—' : Math.round(shown)}
+          </span>
           {unit && <span className="text-sm font-medium text-muted-foreground">{unit}</span>}
         </div>
         {spark && (

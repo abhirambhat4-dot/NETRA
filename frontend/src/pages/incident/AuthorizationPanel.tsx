@@ -158,8 +158,8 @@ export function AuthorizationPanel({ detail: d }: { detail: IncidentDetail }) {
 
   return (
     <Panel
-      title="Authorization"
-      description="Human approval before any containment"
+      title="Authorization gate"
+      description="Human approval is required before any containment execution"
       actions={auth && <StatusBadge status={auth.status} size="sm" />}
     >
       {body()}

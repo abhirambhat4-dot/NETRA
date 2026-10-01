@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
-import type { SecurityEvent, SystemComponentHealth, TechniqueObservation } from '@/api/types'
+import type { EventsPageItem, SystemComponentHealth, TechniqueObservation } from '@/api/types'
 import { StatusDot } from '@/components/netra'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ROUTES } from '@/lib/navigation'
@@ -12,8 +12,8 @@ import { TechniqueList } from './TechniqueList'
 type Tab = 'attack' | 'events' | 'health'
 
 interface Props {
-  techniques?: TechniqueObservation[]
-  events?: SecurityEvent[]
+  techniques?: TechniqueObservation[] | null
+  events?: EventsPageItem[]
   health?: SystemComponentHealth[]
 }
 
@@ -24,7 +24,7 @@ interface Props {
 export function DetectionIntelPanel({ techniques, events, health }: Props) {
   const [tab, setTab] = useState<Tab>('attack')
   const tactics = new Set((techniques ?? []).map((t) => t.technique.tactic)).size
-  const healthy = health?.every((c) => c.status === 'HEALTHY') ?? true
+  const healthy = health?.length ? health.every((c) => c.status === 'HEALTHY') : null
 
   const meta: Record<Tab, { description: string; link: { to: string; label: string } }> = {
     attack: {
@@ -57,7 +57,7 @@ export function DetectionIntelPanel({ techniques, events, health }: Props) {
               Events
             </TabsTrigger>
             <TabsTrigger value="health" className="gap-1.5 px-2.5 text-xs">
-              <StatusDot tone={healthy ? 'low' : 'medium'} size="sm" />
+              {healthy !== null && <StatusDot tone={healthy ? 'low' : 'medium'} size="sm" />}
               Health
             </TabsTrigger>
           </TabsList>

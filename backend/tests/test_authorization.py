@@ -8,6 +8,7 @@ from app.models.incident import Incident, IncidentHistory
 from app.models.containment import ContainmentAction
 from tests.conftest import CoreApi
 from tests.test_decision import request_decision, seed_prioritised_incident
+from tests.test_incident_verification import request_incident_verification
 
 
 def create_decision(core_api: CoreApi, *, state: IncidentState = IncidentState.PRIORITISED):
@@ -64,16 +65,14 @@ def test_approval_requires_verified_state_and_then_authorizes_incident(core_api:
     before_verification = core_api.client.post(
         f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
     )
-    with core_api.session_factory() as session:
-        incident = session.get(Incident, incident_id)
-        incident.state = IncidentState.VERIFIED
-        session.commit()
+    verification = request_incident_verification(core_api, incident_id)
 
     approved = core_api.client.post(
         f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
     )
 
     assert before_verification.status_code == 409
+    assert verification.status_code == 200
     assert approved.status_code == 200
     assert approved.json()["status"] == "APPROVED"
     assert approved.json()["approvedBy"] == "core-api-test@example.com"
@@ -113,9 +112,7 @@ def test_approved_authorization_cannot_be_approved_twice(core_api: CoreApi) -> N
     incident_id, decision_id, _ = create_decision(core_api)
     pending = request_authorization(core_api, decision_id)
     authorization_id = UUID(pending.json()["id"])
-    with core_api.session_factory() as session:
-        session.get(Incident, incident_id).state = IncidentState.VERIFIED
-        session.commit()
+    verification = request_incident_verification(core_api, incident_id)
 
     first = core_api.client.post(
         f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
@@ -125,6 +122,7 @@ def test_approved_authorization_cannot_be_approved_twice(core_api: CoreApi) -> N
     )
 
     assert first.status_code == 200
+    assert verification.status_code == 200
     assert second.status_code == 409
 
 
@@ -166,9 +164,7 @@ def test_authorization_history_records_request_approval_and_transition(core_api:
     incident_id, decision_id, action = create_decision(core_api)
     pending = request_authorization(core_api, decision_id)
     authorization_id = UUID(pending.json()["id"])
-    with core_api.session_factory() as session:
-        session.get(Incident, incident_id).state = IncidentState.VERIFIED
-        session.commit()
+    verification = request_incident_verification(core_api, incident_id)
     approved = core_api.client.post(
         f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
     )
@@ -183,6 +179,7 @@ def test_authorization_history_records_request_approval_and_transition(core_api:
     request_history = next(row for row in histories if row.action == "authorization_requested")
     approval_history = next(row for row in histories if row.action == "authorization_approved")
     assert approved.status_code == 200
+    assert verification.status_code == 200
     assert "authorization_requested" in actions
     assert "authorization_approved" in actions
     assert request_history.actor == "core-api-test@example.com"
@@ -197,9 +194,7 @@ def test_authorization_never_creates_or_executes_containment(core_api: CoreApi) 
     incident_id, decision_id, _ = create_decision(core_api)
     pending = request_authorization(core_api, decision_id)
     authorization_id = UUID(pending.json()["id"])
-    with core_api.session_factory() as session:
-        session.get(Incident, incident_id).state = IncidentState.VERIFIED
-        session.commit()
+    verification = request_incident_verification(core_api, incident_id)
 
     approved = core_api.client.post(
         f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
@@ -210,4 +205,5 @@ def test_authorization_never_creates_or_executes_containment(core_api: CoreApi) 
             select(ContainmentAction).where(ContainmentAction.incident_id == incident_id)
         ).all()
     assert approved.status_code == 200
+    assert verification.status_code == 200
     assert actions == []

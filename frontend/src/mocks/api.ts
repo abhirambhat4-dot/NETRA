@@ -23,20 +23,10 @@ import { db } from './db'
  * Same signatures as the HTTP client, so services can switch transparently.
  */
 
-const latency = () => 180 + Math.random() * 260
-
-function respond<T>(produce: () => T, delay = latency()): Promise<T> {
+function respond<T>(produce: () => T): Promise<T> {
   // Errors thrown by `produce` become rejected promises (like HTTP 4xx).
   // structuredClone so callers can never mutate the mock database.
-  return new Promise((resolve, reject) =>
-    setTimeout(() => {
-      try {
-        resolve(structuredClone(produce()))
-      } catch (e) {
-        reject(e)
-      }
-    }, delay),
-  )
+  return Promise.resolve().then(() => structuredClone(produce()))
 }
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): PaginatedResponse<T> {
@@ -104,17 +94,17 @@ export const mockApi = {
   // --- workflow actions (UI simulation) ------------------------------------
 
   requestAuthorization: (incidentId: string): Promise<Authorization> =>
-    respond(() => db.actions.requestAuthorization(incidentId), 700),
+    respond(() => db.actions.requestAuthorization(incidentId)),
 
   verifyOtp: (authorizationId: string, otp: string): Promise<Authorization> =>
-    respond(() => db.actions.verifyOtp(authorizationId, otp), 800),
+    respond(() => db.actions.verifyOtp(authorizationId, otp)),
 
   rejectAuthorization: (authorizationId: string, reason: string): Promise<Authorization> =>
-    respond(() => db.actions.rejectAuthorization(authorizationId, reason), 500),
+    respond(() => db.actions.rejectAuthorization(authorizationId, reason)),
 
   executeContainment: (containmentId: string): Promise<ContainmentAction> =>
-    respond(() => db.actions.executeContainment(containmentId), 1400),
+    respond(() => db.actions.executeContainment(containmentId)),
 
   verifyContainment: (containmentId: string): Promise<ContainmentAction> =>
-    respond(() => db.actions.verifyContainment(containmentId), 1200),
+    respond(() => db.actions.verifyContainment(containmentId)),
 }

@@ -25,6 +25,13 @@ export function DecisionPanel({ detail: d }: { detail: IncidentDetail }) {
           {decision && <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{decision.rationale}</p>}
         </div>
 
+        {d.riskAssessment && (
+          <div className="mt-3 flex items-center justify-between gap-3 border-y border-border/70 py-2.5 text-xs">
+            <span className="text-muted-foreground">Detection confidence across correlated sources</span>
+            <span className="shrink-0 font-mono font-semibold text-foreground/90">{Math.round(d.riskAssessment.confidence * 100)}%</span>
+          </div>
+        )}
+
         <div className="mt-4 border-t border-border pt-3.5">
           <div className="text-[11px] text-muted-foreground">Reasoning</div>
           <p className="mt-1 text-[13px] leading-relaxed text-foreground/90">{decisionReasoning(d)}</p>

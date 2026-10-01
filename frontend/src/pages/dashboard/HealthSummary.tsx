@@ -8,16 +8,25 @@ export function HealthSummary({ health }: { health?: SystemComponentHealth[] }) 
   const healthy = health?.filter((c) => c.status === 'HEALTHY').length ?? 0
   const allOk = health && healthy === health.length
   const avgUptime = health ? health.reduce((s, c) => s + c.uptime, 0) / health.length : 0
+  const statusLabel = !health
+    ? 'Health status unavailable'
+    : health.length === 0
+      ? 'Health status unavailable'
+      : allOk
+        ? 'All components healthy'
+        : 'Degraded health'
 
   return !health ? (
         <LoadingState count={6} />
+    ) : health.length === 0 ? (
+      <p className="px-5 py-4 text-xs text-muted-foreground">Health data is unavailable from the live API.</p>
       ) : (
         <div className="flex flex-col gap-4">
           <div className={cn('flex items-center justify-between rounded-lg border px-3.5 py-3', allOk ? 'border-low/20 bg-low/6' : 'border-medium/25 bg-medium/8')}>
             <div className="flex items-center gap-2.5">
               <StatusDot tone={allOk ? 'low' : 'medium'} pulse />
               <span className={cn('text-[13px] font-medium', allOk ? 'text-low' : 'text-medium')}>
-                {allOk ? 'All systems operational' : 'Degraded performance'}
+                {statusLabel}
               </span>
             </div>
             <span className="font-mono text-xs text-muted-foreground">

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
-import type { Asset, Incident } from '@/api/types'
+import type { IncidentQueueItem } from '@/api/types'
 import { IncidentRow } from '@/components/incidents/IncidentRow'
 import { EmptyState, LoadingState, Panel } from '@/components/netra'
 import { Button } from '@/components/ui/button'
@@ -10,11 +10,10 @@ import { ROUTES } from '@/lib/navigation'
 const TOP = 5
 
 interface Props {
-  incidents?: Incident[]
-  assetsById: Map<string, Asset>
+  incidents?: IncidentQueueItem[]
 }
 
-export function PrioritizedIncidentsPanel({ incidents, assetsById }: Props) {
+export function PrioritizedIncidentsPanel({ incidents }: Props) {
   return (
     <Panel
       title="Prioritised incidents"
@@ -37,7 +36,7 @@ export function PrioritizedIncidentsPanel({ incidents, assetsById }: Props) {
         <>
           <ul className="border-t border-border">
             {incidents.slice(0, TOP).map((i) => (
-              <IncidentRow key={i.id} incident={i} asset={assetsById.get(i.assetId)} />
+              <IncidentRow key={i.id} incident={i} />
             ))}
           </ul>
           {incidents.length > TOP && (

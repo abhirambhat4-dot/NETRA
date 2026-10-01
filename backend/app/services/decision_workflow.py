@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import desc, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.authorization import Authorization
 from app.models.decision import Decision
@@ -17,6 +17,36 @@ from app.models.incident import Incident, IncidentHistory
 from app.schemas.enrichment import IncidentContextBundle
 from app.services.context_enrichment import enrich_incident_context
 from app.services.prioritization import get_prioritized_incidents
+
+
+def verify_incident(db: Session, incident_id: UUID, *, actor: str) -> Incident:
+    incident = db.scalars(
+        select(Incident)
+        .where(Incident.id == incident_id)
+        .options(selectinload(Incident.events), selectinload(Incident.decisions))
+    ).unique().one_or_none()
+    if incident is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
+    if incident.state != IncidentState.PRIORITISED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Incident must be PRIORITISED before verification",
+        )
+
+    previous_state = incident.state
+    incident.state = IncidentState.VERIFIED
+    db.add(
+        IncidentHistory(
+            incident_id=incident.id,
+            from_state=previous_state,
+            to_state=incident.state,
+            action="incident_verified",
+            actor=actor,
+        )
+    )
+    db.commit()
+    db.refresh(incident)
+    return incident
 
 
 def _confidence(context: IncidentContextBundle, risk_score: float) -> float:

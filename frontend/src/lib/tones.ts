@@ -7,6 +7,7 @@ import type {
   EventStatus,
   HealthStatus,
   IncidentStatus,
+  IncidentLifecycleState,
   MemoryOutcome,
   Severity,
 } from '@/api/types'
@@ -127,6 +128,7 @@ export function riskToSeverity(score: number): Severity {
 
 export type AnyStatus =
   | IncidentStatus
+  | IncidentLifecycleState
   | EventStatus
   | DecisionStatus
   | AuthorizationStatus
@@ -144,6 +146,11 @@ interface StatusMeta {
 
 export const statusMeta: Record<AnyStatus, StatusMeta> = {
   // Incident
+  DETECTED: { label: 'Detected', tone: 'info' },
+  UNDERSTOOD: { label: 'Understood', tone: 'accent', pulse: true },
+  PRIORITISED: { label: 'Prioritised', tone: 'high', pulse: true },
+  AUTHORIZED: { label: 'Authorized', tone: 'low' },
+  LEARNED: { label: 'Learned', tone: 'neutral' },
   NEW: { label: 'New', tone: 'info' },
   INVESTIGATING: { label: 'Investigating', tone: 'accent', pulse: true },
   AWAITING_AUTHORIZATION: { label: 'Awaiting Authorization', tone: 'medium', pulse: true },

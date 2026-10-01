@@ -1,34 +1,51 @@
 import { Link } from 'react-router-dom'
-import type { SecurityEvent, ThreatIndicator } from '@/api/types'
-import { DetailSection, DetailSheet, KeyValueList, MeterBar, SeverityBadge, StatusBadge } from '@/components/netra'
+import type { EventsPageItem, ThreatIndicatorInventoryItem } from '@/api/types'
+import { Button } from '@/components/ui/button'
+import { DetailSection, DetailSheet, ErrorState, KeyValueList, LoadingState, MeterBar, SeverityBadge, StatusBadge, ToneBadge } from '@/components/netra'
 import { defang, shortHash } from '@/lib/defang'
 import { formatClock, formatDateTime, timeAgo } from '@/lib/format'
 import { ROUTES } from '@/lib/navigation'
+import { HttpError } from '@/services/http'
 
 interface Props {
-  indicator?: ThreatIndicator
+  indicator?: ThreatIndicatorInventoryItem
+  indicatorId: string | null
+  loading: boolean
+  error?: Error
+  onRetry: () => void
   /** Notable events, used to list observed matches for IP indicators. */
-  events: SecurityEvent[]
+  events: EventsPageItem[]
   onClose: () => void
 }
 
 /** Full indicator context: metadata, history and where NETRA saw it. */
-export function IndicatorDetailSheet({ indicator, events, onClose }: Props) {
+export function IndicatorDetailSheet({ indicator, indicatorId, loading, error, onRetry, events, onClose }: Props) {
   const display = indicator && (indicator.type === 'HASH' ? shortHash(indicator.value) : defang(indicator.value, indicator.type))
   return (
     <DetailSheet
-      open={!!indicator}
+      open={!!indicatorId || !!indicator}
       onOpenChange={(o) => !o && onClose()}
-      eyebrow={indicator && `${indicator.id} · ${indicator.type} indicator`}
-      title={<span className="font-mono text-base break-all">{display}</span>}
-      description={indicator?.description}
+      eyebrow={indicator ? `${indicator.id} · ${indicator.type} indicator` : indicatorId ?? undefined}
+      title={<span className="font-mono text-base break-all">{display ?? (loading ? 'Loading indicator' : 'Threat indicator')}</span>}
+      description={indicator?.description ?? undefined}
     >
-      {indicator && <Body indicator={indicator} events={events} />}
+      {loading && !indicator && <LoadingState variant="inline" label="Loading indicator details…" />}
+      {error && (
+        <ErrorState
+          title={error instanceof HttpError && error.status === 401 ? 'Authentication required' : 'Indicator details unavailable'}
+          message={error instanceof HttpError && error.status === 401 ? undefined : error.message}
+          onRetry={error instanceof HttpError && error.status === 401 ? undefined : onRetry}
+        />
+      )}
+      {error instanceof HttpError && error.status === 401 && (
+        <div className="-mt-8 pb-8 text-center"><Button asChild><Link to={ROUTES.login}>Sign in</Link></Button></div>
+      )}
+      {indicator && !error && <Body indicator={indicator} events={events} />}
     </DetailSheet>
   )
 }
 
-function Body({ indicator: i, events }: { indicator: ThreatIndicator; events: SecurityEvent[] }) {
+function Body({ indicator: i, events }: { indicator: ThreatIndicatorInventoryItem; events: EventsPageItem[] }) {
   const matches = i.type === 'IP' ? events.filter((e) => e.sourceIp === i.value || e.destinationIp === i.value) : []
 
   return (
@@ -36,14 +53,17 @@ function Body({ indicator: i, events }: { indicator: ThreatIndicator; events: Se
       <div className="flex flex-wrap items-center gap-2">
         <SeverityBadge severity={i.severity} />
         <span className="rounded-md border border-border px-2 py-0.5 text-[11px] text-foreground/85">{i.source}</span>
+        <ToneBadge tone={i.isActive === true ? 'low' : 'neutral'} size="sm">
+          {i.isActive === undefined || i.isActive === null ? 'Status not provided' : i.isActive ? 'Active' : 'Inactive'}
+        </ToneBadge>
       </div>
 
       <div className="surface-inset space-y-2 rounded-lg p-3.5">
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted-foreground">Feed confidence</span>
-          <span className="font-mono">{Math.round(i.confidence * 100)}%</span>
+          <span className="font-mono">{i.confidence === null ? 'Not provided' : `${Math.round(i.confidence * 100)}%`}</span>
         </div>
-        <MeterBar value={i.confidence * 100} tone={i.confidence >= 0.8 ? 'accent' : 'neutral'} />
+        {i.confidence !== null && <MeterBar value={i.confidence * 100} tone={i.confidence >= 0.8 ? 'accent' : 'neutral'} />}
       </div>
 
       <DetailSection title="History">
@@ -52,33 +72,39 @@ function Body({ indicator: i, events }: { indicator: ThreatIndicator; events: Se
           items={[
             { label: 'First seen', value: `${formatDateTime(i.firstSeen)} UTC` },
             { label: 'Last seen', value: timeAgo(i.lastSeen) },
-            { label: 'Correlated events', value: i.matchCount.toLocaleString('en-US'), mono: true },
+            { label: 'Correlated events', value: i.matchCount === null ? 'Not provided' : i.matchCount.toLocaleString('en-US'), mono: true },
             { label: 'Raw value', value: i.type === 'HASH' ? i.value : defang(i.value, i.type), mono: true },
           ]}
         />
       </DetailSection>
 
       <DetailSection title="Classification">
-        <div className="flex flex-wrap gap-1.5">
-          {i.mitreTechniqueIds.map((t) => (
-            <span key={t} className="rounded border border-primary/20 bg-primary/8 px-1.5 py-0.5 font-mono text-[11px] text-primary">
-              {t}
-            </span>
-          ))}
-          {i.tags.map((t) => (
-            <span key={t} className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
-              {t}
-            </span>
-          ))}
-        </div>
+        {i.mitreTechniqueIds === null && i.tags === null ? (
+          <p className="text-xs text-muted-foreground">Classification data is not provided by this endpoint.</p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {(i.mitreTechniqueIds ?? []).map((t) => (
+              <span key={t} className="rounded border border-primary/20 bg-primary/8 px-1.5 py-0.5 font-mono text-[11px] text-primary">
+                {t}
+              </span>
+            ))}
+            {(i.tags ?? []).map((t) => (
+              <span key={t} className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
       </DetailSection>
 
-      <DetailSection title={`Linked incidents (${i.incidentIds.length})`}>
-        {i.incidentIds.length === 0 ? (
+      <DetailSection title={`Linked incidents (${i.incidentIds?.length ?? '—'})`}>
+        {i.incidentIds === null ? (
+          <p className="text-xs text-muted-foreground">Incident links are not provided by this endpoint.</p>
+        ) : i.incidentIds.length === 0 ? (
           <p className="text-xs text-muted-foreground">Not linked to an incident — kept as context for future correlation.</p>
         ) : (
           <div className="flex flex-wrap gap-1.5">
-            {i.incidentIds.map((id) => (
+            {(i.incidentIds ?? []).map((id) => (
               <Link
                 key={id}
                 to={ROUTES.incident(id)}

@@ -1,5 +1,12 @@
 import { useMemo, useState } from 'react'
-import type { Incident, IncidentDetail, Severity } from '@/api/types'
+import { Link } from 'react-router-dom'
+import type {
+  BackendResponseAction,
+  IncidentQueueItem,
+  IncidentQueueSort,
+  IncidentQueueStateFilter,
+  Severity,
+} from '@/api/types'
 import { IncidentRow } from '@/components/incidents/IncidentRow'
 import {
   EmptyState,
@@ -13,25 +20,46 @@ import {
   SegmentedControl,
   SurfaceCard,
 } from '@/components/netra'
+import { Button } from '@/components/ui/button'
 import { useQuery } from '@/hooks/useQuery'
+import { useCountUp } from '@/hooks/useCountUp'
 import { ACTION_LABEL } from '@/lib/format'
+import { ROUTES } from '@/lib/navigation'
 import { SEVERITY_ORDER, riskToSeverity, severityTone, toneStyles } from '@/lib/tones'
 import { cn } from '@/lib/utils'
-import { assetService, incidentService } from '@/services'
+import { incidentQueueService } from '@/services'
+import { HttpError } from '@/services/http'
 
 type SevFilter = Exclude<Severity, 'INFO'> | 'ALL'
-type StateFilter = 'ALL' | 'ACTIVE' | 'CONTAINED' | 'RESOLVED'
-type Sort = 'risk' | 'recent'
+type StateFilter = IncidentQueueStateFilter
+type Sort = IncidentQueueSort
 
-const ACTIVE = new Set(['NEW', 'INVESTIGATING', 'AWAITING_AUTHORIZATION', 'CONTAINING'])
-const stateOf = (i: Incident): Exclude<StateFilter, 'ALL'> =>
-  ACTIVE.has(i.status) ? 'ACTIVE' : i.status === 'CONTAINED' ? 'CONTAINED' : 'RESOLVED'
+const ACTIVE = new Set([
+  'DETECTED',
+  'UNDERSTOOD',
+  'PRIORITISED',
+  'VERIFIED',
+  'AUTHORIZED',
+  'NEW',
+  'INVESTIGATING',
+  'AWAITING_AUTHORIZATION',
+  'CONTAINING',
+])
+const stateOf = (incident: IncidentQueueItem): Exclude<StateFilter, 'ALL'> | undefined => {
+  if (ACTIVE.has(incident.lifecycle)) return 'ACTIVE'
+  if (incident.lifecycle === 'CONTAINED') return 'CONTAINED'
+  if (incident.lifecycle === 'LEARNED') return 'LEARNED'
+  return undefined
+}
 
-/** "Block IP 192.168.1.25" — short form of the decision for the queue. */
-function actionLabel(d: IncidentDetail): string | undefined {
-  if (!d.decision) return undefined
-  const { recommendedAction: a, target } = d.decision
-  return a === 'MONITOR' ? 'Monitor — no containment' : `${ACTION_LABEL[a]} ${target}`
+function actionLabel(incident: IncidentQueueItem): string | undefined {
+  const action = incident.latestDecision?.action ?? incident.recommendedAction
+  if (!action) return undefined
+  return ACTION_LABEL[action as keyof typeof ACTION_LABEL] ?? readableAction(action)
+}
+
+function readableAction(action: BackendResponseAction): string {
+  return action.replaceAll('_', ' ').toLowerCase().replace(/^\w/, (letter) => letter.toUpperCase())
 }
 
 export function IncidentsPage() {
@@ -40,73 +68,68 @@ export function IncidentsPage() {
   const [state, setState] = useState<StateFilter>('ALL')
   const [sort, setSort] = useState<Sort>('risk')
 
-  const incidents = useQuery('incidents-all', () => incidentService.list({ pageSize: 500 }))
-  const assets = useQuery('incidents-assets', assetService.list)
-
-  const all = useMemo(() => incidents.data?.items ?? [], [incidents.data])
-  const assetsById = useMemo(() => new Map((assets.data ?? []).map((a) => [a.id, a])), [assets.data])
-  const active = all.filter((i) => ACTIVE.has(i.status))
-
-  // The list endpoint has no decision field, so recommended actions come from
-  // each active incident's detail (existing GET /incidents/{id}). Closed
-  // incidents don't need one in the queue.
-  const activeIds = active.map((i) => i.id).join(',')
-  const decisions = useQuery(`incidents-decisions-${activeIds}`, () =>
-    activeIds ? Promise.all(activeIds.split(',').map((id) => incidentService.get(id))) : Promise.resolve([]),
-  )
-  const actionById = useMemo(
-    () => new Map((decisions.data ?? []).map((d) => [d.incident.id, actionLabel(d)])),
-    [decisions.data],
+  const filterKey = [search.trim(), severity, state, sort].join(':')
+  const incidents = useQuery(`incidents-live-${filterKey}`, () =>
+    incidentQueueService.list({
+      search: search.trim() || undefined,
+      severity: severity === 'ALL' ? undefined : severity,
+      state,
+      sort,
+    }),
   )
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return all
-      .filter(
-        (i) =>
-          (severity === 'ALL' || i.severity === severity) &&
-          (state === 'ALL' || stateOf(i) === state) &&
-          (!q ||
-            [i.id, i.threatName, i.sourceIp, i.destinationIp, i.mitreTechniqueId, assetsById.get(i.assetId)?.name]
-              .filter(Boolean)
-              .some((f) => String(f).toLowerCase().includes(q))),
-      )
-      .sort((a, b) => (sort === 'risk' ? b.riskScore - a.riskScore : Date.parse(b.lastSeen) - Date.parse(a.lastSeen)))
-  }, [all, search, severity, state, sort, assetsById])
+  const all = useMemo(() => incidents.data ?? [], [incidents.data])
+  const active = all.filter((incident) => ACTIVE.has(incident.lifecycle))
+  const filtered = all
 
-  const groups: { label: string; items: Incident[]; bar?: boolean }[] =
+  const groups: { label: string; items: IncidentQueueItem[]; bar?: boolean }[] =
     state === 'ALL'
       ? [
-          { label: 'Active', items: filtered.filter((i) => ACTIVE.has(i.status)), bar: true },
-          { label: 'Closed', items: filtered.filter((i) => !ACTIVE.has(i.status)) },
+          { label: 'Active', items: filtered.filter((incident) => ACTIVE.has(incident.lifecycle)), bar: true },
+          { label: 'Closed', items: filtered.filter((incident) => !ACTIVE.has(incident.lifecycle)) },
         ].filter((g) => g.items.length)
       : [{ label: '', items: filtered }]
 
-  const meanRisk = active.length ? Math.round(active.reduce((s, i) => s + i.riskScore, 0) / active.length) : 0
+  const activeRisks = active.flatMap((incident) => (incident.riskScore === null ? [] : [incident.riskScore]))
+  const meanRisk = activeRisks.length
+    ? Math.round(activeRisks.reduce((sum, risk) => sum + risk, 0) / activeRisks.length)
+    : null
+  const criticalCount = active.filter((incident) => incident.severity === 'CRITICAL').length
+  const highRiskCount = active.filter((incident) => incident.riskScore !== null && incident.riskScore >= 65).length
+  const awaitingActionCount = all.filter((incident) => incident.lifecycle === 'VERIFIED' || incident.lifecycle === 'AWAITING_AUTHORIZATION').length
+  const activeAnimated = useCountUp(active.length, 700)
+  const criticalAnimated = useCountUp(criticalCount, 700)
+  const highRiskAnimated = useCountUp(highRiskCount, 700)
+  const awaitingAnimated = useCountUp(awaitingActionCount, 700)
   const countState = (s: Exclude<StateFilter, 'ALL'>) => all.filter((i) => stateOf(i) === s).length
   const filtersActive = severity !== 'ALL' || state !== 'ALL' || search !== ''
 
   return (
     <PageContainer>
       <PageHeader
-        title="Incidents"
-        description="The incident command queue — correlated threats ranked by NETRA contextual risk, from detection through authorization, containment and memory."
+        eyebrow="Prioritisation workspace"
+        title="INCIDENTS"
+        description="See which correlated situations matter most, why their risk is elevated, and where analyst action is waiting."
       />
 
       <MetricStrip
         metrics={[
           {
             label: 'Active incidents',
-            value: active.length,
+            value: incidents.data ? Math.round(activeAnimated) : '—',
             hint: (
               <>
-                mean risk <span className={toneStyles[severityTone[riskToSeverity(meanRisk)]].text}>{meanRisk}</span> · {all.length} in 7 days
+                mean risk{' '}
+                <span className={meanRisk === null ? 'text-muted-foreground' : toneStyles[severityTone[riskToSeverity(meanRisk)]].text}>
+                  {incidents.data ? meanRisk ?? 'N/A' : '—'}
+                </span>{' '}
+                  · {incidents.data ? all.length : '—'} in queue
               </>
             ),
           },
-          { label: 'Critical', value: active.filter((i) => i.severity === 'CRITICAL').length, valueClassName: 'text-critical', hint: 'active, risk ≥ 85' },
-          { label: 'Awaiting authorization', value: all.filter((i) => i.status === 'AWAITING_AUTHORIZATION').length, valueClassName: 'text-medium', hint: 'decision needs approval' },
-          { label: 'Contained', value: countState('CONTAINED'), valueClassName: 'text-low', hint: 'verified containment' },
+          { label: 'Critical incidents', value: incidents.data ? Math.round(criticalAnimated) : '—', valueClassName: 'text-critical', hint: 'active situations' },
+          { label: 'High risk', value: incidents.data ? Math.round(highRiskAnimated) : '—', valueClassName: 'text-high', hint: 'risk score ≥65' },
+          { label: 'Awaiting action', value: incidents.data ? Math.round(awaitingAnimated) : '—', valueClassName: 'text-medium', hint: 'verification or authorization gate' },
         ]}
       />
 
@@ -114,7 +137,7 @@ export function IncidentsPage() {
         {/* Filters: search + state + sort on one line; severity as quiet chips below */}
         <div className="flex flex-col gap-3 border-b border-border px-5 py-4">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
-            <SearchInput value={search} onChange={setSearch} placeholder="Search incident, IP, asset, technique…" className="w-full sm:w-72" />
+            <SearchInput value={search} onChange={setSearch} placeholder="Search incident, description, asset…" className="w-full sm:w-72" />
             <SegmentedControl
               aria-label="State"
               value={state}
@@ -123,7 +146,7 @@ export function IncidentsPage() {
                 { value: 'ALL', label: 'All' },
                 { value: 'ACTIVE', label: `Active ${countState('ACTIVE')}` },
                 { value: 'CONTAINED', label: `Contained ${countState('CONTAINED')}` },
-                { value: 'RESOLVED', label: `Resolved ${countState('RESOLVED')}` },
+                { value: 'LEARNED', label: `Learned ${countState('LEARNED')}` },
               ]}
             />
             <div className="flex items-center gap-2 text-xs text-muted-foreground sm:ml-auto">
@@ -183,11 +206,23 @@ export function IncidentsPage() {
         )}
 
         {incidents.error ? (
-          <ErrorState onRetry={incidents.reload} />
+          <div>
+            <ErrorState
+              title={incidents.error instanceof HttpError && incidents.error.status === 401 ? 'Authentication required' : 'Incidents unavailable'}
+              message={incidents.error instanceof HttpError && incidents.error.status === 401 ? undefined : incidents.error.message}
+              onRetry={incidents.error instanceof HttpError && incidents.error.status === 401 ? undefined : incidents.reload}
+            />
+            {incidents.error instanceof HttpError && incidents.error.status === 401 && (
+              <div className="-mt-8 pb-8 text-center"><Button asChild><Link to={ROUTES.login}>Sign in</Link></Button></div>
+            )}
+          </div>
         ) : !incidents.data ? (
           <LoadingState className="p-5" count={8} />
         ) : filtered.length === 0 ? (
-          <EmptyState title="No incidents match" description="Adjust the severity or state filters." />
+          <EmptyState
+            title={filtersActive ? 'No incidents match' : 'No incidents available'}
+            description={filtersActive ? 'Adjust the severity, state or search filters.' : 'No incident situations are currently available in the queue.'}
+          />
         ) : (
           groups.map((g) => (
             <div key={g.label || 'all'}>
@@ -199,8 +234,15 @@ export function IncidentsPage() {
                 </div>
               )}
               <ul>
-                {g.items.map((i) => (
-                  <IncidentRow key={i.id} incident={i} asset={assetsById.get(i.assetId)} variant="full" action={actionById.get(i.id)} />
+                {g.items.map((i, index) => (
+                  <IncidentRow
+                    key={i.id}
+                    incident={i}
+                    variant="full"
+                    action={actionLabel(i)}
+                    entryIndex={index}
+                    priorityRank={sort === 'risk' && ACTIVE.has(i.lifecycle) && i.riskScore !== null && index < 3 ? index + 1 : undefined}
+                  />
                 ))}
               </ul>
             </div>
@@ -212,7 +254,7 @@ export function IncidentsPage() {
 }
 
 /** Incidents in a group by severity as a slim segmented bar. */
-function SeverityBar({ incidents }: { incidents: Incident[] }) {
+function SeverityBar({ incidents }: { incidents: IncidentQueueItem[] }) {
   const total = incidents.length || 1
   const parts = SEVERITY_ORDER.map((s) => ({ s, n: incidents.filter((i) => i.severity === s).length })).filter((p) => p.n)
   return (
