@@ -46,6 +46,11 @@ export const router = createBrowserRouter([
         handle: handle({ crumb: 'Command Center' }),
       },
       {
+        path: ROUTES.collector,
+        lazy: page(() => import('@/pages/CollectorPage'), 'CollectorPage'),
+        handle: handle({ crumb: 'Live Event Collector' }),
+      },
+      {
         path: ROUTES.events,
         lazy: page(() => import('@/pages/SecurityEventsPage'), 'SecurityEventsPage'),
         handle: handle({ crumb: 'Security Events' }),

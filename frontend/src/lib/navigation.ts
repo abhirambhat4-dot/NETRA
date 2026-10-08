@@ -4,6 +4,7 @@ import {
   BrainCircuit,
   Crosshair,
   LayoutDashboard,
+  RadioTower,
   Server,
   Settings,
   ShieldAlert,
@@ -25,6 +26,7 @@ export const ROUTES = {
   threatIntelligence: '/threat-intelligence',
   cyberMemory: '/cyber-memory',
   settings: '/settings',
+  collector: '/collector',
 } as const
 
 export interface NavItem {
@@ -41,6 +43,10 @@ export interface NavGroup {
 }
 
 export const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'Intake',
+    items: [{ label: 'Live Event Collector', to: ROUTES.collector, icon: RadioTower }],
+  },
   {
     label: 'Operations',
     items: [

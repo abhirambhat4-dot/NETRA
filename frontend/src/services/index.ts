@@ -6,6 +6,10 @@ import type {
   BackendDatabaseHealthResponse,
   BackendAssetPage,
   BackendAssetResponse,
+  CollectorEventSubmission,
+  CollectorStatus,
+  CollectorSubmitResponse,
+  IncidentCreateRequest,
   BackendEventAssetReference,
   BackendEventResponse,
   BackendEventsPage,
@@ -46,6 +50,7 @@ import type {
 import { mockApi } from '@/mocks/api'
 import { DEMO_OTP } from '@/mocks/db'
 import { USE_MOCKS, http } from './http'
+import { liveCollectorService } from './liveCollector'
 import { liveCyberMemoryService } from './liveCyberMemory'
 import { liveDashboardService } from './liveDashboard'
 
@@ -639,6 +644,25 @@ export const threatIntelInventoryService = {
 export const threatIntelService = {
   getObservedTechniques: (): Promise<TechniqueObservation[]> => mockApi.getObservedTechniques(),
   listIndicators: (): Promise<ThreatIndicator[]> => mockApi.listIndicators(),
+}
+
+/** Live Event Collector status; the collector has no mock adapter, so pages gate on USE_MOCKS. */
+export const collectorService = {
+  getStatus: async (): Promise<CollectorStatus> => {
+    if (USE_MOCKS) throw new Error('The Live Event Collector requires the NETRA API.')
+    const status = await liveCollectorService.getStatus()
+    return { ...status, recentEvents: status.recentEvents.map(adaptBackendEvent) }
+  },
+  /** Mutations refresh every mounted query, so collector status updates immediately. */
+  submit: (events: CollectorEventSubmission[]): Promise<CollectorSubmitResponse> =>
+    USE_MOCKS ? mockWorkflowOnlyCollector() : mutate(liveCollectorService.submit(events)),
+  /** Uses the existing POST /api/incidents; the incident starts in its normal initial state. */
+  createIncident: (request: IncidentCreateRequest): Promise<BackendIncidentResponse> =>
+    USE_MOCKS ? mockWorkflowOnlyCollector() : mutate(liveCollectorService.createIncident(request)),
+}
+
+function mockWorkflowOnlyCollector<T>(): Promise<T> {
+  return Promise.reject(new Error('The Live Event Collector requires the NETRA API.'))
 }
 
 export const memoryService = {

@@ -713,6 +713,72 @@ export interface CyberMemoryFilters {
 }
 
 // ---------------------------------------------------------------------------
+// Live Event Collector
+// ---------------------------------------------------------------------------
+
+/** GET /api/collector/status — counts cover every user's collector submissions. */
+export interface BackendCollectorStatusResponse {
+  collector: string
+  status: 'receiving' | 'idle'
+  totalEvents: number
+  eventsLast24h: number
+  lastReceivedAt: string | null
+  recentEvents: BackendEventResponse[]
+}
+
+export interface CollectorStatus {
+  collector: string
+  status: 'receiving' | 'idle'
+  totalEvents: number
+  eventsLast24h: number
+  lastReceivedAt: string | null
+  recentEvents: EventsPageItem[]
+}
+
+/** One event for POST /api/collector/events. Source is always assigned by the server. */
+export interface CollectorEventSubmission {
+  idempotencyKey: string
+  occurredAt: string
+  eventType: string
+  severity: Severity
+  signature?: string
+  srcIp?: string
+  destIp?: string
+  srcPort?: number
+  destPort?: number
+  protocol?: string
+  anomalyScore?: number
+  assetId?: string
+  rawData?: Record<string, unknown>
+}
+
+export interface CollectorEventResult {
+  index: number
+  idempotencyKey: string | null
+  status: 'created' | 'duplicate' | 'rejected'
+  eventId: string | null
+  eventUid: string | null
+  reason: string | null
+}
+
+export interface CollectorSubmitResponse {
+  created: number
+  duplicates: number
+  rejected: number
+  results: CollectorEventResult[]
+}
+
+/** Body for the existing POST /api/incidents. */
+export interface IncidentCreateRequest {
+  title: string
+  description?: string
+  severity?: Severity
+  detectionSource?: BackendEventSource
+  assetId?: string
+  eventIds?: string[]
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------------------
 
