@@ -1,5 +1,6 @@
 """Import every model so Base.metadata knows about all tables."""
 
+from app.models.assessment import AssessmentFinding, SecurityAssessment
 from app.models.asset import Asset
 from app.models.authorization import Authorization
 from app.models.containment import ContainmentAction
@@ -13,6 +14,7 @@ from app.models.user import User
 from app.models.vulnerability import Vulnerability
 
 __all__ = [
+    "AssessmentFinding",
     "Asset",
     "Authorization",
     "ContainmentAction",
@@ -22,6 +24,7 @@ __all__ = [
     "IncidentEvent",
     "IncidentHistory",
     "PasswordResetToken",
+    "SecurityAssessment",
     "SecurityEvent",
     "ThreatIndicator",
     "User",

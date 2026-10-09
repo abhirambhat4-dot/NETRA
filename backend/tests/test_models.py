@@ -59,6 +59,8 @@ EXPECTED_TABLES = {
     "cyber_memories",
     "users",
     "password_reset_tokens",
+    "security_assessments",
+    "assessment_findings",
 }
 
 
@@ -168,6 +170,9 @@ def test_foreign_keys_reference_expected_tables(isolated_db: IsolatedDb) -> None
         ("cyber_memories", "incident_id", "incidents"),
         ("cyber_memories", "decision_id", "decisions"),
         ("password_reset_tokens", "user_id", "users"),
+        ("security_assessments", "asset_id", "assets"),
+        ("security_assessments", "requested_by_id", "users"),
+        ("assessment_findings", "assessment_id", "security_assessments"),
     }
 
 

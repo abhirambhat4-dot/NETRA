@@ -1,8 +1,12 @@
 import type {
+  AssessmentFilters,
   Asset,
   AssetInventoryFilters,
   AssetInventoryItem,
   Authorization,
+  BackendAssessmentDetail,
+  BackendAssessmentPage,
+  BackendVulnerabilityResponse,
   BackendDatabaseHealthResponse,
   BackendAssetPage,
   BackendAssetResponse,
@@ -50,6 +54,7 @@ import type {
 import { mockApi } from '@/mocks/api'
 import { DEMO_OTP } from '@/mocks/db'
 import { USE_MOCKS, http } from './http'
+import { liveAssessmentService } from './liveAssessment'
 import { liveCollectorService } from './liveCollector'
 import { liveCyberMemoryService } from './liveCyberMemory'
 import { liveDashboardService } from './liveDashboard'
@@ -663,6 +668,27 @@ export const collectorService = {
 
 function mockWorkflowOnlyCollector<T>(): Promise<T> {
   return Promise.reject(new Error('The Live Event Collector requires the NETRA API.'))
+}
+
+const ASSESSMENT_REQUIRES_API = 'Security Assessment requires the NETRA API.'
+
+/** Security Assessment has no mock adapter: assessments are never simulated, so pages gate on USE_MOCKS. */
+export const assessmentService = {
+  list: (filters?: AssessmentFilters): Promise<BackendAssessmentPage> =>
+    USE_MOCKS ? Promise.reject(new Error(ASSESSMENT_REQUIRES_API)) : liveAssessmentService.list(filters),
+  get: (id: string): Promise<BackendAssessmentDetail> =>
+    USE_MOCKS ? Promise.reject(new Error(ASSESSMENT_REQUIRES_API)) : liveAssessmentService.get(id),
+  /** Each run stores a new snapshot; mutations refresh every mounted query. */
+  run: (assetId: string): Promise<BackendAssessmentDetail> =>
+    USE_MOCKS ? Promise.reject(new Error(ASSESSMENT_REQUIRES_API)) : mutate(liveAssessmentService.run({ assetId })),
+}
+
+/** Live vulnerability details for one asset (mock assets already embed theirs). */
+export const assetVulnerabilityService = {
+  list: (assetId: string): Promise<BackendVulnerabilityResponse[]> =>
+    USE_MOCKS
+      ? Promise.reject(new Error('Vulnerability details are embedded in mock assets.'))
+      : liveAssessmentService.listAssetVulnerabilities(assetId),
 }
 
 export const memoryService = {

@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.assessments import router as assessments_router
 from app.api.assets import router as assets_router
 from app.api.authorizations import router as authorizations_router
 from app.api.collector import router as collector_router
@@ -52,6 +53,7 @@ def create_app() -> FastAPI:
     application.include_router(authorizations_router, prefix="/api")
     application.include_router(containments_router, prefix="/api")
     application.include_router(assets_router, prefix="/api")
+    application.include_router(assessments_router, prefix="/api")
     application.include_router(threat_intelligence_router, prefix="/api")
     application.include_router(cyber_memory_router, prefix="/api")
 

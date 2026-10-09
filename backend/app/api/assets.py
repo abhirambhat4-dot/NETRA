@@ -6,13 +6,13 @@ from sqlalchemy import String, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
-from app.api.core_serializers import asset_response
+from app.api.core_serializers import asset_response, vulnerability_response
 from app.db.dependencies import get_db
 from app.models.asset import Asset
 from app.models.enums import AssetStatus, Criticality, Exposure
 from app.models.user import User
 from app.models.vulnerability import Vulnerability
-from app.schemas.core import AssetResponse, PageResponse
+from app.schemas.core import AssetResponse, PageResponse, VulnerabilityResponse
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 CRITICALITY_ORDER = (
@@ -105,3 +105,23 @@ def get_asset(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     asset, vulnerability_count = row
     return asset_response(asset, vulnerability_count)
+
+
+@router.get(
+    "/{asset_id}/vulnerabilities",
+    response_model=list[VulnerabilityResponse],
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Asset not found"}},
+)
+def list_asset_vulnerabilities(
+    asset_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+) -> list[VulnerabilityResponse]:
+    if db.scalar(select(Asset.id).where(Asset.id == asset_id)) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+    vulnerabilities = db.scalars(
+        select(Vulnerability)
+        .where(Vulnerability.asset_id == asset_id)
+        .order_by(Vulnerability.cvss_score.desc().nulls_last(), Vulnerability.cve_id, Vulnerability.id)
+    ).all()
+    return [vulnerability_response(vulnerability) for vulnerability in vulnerabilities]

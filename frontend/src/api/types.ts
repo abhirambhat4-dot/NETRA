@@ -779,6 +779,93 @@ export interface IncidentCreateRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Security Assessment (backend: app/schemas/assessment.py)
+// ---------------------------------------------------------------------------
+
+export type AssessmentGrade = 'A' | 'B' | 'C' | 'D' | 'F'
+export type AssessmentFindingResult = 'PASS' | 'WARN' | 'FAIL' | 'INFO'
+
+/** Body for POST /api/assessments. */
+export interface AssessmentCreateRequest {
+  assetId: string
+}
+
+/** One methodology check; evidence and referenced IDs are exactly what the backend stored. */
+export interface BackendAssessmentFinding {
+  id: string
+  position: number
+  checkKey: string
+  category: string
+  title: string
+  result: AssessmentFindingResult
+  severity: Severity | null
+  deduction: number
+  evidence: string[]
+  recommendation: string | null
+  /** Referenced IDs are capped server-side (at most 100 each); the totals count every matching record. */
+  vulnerabilityIds: string[]
+  incidentIds: string[]
+  eventIds: string[]
+  vulnerabilityTotal: number
+  incidentTotal: number
+  eventTotal: number
+}
+
+/** GET /api/assessments item. assetId / asset are null once the assessed asset is deleted. */
+export interface BackendAssessmentSummary {
+  id: string
+  assetId: string | null
+  assetKey: string
+  asset: BackendEventAssetReference | null
+  methodologyVersion: string
+  asOf: string
+  score: number
+  grade: AssessmentGrade
+  summary: string
+  passed: number
+  warnings: number
+  failed: number
+  informational: number
+  requestedBy: string
+  createdAt: string
+}
+
+/** POST /api/assessments and GET /api/assessments/{id}. */
+export interface BackendAssessmentDetail extends BackendAssessmentSummary {
+  missingEvidence: string[]
+  inputCounts: Record<string, number>
+  findings: BackendAssessmentFinding[]
+}
+
+export interface BackendAssessmentPage {
+  items: BackendAssessmentSummary[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface AssessmentFilters {
+  page?: number
+  pageSize?: number
+  assetId?: string
+  grade?: AssessmentGrade
+}
+
+/** GET /api/assets/{id}/vulnerabilities item. */
+export interface BackendVulnerabilityResponse {
+  id: string
+  assetId: string
+  cveId: string | null
+  title: string
+  description: string | null
+  cvssScore: number | null
+  severity: Severity
+  status: 'OPEN' | 'MITIGATED' | 'ACCEPTED' | 'FALSE_POSITIVE'
+  createdAt: string
+  updatedAt: string
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------------------
 

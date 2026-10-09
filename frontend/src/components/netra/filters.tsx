@@ -120,29 +120,42 @@ interface PaginationProps {
   onChange: (page: number) => void
 }
 
+/** Page numbers to show: all of them for a few pages, otherwise first, last and the current page's neighbours. */
+function pageWindow(page: number, pages: number): (number | 'gap')[] {
+  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1)
+  const shown = [...new Set([1, page - 1, page, page + 1, pages])].filter((p) => p >= 1 && p <= pages).sort((a, b) => a - b)
+  return shown.flatMap((p, i) => (i > 0 && p - shown[i - 1] > 1 ? ['gap' as const, p] : [p]))
+}
+
 export function Pagination({ page, pageSize, total, onChange }: PaginationProps) {
   const pages = Math.max(1, Math.ceil(total / pageSize))
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1
   const to = Math.min(total, page * pageSize)
   return (
-    <div className="flex items-center justify-between gap-4 px-5 py-3 text-xs text-muted-foreground">
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-3 text-xs text-muted-foreground">
       <span>
         Showing <span className="font-mono text-foreground/85">{from}–{to}</span> of{' '}
         <span className="font-mono text-foreground/85">{total}</span>
       </span>
-      <div className="flex items-center gap-1">
+      <nav aria-label="Pagination" className="flex flex-wrap items-center gap-1">
         <PageButton disabled={page <= 1} onClick={() => onChange(page - 1)}>
           Prev
         </PageButton>
-        {Array.from({ length: pages }, (_, i) => i + 1).map((p) => (
-          <PageButton key={p} active={p === page} onClick={() => onChange(p)}>
-            {p}
-          </PageButton>
-        ))}
+        {pageWindow(page, pages).map((p, i) =>
+          p === 'gap' ? (
+            <span key={`gap-${i}`} aria-hidden className="px-1 font-mono text-[11px] text-muted-foreground/60">
+              …
+            </span>
+          ) : (
+            <PageButton key={p} active={p === page} onClick={() => onChange(p)}>
+              {p}
+            </PageButton>
+          ),
+        )}
         <PageButton disabled={page >= pages} onClick={() => onChange(page + 1)}>
           Next
         </PageButton>
-      </div>
+      </nav>
     </div>
   )
 }

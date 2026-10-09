@@ -1,15 +1,16 @@
-import type { AssetInventoryItem } from '@/api/types'
+import type { AssetInventoryItem, BackendVulnerabilityResponse } from '@/api/types'
 import { Link } from 'react-router-dom'
 import { RiskTile } from '@/components/incidents/IncidentRow'
-import { DetailSection, DetailSheet, EmptyState, ErrorState, KeyValueList, LoadingState, RiskScore, StatusBadge, ToneBadge } from '@/components/netra'
+import { DetailSection, DetailSheet, EmptyState, ErrorState, KeyValueList, LoadingState, RiskScore, SeverityBadge, StatusBadge, ToneBadge } from '@/components/netra'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useQuery } from '@/hooks/useQuery'
 import { ASSET_TYPE_LABEL, CRITICALITY_TONE } from '@/lib/assets'
 import { timeAgo } from '@/lib/format'
 import { ROUTES } from '@/lib/navigation'
+import type { Tone } from '@/lib/tones'
 import { cn } from '@/lib/utils'
-import { incidentService } from '@/services'
+import { assetVulnerabilityService, incidentService } from '@/services'
 import { HttpError, USE_MOCKS } from '@/services/http'
 
 export function AssetDetailSheet({ asset, assetId, loading, error, onRetry, onClose }: {
@@ -131,7 +132,9 @@ function Body({ asset: a }: { asset: AssetInventoryItem }) {
         </TabsList>
 
         <TabsContent value="vulns" className="motion-safe:animate-in motion-safe:fade-in-0">
-          {a.vulnerabilities === null ? (
+          {!USE_MOCKS ? (
+            <LiveVulnerabilities assetId={a.id} />
+          ) : a.vulnerabilities === null ? (
             <p className="text-xs text-muted-foreground">
               {vulnerabilityCount === 0 ? 'No vulnerability records are linked.' : 'The endpoint provides a count only; vulnerability details are unavailable.'}
             </p>
@@ -196,5 +199,65 @@ function Body({ asset: a }: { asset: AssetInventoryItem }) {
         )}
       </Tabs>
     </>
+  )
+}
+
+
+const VULNERABILITY_STATUS_TONE: Record<BackendVulnerabilityResponse['status'], Tone> = {
+  OPEN: 'high',
+  ACCEPTED: 'medium',
+  MITIGATED: 'low',
+  FALSE_POSITIVE: 'neutral',
+}
+
+/** Live vulnerability records from GET /api/assets/{id}/vulnerabilities, highest CVSS first. */
+function LiveVulnerabilities({ assetId }: { assetId: string }) {
+  const vulnerabilities = useQuery(`asset-vulnerabilities-${assetId}`, () => assetVulnerabilityService.list(assetId))
+  const error = vulnerabilities.error
+  const unauthorized = error instanceof HttpError && error.status === 401
+  const items = vulnerabilities.data
+
+  if (error) {
+    return (
+      <div>
+        <ErrorState
+          title={unauthorized ? 'Authentication required' : 'Vulnerabilities unavailable'}
+          message={unauthorized ? undefined : error.message}
+          onRetry={unauthorized ? undefined : vulnerabilities.reload}
+          className="py-8"
+        />
+        {unauthorized && (
+          <div className="-mt-4 pb-6 text-center"><Button asChild><Link to={ROUTES.login}>Sign in</Link></Button></div>
+        )}
+      </div>
+    )
+  }
+  if (!items) return <LoadingState count={3} label="Loading vulnerabilities…" />
+  if (items.length === 0) return <p className="text-xs text-muted-foreground">No vulnerability records are linked.</p>
+
+  return (
+    <ul className="surface-inset divide-y divide-border/70 rounded-lg">
+      {items.map((v) => (
+        <li key={v.id} className="flex items-center gap-3 px-3.5 py-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="font-mono text-xs">{v.cveId ?? 'No CVE identifier'}</div>
+            <div className="truncate text-[11px] text-muted-foreground" title={v.description ?? v.title}>{v.title}</div>
+          </div>
+          <ToneBadge tone={VULNERABILITY_STATUS_TONE[v.status]} size="sm" className="capitalize">
+            {v.status.replaceAll('_', ' ').toLowerCase()}
+          </ToneBadge>
+          {v.cvssScore === null ? (
+            <SeverityBadge severity={v.severity} size="sm" />
+          ) : (
+            <span
+              className={cn('font-mono text-sm font-semibold', v.cvssScore >= 9 ? 'text-critical' : v.cvssScore >= 7 ? 'text-high' : 'text-medium')}
+              title={`CVSS ${v.cvssScore.toFixed(1)} · ${v.severity}`}
+            >
+              {v.cvssScore.toFixed(1)}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
   )
 }

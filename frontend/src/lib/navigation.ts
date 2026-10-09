@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   Activity,
   BrainCircuit,
+  ClipboardCheck,
   Crosshair,
   LayoutDashboard,
   RadioTower,
@@ -23,6 +24,7 @@ export const ROUTES = {
   incidents: '/incidents',
   incident: (id: string) => `/incidents/${id}`,
   assets: '/assets',
+  assessments: '/assessments',
   threatIntelligence: '/threat-intelligence',
   cyberMemory: '/cyber-memory',
   settings: '/settings',
@@ -59,6 +61,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Intelligence',
     items: [
       { label: 'Assets', to: ROUTES.assets, icon: Server },
+      { label: 'Security Assessment', to: ROUTES.assessments, icon: ClipboardCheck },
       { label: 'Threat Intelligence', to: ROUTES.threatIntelligence, icon: Crosshair },
     ],
   },

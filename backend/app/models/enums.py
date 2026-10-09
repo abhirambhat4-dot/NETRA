@@ -113,3 +113,18 @@ class Effectiveness(StrEnum):
     PARTIALLY_EFFECTIVE = "partially_effective"
     INEFFECTIVE = "ineffective"
     UNKNOWN = "unknown"
+
+
+class AssessmentGrade(StrEnum):
+    A = "a"
+    B = "b"
+    C = "c"
+    D = "d"
+    F = "f"
+
+
+class FindingResult(StrEnum):
+    PASS = "pass"
+    WARN = "warn"
+    FAIL = "fail"
+    INFO = "info"

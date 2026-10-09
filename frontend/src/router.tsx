@@ -73,6 +73,11 @@ export const router = createBrowserRouter([
         handle: handle({ crumb: 'Assets' }),
       },
       {
+        path: ROUTES.assessments,
+        lazy: page(() => import('@/pages/SecurityAssessmentPage'), 'SecurityAssessmentPage'),
+        handle: handle({ crumb: 'Security Assessment' }),
+      },
+      {
         path: ROUTES.threatIntelligence,
         lazy: page(() => import('@/pages/ThreatIntelligencePage'), 'ThreatIntelligencePage'),
         handle: handle({ crumb: 'Threat Intelligence' }),

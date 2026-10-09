@@ -39,6 +39,19 @@ class AssetResponse(AssetReference):
     updated_at: datetime
 
 
+class VulnerabilityResponse(CoreResponse):
+    id: UUID
+    asset_id: UUID
+    cve_id: str | None
+    title: str
+    description: str | None
+    cvss_score: float | None
+    severity: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class EventResponse(CoreResponse):
     id: UUID
     event_uid: str

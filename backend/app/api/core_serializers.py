@@ -8,6 +8,7 @@ from app.models.decision import Decision
 from app.models.event import SecurityEvent
 from app.models.incident import Incident
 from app.models.threat_indicator import ThreatIndicator
+from app.models.vulnerability import Vulnerability
 from app.schemas.core import (
     AssetReference,
     AssetResponse,
@@ -20,6 +21,7 @@ from app.schemas.core import (
     IncidentReference,
     IncidentResponse,
     ThreatIndicatorResponse,
+    VulnerabilityResponse,
 )
 
 
@@ -59,6 +61,21 @@ def asset_response(asset: Asset, vulnerability_count: int) -> AssetResponse:
         vulnerability_count=vulnerability_count,
         created_at=asset.created_at,
         updated_at=asset.updated_at,
+    )
+
+
+def vulnerability_response(vulnerability: Vulnerability) -> VulnerabilityResponse:
+    return VulnerabilityResponse(
+        id=vulnerability.id,
+        asset_id=vulnerability.asset_id,
+        cve_id=vulnerability.cve_id,
+        title=vulnerability.title,
+        description=vulnerability.description,
+        cvss_score=float(vulnerability.cvss_score) if vulnerability.cvss_score is not None else None,
+        severity=enum_text(vulnerability.severity),
+        status=enum_text(vulnerability.status),
+        created_at=vulnerability.created_at,
+        updated_at=vulnerability.updated_at,
     )
 
 
