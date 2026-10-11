@@ -32,7 +32,7 @@ def approve_authorization(core_api: CoreApi, incident_id: UUID, authorization_id
     verification = request_incident_verification(core_api, incident_id)
     assert verification.status_code == 200
     response = core_api.client.post(
-        f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
+        f"/api/authorizations/{authorization_id}/approve", headers=core_api.approver_headers
     )
     assert response.status_code == 200
 
@@ -70,7 +70,7 @@ def test_pending_and_rejected_authorizations_cannot_contain(core_api: CoreApi) -
     rejected_incident_id, _, rejected_id = create_pending_authorization(core_api)
     rejection = core_api.client.post(
         f"/api/authorizations/{rejected_id}/reject",
-        headers=core_api.headers,
+        headers=core_api.approver_headers,
         json={"reason": "Not approved for containment."},
     )
 

@@ -1,62 +1,70 @@
-import { ArrowRight, Sparkles } from 'lucide-react'
+import type * as React from 'react'
+import { ArrowRight, Check } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { NetraLogo } from '@/components/netra'
 import { Button } from '@/components/ui/button'
-import { ROUTES } from '@/lib/navigation'
-import { SignalNetwork } from './SignalNetwork'
+import { HERO, LANDING_LINKS, SECTION_IDS } from './content'
+import { EvidencePreview } from './EvidencePreview'
+
+const delay = (ms: number) => ({ '--nl-delay': `${ms}ms` }) as React.CSSProperties
 
 export function LandingHero() {
   return (
-    <section className="relative overflow-hidden rounded-[32px] border border-border/80 bg-[radial-gradient(ellipse_at_top,rgba(56,217,255,0.12),transparent_42%),linear-gradient(180deg,rgba(10,15,22,0.94),rgba(8,12,18,0.95))] px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-      <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(56,217,255,0.9),transparent)]" />
+    <section aria-labelledby="hero-title" className="relative isolate overflow-hidden">
+      <div aria-hidden className="nl-hero-backdrop absolute inset-0 -z-10" />
+      <div aria-hidden className="nl-hero-grid absolute inset-0 -z-10" />
 
-      <header className="relative z-10 flex items-center justify-between">
-        <NetraLogo className="h-8 w-auto" />
-        <Button asChild variant="ghost" size="sm" className="rounded-full border border-border/80 bg-background/30 text-muted-foreground hover:text-foreground">
-          <Link to={ROUTES.login}>Sign in</Link>
-        </Button>
-      </header>
-
-      <div className="relative z-10 mt-10 grid items-center gap-10 lg:grid-cols-[1.05fr_0.95fr]">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/8 px-3 py-1 text-[10px] font-medium tracking-[0.22em] text-primary uppercase">
-            <Sparkles className="size-3.5" />
-            CYBER DECISION INTELLIGENCE
-          </div>
-
-          <h1 className="mt-6 max-w-xl text-5xl font-semibold tracking-[-0.08em] text-foreground sm:text-6xl lg:text-[5rem] lg:leading-[0.92]">
-            SEE THE SIGNAL.
-            <span className="mt-2 block text-primary/95">UNDERSTAND THE RISK.</span>
-            <span className="mt-2 block text-white/90">CONTROL THE RESPONSE.</span>
-          </h1>
-
-          <p className="mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-            NETRA takes security events, adds context, correlates evidence, calculates explainable risk,
-            prioritizes the incident, recommends action, and helps teams respond with authorization, control,
-            and learning from outcomes.
+      <div className="mx-auto grid max-w-300 items-center gap-14 px-4 pt-14 pb-20 sm:px-6 sm:pt-20 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:px-8 lg:pt-24 lg:pb-28">
+        <div className="min-w-0">
+          <p
+            className="nl-rise inline-flex max-w-full items-center gap-2 rounded-full border border-primary/15 bg-(--nl-accent-soft) px-3 py-1.5 text-sm font-medium text-primary"
+            style={delay(0)}
+          >
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
+            {HERO.eyebrow}
           </p>
 
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Button asChild size="lg" className="h-12 rounded-full px-6 text-[11px] font-semibold tracking-[0.16em] uppercase">
-              <a href="#what-netra-is">
-                Explore NETRA
-                <ArrowRight className="ml-2 size-4" />
-              </a>
+          <h1
+            id="hero-title"
+            className="nl-rise mt-6 max-w-xl text-4xl leading-[1.08] font-semibold tracking-tight text-balance text-foreground sm:text-5xl lg:text-[3.5rem]"
+            style={delay(90)}
+          >
+            {HERO.title}
+          </h1>
+
+          <p className="nl-rise mt-6 max-w-xl text-lg leading-relaxed text-pretty text-muted-foreground" style={delay(180)}>
+            {HERO.description}
+          </p>
+
+          <div className="nl-rise mt-9 flex flex-col gap-3 sm:flex-row" style={delay(270)}>
+            <Button asChild className="h-12 rounded-full px-6 text-[15px] font-semibold shadow-sm hover:bg-[#1E40AF]">
+              <Link to={LANDING_LINKS.signIn}>
+                {HERO.primaryCta}
+                <ArrowRight className="nl-arrow size-4" aria-hidden />
+              </Link>
             </Button>
-            <Button asChild variant="outline" size="lg" className="h-12 rounded-full border-border bg-background/30 px-6 text-[11px] font-semibold tracking-[0.16em] uppercase text-foreground">
-              <Link to={ROUTES.login}>Enter Platform</Link>
+            <Button
+              asChild
+              variant="secondary"
+              className="h-12 rounded-full border-(--nl-line-strong) px-6 text-[15px] font-semibold shadow-sm hover:border-primary/40 hover:bg-(--nl-accent-soft)"
+            >
+              <a href={`#${SECTION_IDS.lifecycle}`}>{HERO.secondaryCta}</a>
             </Button>
           </div>
 
-          <div className="mt-10 flex flex-wrap items-center gap-3 text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
-            <span className="rounded-full border border-border bg-background/30 px-2.5 py-1.5">Event correlation</span>
-            <span className="rounded-full border border-border bg-background/30 px-2.5 py-1.5">Context-aware risk</span>
-            <span className="rounded-full border border-border bg-background/30 px-2.5 py-1.5">Controlled response</span>
-          </div>
+          <ul className="nl-rise mt-10 grid gap-2.5 text-sm text-muted-foreground" style={delay(360)}>
+            {HERO.highlights.map((item) => (
+              <li key={item} className="flex items-start gap-2.5">
+                <span aria-hidden className="mt-0.5 grid size-4.5 shrink-0 place-items-center rounded-full bg-(--nl-accent-soft) text-primary">
+                  <Check className="size-3" />
+                </span>
+                {item}
+              </li>
+            ))}
+          </ul>
         </div>
 
-        <div className="relative">
-          <SignalNetwork />
+        <div className="nl-rise min-w-0" style={delay(320)}>
+          <EvidencePreview />
         </div>
       </div>
     </section>

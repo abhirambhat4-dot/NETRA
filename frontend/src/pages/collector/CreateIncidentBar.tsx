@@ -85,7 +85,7 @@ export function CreateIncidentBar({ selected, onClearSelection }: {
             maxLength={TITLE_MAX_LENGTH}
             disabled={!selected.length || creating}
             placeholder="Select events to create an incident"
-            className="h-9 bg-black/20"
+            className="h-9 bg-card"
           />
         </div>
         <span className="pb-2 text-xs text-muted-foreground" aria-live="polite">Selected: {selected.length}</span>

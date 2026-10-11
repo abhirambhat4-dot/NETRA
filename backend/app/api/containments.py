@@ -4,8 +4,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_current_user
+from app.api.auth import require_permission
 from app.api.core_serializers import containment_response
+from app.core.permissions import Permission
 from app.db.dependencies import get_db
 from app.models.user import User
 from app.schemas.core import ContainmentResponse
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/containments", tags=["containments"])
     "/{containment_id}/verify",
     response_model=ContainmentResponse,
     responses={
+        status.HTTP_403_FORBIDDEN: {"description": "Role does not permit verifying containment"},
         status.HTTP_404_NOT_FOUND: {"description": "Containment action not found"},
         status.HTTP_409_CONFLICT: {"description": "Containment cannot be verified in its current state"},
     },
@@ -25,7 +27,7 @@ router = APIRouter(prefix="/containments", tags=["containments"])
 def verify_containment_endpoint(
     containment_id: UUID,
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.EXECUTE_CONTAINMENT))],
 ) -> ContainmentResponse:
     containment = verify_containment(db, containment_id, actor=current_user.email)
     return containment_response(containment)

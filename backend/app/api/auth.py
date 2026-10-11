@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from typing import Annotated
 from uuid import UUID
 
@@ -10,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.core.permissions import Permission, Role, has_permission
 from app.db.dependencies import get_db
 from app.models.user import User
 from app.schemas.auth import (
@@ -74,6 +76,21 @@ def get_current_user(
     return user
 
 
+def require_permission(permission: Permission) -> Callable[..., User]:
+    """Dependency that returns the current user, or 403 when their stored role lacks ``permission``."""
+
+    def dependency(current_user: Annotated[User, Depends(get_current_user)]) -> User:
+        # The role is read from the database row, not the token, so a role change applies immediately.
+        if not has_permission(current_user.role, permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your role does not permit this action",
+            )
+        return current_user
+
+    return dependency
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(
     request: RegisterRequest,
@@ -87,6 +104,8 @@ def register(
         email=str(request.email),
         full_name=request.full_name,
         password_hash=hash_password(request.password),
+        # Always the least-privileged role; a role sent by the client is ignored.
+        role=Role.OPERATOR,
     )
     db.add(user)
     try:

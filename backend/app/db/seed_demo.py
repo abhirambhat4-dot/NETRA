@@ -71,6 +71,8 @@ TITLE_PREFIX = "[NETRA DEMO]"
 INDICATOR_SOURCE = "NETRA Demo Feed"
 OWNER = "NETRA Demo Team"
 ACTOR = "netra-demo-seed"
+# Approval must come from someone other than the requester (ACTOR), so the seed approves as a second actor.
+APPROVER_ACTOR = "netra-demo-seed-approver"
 
 REQUIRED_TABLES = (
     "assets",
@@ -666,7 +668,7 @@ def _next_step(session: Session, scenario: ScenarioSpec, incident_id: Any, snap:
                 return DONE
             authorization_id = snap.authorization.id
             return "approve authorization", lambda: approve_decision_authorization(
-                session, authorization_id, actor=ACTOR
+                session, authorization_id, actor=APPROVER_ACTOR
             )
         if target == "authorization_pending":
             return BEYOND

@@ -4,8 +4,9 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, status
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_current_user
+from app.api.auth import require_permission
 from app.api.core_serializers import authorization_response, containment_response
+from app.core.permissions import Permission
 from app.db.dependencies import get_db
 from app.models.user import User
 from app.schemas.core import AuthorizationResponse, ContainmentResponse
@@ -22,6 +23,7 @@ router = APIRouter(prefix="/authorizations", tags=["authorizations"])
     "/{authorization_id}/approve",
     response_model=AuthorizationResponse,
     responses={
+        status.HTTP_403_FORBIDDEN: {"description": "Role does not permit approval, or the caller requested it"},
         status.HTTP_404_NOT_FOUND: {"description": "Authorization not found"},
         status.HTTP_409_CONFLICT: {"description": "Authorization cannot be approved in its current state"},
     },
@@ -29,7 +31,7 @@ router = APIRouter(prefix="/authorizations", tags=["authorizations"])
 def approve_authorization(
     authorization_id: UUID,
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.RESOLVE_AUTHORIZATION))],
 ) -> AuthorizationResponse:
     authorization = approve_decision_authorization(
         db,
@@ -43,6 +45,7 @@ def approve_authorization(
     "/{authorization_id}/reject",
     response_model=AuthorizationResponse,
     responses={
+        status.HTTP_403_FORBIDDEN: {"description": "Role does not permit rejection"},
         status.HTTP_404_NOT_FOUND: {"description": "Authorization not found"},
         status.HTTP_409_CONFLICT: {"description": "Authorization cannot be rejected in its current state"},
     },
@@ -51,7 +54,7 @@ def reject_authorization(
     authorization_id: UUID,
     reason: Annotated[str, Body(embed=True, min_length=1)],
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.RESOLVE_AUTHORIZATION))],
 ) -> AuthorizationResponse:
     authorization = reject_decision_authorization(
         db,
@@ -67,6 +70,7 @@ def reject_authorization(
     response_model=ContainmentResponse,
     status_code=status.HTTP_201_CREATED,
     responses={
+        status.HTTP_403_FORBIDDEN: {"description": "Role does not permit executing containment"},
         status.HTTP_404_NOT_FOUND: {"description": "Authorization not found"},
         status.HTTP_409_CONFLICT: {"description": "Authorization is not eligible for containment"},
     },
@@ -74,7 +78,7 @@ def reject_authorization(
 def contain_authorized_action(
     authorization_id: UUID,
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.EXECUTE_CONTAINMENT))],
     simulate_failure: bool = Body(default=False, embed=True, alias="simulateFailure"),
 ) -> ContainmentResponse:
     containment = simulate_authorized_containment(

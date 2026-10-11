@@ -851,6 +851,60 @@ export interface AssessmentFilters {
   grade?: AssessmentGrade
 }
 
+// ---------------------------------------------------------------------------
+// Dataset import (backend: app/schemas/imports.py) — validation only, no rows are stored
+// ---------------------------------------------------------------------------
+
+export type ImportBatchStatus = 'VALIDATED' | 'REJECTED'
+
+/** One validation issue. The backend never includes cell contents. */
+export interface ImportIssue {
+  rule: string
+  message: string
+  /** Record number counting the header as row 1. */
+  row: number | null
+  /** Column name defined by the dataset profile, never text read from the file. */
+  column: string | null
+  /** 1-based column position in the uploaded file. */
+  columnIndex: number | null
+}
+
+/** GET /api/imports item. */
+export interface BackendImportBatchSummary {
+  id: string
+  datasetProfile: string
+  profileVersion: string
+  originalFilename: string
+  fileSha256: string
+  fileSizeBytes: number
+  status: ImportBatchStatus
+  totalRows: number
+  acceptedRows: number
+  rejectedRows: number
+  errorTotal: number
+  createdAt: string
+  completedAt: string | null
+}
+
+/** POST /api/imports and GET /api/imports/{id}. */
+export interface BackendImportBatchDetail extends BackendImportBatchSummary {
+  /** At most 100 issues; errorTotal counts all of them. */
+  errorSample: ImportIssue[]
+  errorSampleTruncated: boolean
+}
+
+export interface BackendImportBatchPage {
+  items: BackendImportBatchSummary[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface ImportBatchFilters {
+  page?: number
+  pageSize?: number
+}
+
 /** GET /api/assets/{id}/vulnerabilities item. */
 export interface BackendVulnerabilityResponse {
   id: string

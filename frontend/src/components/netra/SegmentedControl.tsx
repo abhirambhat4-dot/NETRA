@@ -10,7 +10,7 @@ interface SegmentedControlProps<T extends string> {
 
 export function SegmentedControl<T extends string>({ value, options, onChange, className, ...aria }: SegmentedControlProps<T>) {
   return (
-    <div role="radiogroup" aria-label={aria['aria-label']} className={cn('inline-flex rounded-lg border border-border bg-foreground/3 p-0.5', className)}>
+    <div role="radiogroup" aria-label={aria['aria-label']} className={cn('inline-flex rounded-lg border border-border bg-muted p-0.5', className)}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -19,9 +19,9 @@ export function SegmentedControl<T extends string>({ value, options, onChange, c
           aria-checked={o.value === value}
           onClick={() => onChange(o.value)}
           className={cn(
-            'h-6 rounded-md px-2.5 text-xs font-medium transition-colors',
+            'h-7 rounded-md px-3 text-xs font-medium transition-colors',
             o.value === value
-              ? 'bg-surface-raised text-foreground shadow-sm ring-1 ring-foreground/8'
+              ? 'bg-card text-foreground shadow-sm ring-1 ring-border'
               : 'text-muted-foreground hover:text-foreground',
           )}
         >

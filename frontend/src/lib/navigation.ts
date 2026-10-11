@@ -4,6 +4,7 @@ import {
   BrainCircuit,
   ClipboardCheck,
   Crosshair,
+  FileUp,
   LayoutDashboard,
   RadioTower,
   Server,
@@ -29,6 +30,7 @@ export const ROUTES = {
   cyberMemory: '/cyber-memory',
   settings: '/settings',
   collector: '/collector',
+  imports: '/imports',
 } as const
 
 export interface NavItem {
@@ -47,7 +49,10 @@ export interface NavGroup {
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Intake',
-    items: [{ label: 'Live Event Collector', to: ROUTES.collector, icon: RadioTower }],
+    items: [
+      { label: 'Live Event Collector', to: ROUTES.collector, icon: RadioTower },
+      { label: 'Dataset Import', to: ROUTES.imports, icon: FileUp },
+    ],
   },
   {
     label: 'Operations',

@@ -10,10 +10,13 @@ import type {
   BackendDatabaseHealthResponse,
   BackendAssetPage,
   BackendAssetResponse,
+  BackendImportBatchDetail,
+  BackendImportBatchPage,
   CollectorEventSubmission,
   CollectorStatus,
   CollectorSubmitResponse,
   IncidentCreateRequest,
+  ImportBatchFilters,
   BackendEventAssetReference,
   BackendEventResponse,
   BackendEventsPage,
@@ -51,6 +54,7 @@ import type {
   BackendThreatIndicatorResponse,
   TrendRange,
 } from '@/api/types'
+import { verifyIncidentPath } from '@/lib/incidentVerification'
 import { mockApi } from '@/mocks/api'
 import { DEMO_OTP } from '@/mocks/db'
 import { USE_MOCKS, http } from './http'
@@ -58,6 +62,7 @@ import { liveAssessmentService } from './liveAssessment'
 import { liveCollectorService } from './liveCollector'
 import { liveCyberMemoryService } from './liveCyberMemory'
 import { liveDashboardService } from './liveDashboard'
+import { liveImportService } from './liveImports'
 
 export { liveCyberMemoryService, liveDashboardService }
 
@@ -227,6 +232,11 @@ async function listEventsForPage(filters: EventsPageFilters = {}): Promise<Pagin
 }
 
 async function listLiveIncidents(filters: IncidentQueueFilters = {}): Promise<IncidentQueueItem[]> {
+  return (await fetchLiveIncidentPages(filters)).map(adaptBackendIncident)
+}
+
+/** Raw incident pages for the queue filters; adapting (and rejecting unknown states) is left to the caller. */
+async function fetchLiveIncidentPages(filters: IncidentQueueFilters): Promise<BackendIncidentResponse[]> {
   const query = {
     search: filters.search?.trim() || undefined,
     severity: filters.severity,
@@ -245,7 +255,17 @@ async function listLiveIncidents(filters: IncidentQueueFilters = {}): Promise<In
     ),
   )
 
-  return [firstPage, ...additionalPages].flatMap((page) => page.items.map(adaptBackendIncident))
+  return [firstPage, ...additionalPages].flatMap((page) => page.items)
+}
+
+/**
+ * Like listLiveIncidents, but an incident whose lifecycle state this client does not recognise is
+ * counted in `unsupported` instead of failing the whole list. No state is substituted.
+ */
+async function listLiveIncidentsTolerant(filters: IncidentQueueFilters = {}): Promise<TolerantIncidentList> {
+  const raw = await fetchLiveIncidentPages(filters)
+  const supported = raw.filter((incident) => INCIDENT_LIFECYCLE_STATES.includes(incident.state))
+  return { items: supported.map(adaptBackendIncident), unsupported: raw.length - supported.length }
 }
 
 async function listMockIncidents(filters: IncidentQueueFilters = {}): Promise<IncidentQueueItem[]> {
@@ -479,6 +499,9 @@ export const liveIncidentWorkflowService = {
     mutate(http.post(`/incidents/${incidentId}/risk-score`)),
   recommendDecision: (incidentId: string): Promise<BackendIncidentDecisionResponse> =>
     mutate(http.post(`/incidents/${incidentId}/decision`)),
+  /** PRIORITISED -> VERIFIED; authorization approval requires VERIFIED. */
+  verifyIncident: (incidentId: string): Promise<BackendIncidentResponse> =>
+    mutate(http.post(verifyIncidentPath(incidentId))),
   requestAuthorization: (decisionId: string): Promise<BackendIncidentAuthorizationResponse> =>
     mutate(http.post(`/decisions/${decisionId}/authorize`)),
   approveAuthorization: (authorizationId: string): Promise<BackendIncidentAuthorizationResponse> =>
@@ -496,9 +519,18 @@ export const liveIncidentWorkflowService = {
     mutate(http.post(`/incidents/${incidentId}/cyber-memory`)),
 }
 
+export interface TolerantIncidentList {
+  items: IncidentQueueItem[]
+  /** Incidents returned by the API with a lifecycle state this client does not recognise. */
+  unsupported: number
+}
+
 export const incidentQueueService = {
   list: (filters?: IncidentQueueFilters): Promise<IncidentQueueItem[]> =>
     USE_MOCKS ? listMockIncidents(filters) : listLiveIncidents(filters),
+  /** Command Center variant: unknown lifecycle states are counted, not fatal. */
+  listTolerant: async (filters?: IncidentQueueFilters): Promise<TolerantIncidentList> =>
+    USE_MOCKS ? { items: await listMockIncidents(filters), unsupported: 0 } : listLiveIncidentsTolerant(filters),
 }
 
 export const eventService = {
@@ -681,6 +713,19 @@ export const assessmentService = {
   /** Each run stores a new snapshot; mutations refresh every mounted query. */
   run: (assetId: string): Promise<BackendAssessmentDetail> =>
     USE_MOCKS ? Promise.reject(new Error(ASSESSMENT_REQUIRES_API)) : mutate(liveAssessmentService.run({ assetId })),
+}
+
+const IMPORT_REQUIRES_API = 'Dataset import requires the NETRA API.'
+
+/** Dataset import has no mock adapter: imports are never simulated, so pages gate on USE_MOCKS. */
+export const importService = {
+  list: (filters?: ImportBatchFilters): Promise<BackendImportBatchPage> =>
+    USE_MOCKS ? Promise.reject(new Error(IMPORT_REQUIRES_API)) : liveImportService.list(filters),
+  get: (id: string): Promise<BackendImportBatchDetail> =>
+    USE_MOCKS ? Promise.reject(new Error(IMPORT_REQUIRES_API)) : liveImportService.get(id),
+  /** Validation only; the batch is recorded by the API. Mutations refresh every mounted query. */
+  upload: (file: File, profile: string): Promise<BackendImportBatchDetail> =>
+    USE_MOCKS ? Promise.reject(new Error(IMPORT_REQUIRES_API)) : mutate(liveImportService.upload(file, profile)),
 }
 
 /** Live vulnerability details for one asset (mock assets already embed theirs). */

@@ -42,7 +42,8 @@ missing; it never creates or migrates schema.
 
 All addresses come from reserved documentation ranges (`203.0.113.0/24`, `198.51.100.0/24`) or
 private `10.250.0.0/16`; hostnames use `*.netra-demo.example`. Workflow steps record the actor
-`netra-demo-seed`. Containment uses the existing simulation only.
+`netra-demo-seed`, except authorization approval, which records `netra-demo-seed-approver` because
+a requester cannot approve their own request. Containment uses the existing simulation only.
 
 ## Scenarios
 
@@ -51,6 +52,10 @@ private `10.250.0.0/16`; hostnames use `*.netra-demo.example`. Workflow steps re
 | `INC-DEMO-0001` | LEARNED | 75.9 | ISOLATE_HOST | Complete trail: every stage, timeline and Cyber Memory |
 | `INC-DEMO-0002` | VERIFIED, authorization PENDING | 60.95 | BLOCK_IP | Live: Approve → Contain → Verify containment → Cyber Memory in the UI |
 | `INC-DEMO-0003` | PRIORITISED | 32.8 | INVESTIGATE | Contrast: NETRA does not escalate everything |
+
+The live approval of `INC-DEMO-0002` needs a signed-in user whose role is `approver` or `admin`.
+Registration always creates `operator` accounts, which can request authorizations and execute
+approved containment but cannot approve or reject.
 
 Event times are set relative to the first `--apply` (within the previous two hours), so seed
 within 24 hours of a demo if the Dashboard's 24-hour counters should include them. Re-runs never

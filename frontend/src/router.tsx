@@ -51,6 +51,11 @@ export const router = createBrowserRouter([
         handle: handle({ crumb: 'Live Event Collector' }),
       },
       {
+        path: ROUTES.imports,
+        lazy: page(() => import('@/pages/DatasetImportPage'), 'DatasetImportPage'),
+        handle: handle({ crumb: 'Dataset Import' }),
+      },
+      {
         path: ROUTES.events,
         lazy: page(() => import('@/pages/SecurityEventsPage'), 'SecurityEventsPage'),
         handle: handle({ crumb: 'Security Events' }),

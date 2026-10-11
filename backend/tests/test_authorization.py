@@ -6,7 +6,7 @@ from app.models.authorization import Authorization
 from app.models.enums import AuthorizationStatus, IncidentState
 from app.models.incident import Incident, IncidentHistory
 from app.models.containment import ContainmentAction
-from tests.conftest import CoreApi
+from tests.conftest import APPROVER_EMAIL, CoreApi
 from tests.test_decision import request_decision, seed_prioritised_incident
 from tests.test_incident_verification import request_incident_verification
 
@@ -63,19 +63,19 @@ def test_approval_requires_verified_state_and_then_authorizes_incident(core_api:
     authorization_id = UUID(pending.json()["id"])
 
     before_verification = core_api.client.post(
-        f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
+        f"/api/authorizations/{authorization_id}/approve", headers=core_api.approver_headers
     )
     verification = request_incident_verification(core_api, incident_id)
 
     approved = core_api.client.post(
-        f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
+        f"/api/authorizations/{authorization_id}/approve", headers=core_api.approver_headers
     )
 
     assert before_verification.status_code == 409
     assert verification.status_code == 200
     assert approved.status_code == 200
     assert approved.json()["status"] == "APPROVED"
-    assert approved.json()["approvedBy"] == "core-api-test@example.com"
+    assert approved.json()["approvedBy"] == APPROVER_EMAIL
     assert approved.json()["approvedAt"]
     with core_api.session_factory() as session:
         incident = session.get(Incident, incident_id)
@@ -91,19 +91,19 @@ def test_rejection_requires_reason_and_sets_rejected_state(core_api: CoreApi) ->
 
     missing_reason = core_api.client.post(
         f"/api/authorizations/{authorization_id}/reject",
-        headers=core_api.headers,
+        headers=core_api.approver_headers,
         json={"reason": "   "},
     )
     rejected = core_api.client.post(
         f"/api/authorizations/{authorization_id}/reject",
-        headers=core_api.headers,
+        headers=core_api.approver_headers,
         json={"reason": "Insufficient evidence for the requested action."},
     )
 
     assert missing_reason.status_code == 422
     assert rejected.status_code == 200
     assert rejected.json()["status"] == "REJECTED"
-    assert rejected.json()["approvedBy"] == "core-api-test@example.com"
+    assert rejected.json()["approvedBy"] == APPROVER_EMAIL
     assert rejected.json()["reason"] == "Insufficient evidence for the requested action."
     assert rejected.json()["approvedAt"]
 
@@ -115,10 +115,10 @@ def test_approved_authorization_cannot_be_approved_twice(core_api: CoreApi) -> N
     verification = request_incident_verification(core_api, incident_id)
 
     first = core_api.client.post(
-        f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
+        f"/api/authorizations/{authorization_id}/approve", headers=core_api.approver_headers
     )
     second = core_api.client.post(
-        f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
+        f"/api/authorizations/{authorization_id}/approve", headers=core_api.approver_headers
     )
 
     assert first.status_code == 200
@@ -132,12 +132,12 @@ def test_rejected_authorization_cannot_be_approved_later(core_api: CoreApi) -> N
     authorization_id = UUID(pending.json()["id"])
     rejected = core_api.client.post(
         f"/api/authorizations/{authorization_id}/reject",
-        headers=core_api.headers,
+        headers=core_api.approver_headers,
         json={"reason": "Rejected for testing."},
     )
 
     approval = core_api.client.post(
-        f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
+        f"/api/authorizations/{authorization_id}/approve", headers=core_api.approver_headers
     )
 
     assert rejected.status_code == 200
@@ -166,7 +166,7 @@ def test_authorization_history_records_request_approval_and_transition(core_api:
     authorization_id = UUID(pending.json()["id"])
     verification = request_incident_verification(core_api, incident_id)
     approved = core_api.client.post(
-        f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
+        f"/api/authorizations/{authorization_id}/approve", headers=core_api.approver_headers
     )
 
     with core_api.session_factory() as session:
@@ -197,7 +197,7 @@ def test_authorization_never_creates_or_executes_containment(core_api: CoreApi) 
     verification = request_incident_verification(core_api, incident_id)
 
     approved = core_api.client.post(
-        f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
+        f"/api/authorizations/{authorization_id}/approve", headers=core_api.approver_headers
     )
 
     with core_api.session_factory() as session:

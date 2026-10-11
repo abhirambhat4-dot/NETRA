@@ -128,3 +128,10 @@ class FindingResult(StrEnum):
     WARN = "warn"
     FAIL = "fail"
     INFO = "info"
+
+
+class ImportBatchStatus(StrEnum):
+    """Outcome of a validation-only dataset upload. Only VALIDATED batches reserve their file hash."""
+
+    VALIDATED = "validated"
+    REJECTED = "rejected"

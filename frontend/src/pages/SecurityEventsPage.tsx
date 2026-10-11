@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Link2 } from 'lucide-react'
+import { Activity, Link2 } from 'lucide-react'
 import type { BackendEventSource, EventStatus, EventsPageItem, Severity } from '@/api/types'
 import {
   EmptyState,
@@ -101,8 +101,9 @@ export function SecurityEventsPage() {
   return (
     <PageContainer>
       <PageHeader
+        icon={Activity}
         eyebrow={`Evidence stream · ${events.data ? `${filtered.length} matching events` : 'loading event context'}`}
-        title="SECURITY EVENTS"
+        title="Security Events"
         description="Investigate the signals behind each situation. Events are evidence; correlation connects them to incidents."
       />
 

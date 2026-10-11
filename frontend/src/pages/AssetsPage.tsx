@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Boxes, Globe, Lock } from 'lucide-react'
+import { Boxes, Globe, Lock, Server } from 'lucide-react'
 import type { AssetCriticality, AssetExposure, AssetInventoryItem, BackendAssetExposure } from '@/api/types'
 import {
   EmptyState,
@@ -115,6 +115,8 @@ export function AssetsPage() {
   return (
     <PageContainer>
       <PageHeader
+        icon={Server}
+        eyebrow="Intelligence"
         title="Assets"
         description={USE_MOCKS
           ? 'Protected infrastructure and the business context NETRA uses to prioritise risk — criticality, exposure and open vulnerabilities. Open an asset for services, CVEs and incidents.'
@@ -203,7 +205,7 @@ export function AssetsPage() {
           />
         ) : (
           <>
-            <div className={cn('hidden gap-4 border-b border-border px-5 py-2.5 text-[11px] font-medium text-muted-foreground lg:grid', COLS)}>
+            <div className={cn('app-table-head hidden gap-4 border-y border-border px-5 py-2.5 lg:grid', COLS)}>
               <span>Asset</span>
               <span>Risk score</span>
               <span>Criticality</span>

@@ -15,6 +15,7 @@ from app.api.decisions import router as decisions_router
 from app.api.dashboard import router as dashboard_router
 from app.api.events import router as events_router
 from app.api.health import router as health_router
+from app.api.imports import router as imports_router
 from app.api.incidents import router as incidents_router
 from app.api.threat_intelligence import router as threat_intelligence_router
 from app.core.config import get_settings
@@ -48,6 +49,7 @@ def create_app() -> FastAPI:
     application.include_router(dashboard_router, prefix="/api")
     application.include_router(events_router, prefix="/api")
     application.include_router(collector_router, prefix="/api")
+    application.include_router(imports_router, prefix="/api")
     application.include_router(incidents_router, prefix="/api")
     application.include_router(decisions_router, prefix="/api")
     application.include_router(authorizations_router, prefix="/api")

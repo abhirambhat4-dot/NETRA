@@ -58,7 +58,7 @@ export function SecurityInsight() {
       <p
         key={index}
         aria-live={userDriven ? 'polite' : 'off'}
-        className="mt-4 min-h-[3.5rem] text-[15px] leading-relaxed text-foreground/90 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-500 sm:text-base"
+        className="mt-4 min-h-[3.5rem] text-[15px] leading-relaxed text-foreground motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-500 sm:text-base"
       >
         {INSIGHTS[index]}
       </p>
@@ -74,7 +74,7 @@ export function SecurityInsight() {
               aria-current={i === index}
               className="grid h-6 place-items-center px-0.5"
             >
-              <span className={cn('block h-1 rounded-full transition-all', i === index ? 'w-5 bg-cyan' : 'w-2 bg-white/15 hover:bg-white/30')} />
+              <span className={cn('block h-1 rounded-full transition-all', i === index ? 'w-5 bg-cyan' : 'w-2 bg-foreground/15 hover:bg-foreground/30')} />
             </button>
           ))}
         </div>

@@ -10,6 +10,8 @@ interface AuthContextValue {
   login: (email: string, password: string, remember?: boolean) => Promise<void>
   logout: () => void
   register: (request: RegisterRequest) => Promise<AuthUser>
+  /** Re-reads the signed-in user (for example after a 403 suggests their role changed). */
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -87,8 +89,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return authService.register(request)
   }
 
+  async function refreshUser() {
+    // A 401 here already signs the user out through AUTH_EXPIRED_EVENT; other failures keep the current user.
+    try {
+      setUser(await authService.me())
+    } catch {
+      // Keep the current user; the backend still enforces every permission.
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, token, isAuthenticated: user !== null, loading, login, logout, register }}>
+    <AuthContext.Provider value={{ user, token, isAuthenticated: user !== null, loading, login, logout, register, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )

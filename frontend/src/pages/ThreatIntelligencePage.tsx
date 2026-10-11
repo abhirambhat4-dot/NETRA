@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
-import { ChevronRight, FileCode2, Globe, Link2, Network } from 'lucide-react'
+import { ChevronRight, Crosshair, FileCode2, Globe, Link2, Network } from 'lucide-react'
 import type { IndicatorType, TechniqueObservation, ThreatIndicatorInventoryItem } from '@/api/types'
 import {
   Disclosure,
@@ -134,6 +134,8 @@ export function ThreatIntelligencePage() {
   return (
     <PageContainer>
       <PageHeader
+        icon={Crosshair}
+        eyebrow="Intelligence"
         title="Threat Intelligence"
         description={USE_MOCKS
           ? 'Indicators of compromise and ATT&CK techniques that NETRA correlates with detections to raise or lower incident risk.'

@@ -7,6 +7,7 @@ from app.models.containment import ContainmentAction
 from app.models.cyber_memory import CyberMemory
 from app.models.decision import Decision
 from app.models.event import SecurityEvent
+from app.models.import_batch import ImportBatch
 from app.models.incident import Incident, IncidentEvent, IncidentHistory
 from app.models.password_reset_token import PasswordResetToken
 from app.models.threat_indicator import ThreatIndicator
@@ -20,6 +21,7 @@ __all__ = [
     "ContainmentAction",
     "CyberMemory",
     "Decision",
+    "ImportBatch",
     "Incident",
     "IncidentEvent",
     "IncidentHistory",

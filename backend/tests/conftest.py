@@ -92,11 +92,16 @@ def auth_client(auth_db: sessionmaker[Session]) -> Any:
         app.dependency_overrides.pop(get_db, None)
 
 
+APPROVER_EMAIL = "core-api-approver@example.com"
+
+
 @dataclass
 class CoreApi:
     client: TestClient
+    # The default test user has the operator role, as every registered account does.
     headers: dict[str, str]
     session_factory: sessionmaker[Session]
+    approver_headers: dict[str, str]
 
 
 @pytest.fixture
@@ -120,9 +125,17 @@ def core_api() -> Any:
                     full_name="Core API Test User",
                     password_hash="not-used-by-api-tests",
                 )
-                session.add(user)
+                # A second person: approvals must come from someone other than the requester.
+                approver = User(
+                    email=APPROVER_EMAIL,
+                    full_name="Core API Approver",
+                    password_hash="not-used-by-api-tests",
+                    role="approver",
+                )
+                session.add_all([user, approver])
                 session.flush()
                 token = create_access_token(user)
+                approver_token = create_access_token(approver)
                 session.commit()
 
             def override_db() -> Any:
@@ -137,6 +150,7 @@ def core_api() -> Any:
                         client=client,
                         headers={"Authorization": f"Bearer {token}"},
                         session_factory=factory,
+                        approver_headers={"Authorization": f"Bearer {approver_token}"},
                     )
             finally:
                 if previous_override is None:

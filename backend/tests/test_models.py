@@ -61,6 +61,7 @@ EXPECTED_TABLES = {
     "password_reset_tokens",
     "security_assessments",
     "assessment_findings",
+    "import_batches",
 }
 
 
@@ -173,6 +174,7 @@ def test_foreign_keys_reference_expected_tables(isolated_db: IsolatedDb) -> None
         ("security_assessments", "asset_id", "assets"),
         ("security_assessments", "requested_by_id", "users"),
         ("assessment_findings", "assessment_id", "security_assessments"),
+        ("import_batches", "uploaded_by_id", "users"),
     }
 
 

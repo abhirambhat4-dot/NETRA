@@ -187,15 +187,16 @@
 @utility surface-panel {
     background: var(--surface);
     border: 1px solid var(--border);
+    box-shadow: var(--panel-shadow, none);
 }
 
 @utility surface-inset {
-    background: rgba(255, 255, 255, 0.014);
-    border: 1px solid rgba(148, 163, 184, 0.08);
+    background: var(--inset-bg, rgba(255, 255, 255, 0.014));
+    border: 1px solid var(--inset-border, rgba(148, 163, 184, 0.08));
 }
 
 @utility surface-glass {
-    background: rgba(10, 15, 22, 0.68);
+    background: var(--glass-bg, rgba(10, 15, 22, 0.68));
     backdrop-filter: blur(16px);
 }
 
@@ -205,8 +206,8 @@
 
 @utility netra-grid {
     background-image:
-        linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+        linear-gradient(var(--grid-line, rgba(148, 163, 184, 0.06)) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-line, rgba(148, 163, 184, 0.06)) 1px, transparent 1px);
     background-size: 30px 30px;
 }
 
@@ -526,4 +527,612 @@
 
 @media (prefers-reduced-motion: reduce) {
     .netra-disclosure-body { transition: none; }
+}
+
+/* ==========================================================================
+   Public landing page (pages/PublicLandingPage.tsx, components/landing)
+   A light theme scoped to .netra-landing: the shared tokens are redefined
+   inside this subtree only, so the signed-in app keeps the global dark theme.
+   Base styles are the final state; motion only animates *into* them, so the
+   page is complete when animations, JS or the observer do not run.
+   The login page (.netra-auth) shares these light tokens.
+   ========================================================================== */
+
+.netra-landing,
+.netra-auth {
+    color-scheme: light;
+
+    --background: #FFFFFF;
+    --foreground: #0B1B33;
+    --card: #FFFFFF;
+    --card-foreground: #0B1B33;
+    --popover: #FFFFFF;
+    --popover-foreground: #0B1B33;
+    --primary: #1D4ED8;
+    --primary-foreground: #FFFFFF;
+    --secondary: #FFFFFF;
+    --secondary-foreground: #0B1B33;
+    --muted: #F1F5F9;
+    --muted-foreground: #475569;
+    --accent: #EEF3FF;
+    --accent-foreground: #0B1B33;
+    --border: #E2E8F0;
+    --input: #CBD5E1;
+    --ring: rgba(29, 78, 216, 0.45);
+    --brand-violet: #0F2A5C;
+    --tech-cyan: #2563EB;
+    --surface: #F5F8FC;
+
+    --nl-navy: #0B1B33;
+    --nl-band: #F5F8FC;
+    --nl-line: #E2E8F0;
+    --nl-line-strong: #CBD5E1;
+    --nl-accent-soft: #EEF3FF;
+    --nl-shadow: 0 1px 2px rgba(11, 27, 51, 0.04), 0 12px 32px -18px rgba(11, 27, 51, 0.18);
+    --nl-shadow-lift: 0 2px 4px rgba(11, 27, 51, 0.05), 0 22px 44px -22px rgba(29, 78, 216, 0.28);
+    --nl-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --nl-header-h: 4rem;
+
+    min-height: 100svh;
+    background: var(--background);
+    color: var(--foreground);
+}
+
+/* Only while the landing page is mounted: stop the dark body showing on overscroll. */
+html:has(.netra-landing),
+html:has(.netra-landing) body {
+    color-scheme: light;
+    background: #FFFFFF;
+}
+
+.netra-landing ::selection {
+    background: rgba(29, 78, 216, 0.16);
+}
+
+.netra-landing :is(section, main)[id] {
+    scroll-margin-top: calc(var(--nl-header-h) + 1rem);
+}
+
+.nl-band {
+    background: var(--nl-band);
+}
+
+.nl-hero-backdrop {
+    background:
+        radial-gradient(ellipse 60% 55% at 85% 10%, rgba(29, 78, 216, 0.07), transparent 70%),
+        radial-gradient(ellipse 45% 40% at 5% 0%, rgba(15, 42, 92, 0.05), transparent 70%);
+}
+
+.nl-hero-grid {
+    background-image:
+        linear-gradient(rgba(15, 42, 92, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(15, 42, 92, 0.05) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(ellipse 70% 60% at 70% 30%, black 20%, transparent 75%);
+}
+
+.nl-surface {
+    background: #FFFFFF;
+    border: 1px solid var(--nl-line);
+    box-shadow: var(--nl-shadow);
+}
+
+/* --- Navigation ---------------------------------------------------------- */
+
+.nl-header {
+    transition: box-shadow 300ms ease, border-color 300ms ease, background-color 300ms ease;
+}
+.nl-header[data-scrolled="true"] {
+    border-color: var(--nl-line);
+    background-color: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 6px 24px -18px rgba(11, 27, 51, 0.35);
+}
+
+.nl-nav-link {
+    position: relative;
+}
+.nl-nav-link::after {
+    content: '';
+    position: absolute;
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: 0.3rem;
+    height: 1.5px;
+    border-radius: 9999px;
+    background: var(--primary);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 280ms var(--nl-ease);
+}
+.nl-nav-link:hover::after,
+.nl-nav-link:focus-visible::after {
+    transform: scaleX(1);
+}
+
+@keyframes nl-menu-in {
+    from { opacity: 0; transform: translateY(-6px); }
+}
+.nl-menu {
+    animation: nl-menu-in 220ms var(--nl-ease);
+}
+
+/* --- Hero entrance: one staggered reveal --------------------------------- */
+
+@keyframes nl-rise {
+    from { opacity: 0; transform: translateY(16px); }
+}
+.nl-rise {
+    animation: nl-rise 800ms var(--nl-ease) both;
+    animation-delay: var(--nl-delay, 0ms);
+}
+
+/* --- Evidence trail: the connector draws, then each step lights in order -- */
+
+@keyframes nl-trail-draw {
+    from { transform: scaleY(0); }
+}
+.nl-trail-line {
+    transform-origin: top;
+    animation: nl-trail-draw 1500ms var(--nl-ease) 900ms both;
+}
+
+@keyframes nl-trail-dot {
+    from { background-color: #FFFFFF; border-color: var(--nl-line-strong); box-shadow: 0 0 0 0 rgba(29, 78, 216, 0); }
+    60% { box-shadow: 0 0 0 6px rgba(29, 78, 216, 0.14); }
+}
+.nl-trail-dot {
+    animation: nl-trail-dot 600ms var(--nl-ease) both;
+    animation-delay: var(--nl-delay, 0ms);
+}
+
+@keyframes nl-trail-row {
+    from { opacity: 0.35; }
+}
+.nl-trail-row {
+    animation: nl-trail-row 600ms ease-out both;
+    animation-delay: var(--nl-delay, 0ms);
+}
+
+/* --- Scroll reveals (useReveal adds .nl-js, then data-revealed per element) */
+
+.netra-landing [data-reveal] {
+    transition:
+        opacity 700ms var(--nl-ease) var(--nl-delay, 0ms),
+        transform 700ms var(--nl-ease) var(--nl-delay, 0ms);
+}
+.netra-landing.nl-js [data-reveal]:not([data-revealed]) {
+    opacity: 0;
+    transform: translateY(18px);
+}
+
+/* Lifecycle connector: draws down on narrow screens, across from xl. */
+.netra-landing [data-reveal="draw"] {
+    transform-origin: top;
+    transition: transform 1400ms var(--nl-ease) var(--nl-delay, 0ms);
+}
+.netra-landing.nl-js [data-reveal="draw"]:not([data-revealed]) {
+    opacity: 1;
+    transform: scaleY(0);
+}
+@media (min-width: 80rem) {
+    .netra-landing [data-reveal="draw"] {
+        transform-origin: left;
+    }
+    .netra-landing.nl-js [data-reveal="draw"]:not([data-revealed]) {
+        transform: scaleX(0);
+    }
+}
+
+/* --- Micro-interactions -------------------------------------------------- */
+
+.nl-card {
+    transition: transform 300ms var(--nl-ease), box-shadow 300ms var(--nl-ease), border-color 300ms ease;
+}
+.nl-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(29, 78, 216, 0.28);
+    box-shadow: var(--nl-shadow-lift);
+}
+
+.nl-stage-marker {
+    transition: background-color 250ms ease, color 250ms ease, border-color 250ms ease, transform 300ms var(--nl-ease);
+}
+.nl-stage:hover .nl-stage-marker {
+    background-color: var(--primary);
+    border-color: var(--primary);
+    color: var(--primary-foreground);
+    transform: scale(1.08);
+}
+
+.nl-arrow {
+    transition: transform 250ms var(--nl-ease);
+}
+:is(a, button):hover > .nl-arrow,
+:is(a, button):focus-visible > .nl-arrow {
+    transform: translateX(3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html:has(.netra-landing) {
+        scroll-behavior: auto;
+    }
+    .netra-landing .nl-rise,
+    .netra-landing .nl-trail-line,
+    .netra-landing .nl-trail-dot,
+    .netra-landing .nl-trail-row,
+    .netra-landing .nl-menu {
+        animation: none !important;
+    }
+    .netra-landing [data-reveal],
+    .netra-landing.nl-js [data-reveal]:not([data-revealed]) {
+        opacity: 1 !important;
+        transform: none !important;
+        transition: none !important;
+    }
+    .netra-landing .nl-card:hover,
+    .netra-landing .nl-stage:hover .nl-stage-marker,
+    .netra-landing :is(a, button):hover > .nl-arrow {
+        transform: none;
+    }
+}
+
+/* ==========================================================================
+   Login page (pages/LoginPage.tsx, pages/login/LoginEvidenceTrail.tsx)
+   Light tokens come from .netra-auth above. Register and password-recovery
+   pages keep the dark theme and the shared CyberBackdrop / cb-* rules.
+   Everything plays once; base styles are the final state.
+   ========================================================================== */
+
+html:has(.netra-auth),
+html:has(.netra-auth) body {
+    color-scheme: light;
+    background: #FFFFFF;
+}
+
+.netra-auth ::selection {
+    background: rgba(29, 78, 216, 0.16);
+}
+
+@keyframes na-rise {
+    from { opacity: 0; transform: translateY(14px); }
+}
+.na-rise {
+    animation: na-rise 700ms var(--nl-ease) both;
+    animation-delay: var(--na-delay, 0ms);
+}
+
+@keyframes na-fade {
+    from { opacity: 0; }
+}
+.na-fade {
+    animation: na-fade 900ms ease-out both;
+    animation-delay: var(--na-delay, 0ms);
+}
+
+/* Paths use pathLength="1", so a dash of 1 covers the whole line. */
+@keyframes na-draw {
+    from { stroke-dashoffset: 1; }
+}
+.na-draw {
+    stroke-dasharray: 1;
+    animation: na-draw 1800ms var(--nl-ease) both;
+    animation-delay: var(--na-delay, 0ms);
+}
+
+@keyframes na-node {
+    from { opacity: 0; transform: scale(0.4); }
+}
+.na-node {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: na-node 500ms var(--nl-ease) both;
+    animation-delay: var(--na-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html:has(.netra-auth) {
+        scroll-behavior: auto;
+    }
+    .netra-auth .na-rise,
+    .netra-auth .na-fade,
+    .netra-auth .na-draw,
+    .netra-auth .na-node {
+        animation: none !important;
+    }
+}
+
+/* ==========================================================================
+   Command Center (pages/CommandCenterPage.tsx, pages/dashboard/LifecyclePanel.tsx,
+   pages/dashboard/PrioritizedIncidentsPanel.tsx)
+   Dark app theme unchanged. One entrance per region and a one-time lifecycle
+   reveal; base styles are the final state. Nothing loops.
+   ========================================================================== */
+
+/* Layered dark surface: hairline top highlight, soft depth, calm hover. */
+.cc-card {
+    position: relative;
+    border: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(19, 27, 38, 0.95), rgba(10, 15, 22, 0.95));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.045),
+        0 1px 2px rgba(0, 0, 0, 0.35),
+        0 28px 56px -36px rgba(0, 0, 0, 0.75);
+    transition: border-color 300ms ease, box-shadow 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.cc-card:hover {
+    border-color: rgba(160, 180, 200, 0.22);
+}
+
+/* Hero: a faint cyan bloom from the top-left, behind the gauge. */
+.cc-card-hero {
+    background:
+        radial-gradient(ellipse 70% 90% at 0% 0%, rgba(56, 217, 255, 0.09), transparent 60%),
+        radial-gradient(ellipse 50% 70% at 100% 100%, rgba(79, 124, 255, 0.07), transparent 65%),
+        linear-gradient(180deg, rgba(19, 27, 38, 0.95), rgba(10, 15, 22, 0.95));
+}
+.cc-gauge-halo {
+    background: radial-gradient(circle, rgba(56, 217, 255, 0.10), transparent 68%);
+}
+
+.cc-tile {
+    transition: border-color 250ms ease, background-color 250ms ease;
+}
+.cc-tile:hover {
+    border-color: rgba(160, 180, 200, 0.24);
+    background-color: rgba(234, 243, 255, 0.035);
+}
+
+.cc-marker {
+    transition: background-color 250ms ease, border-color 250ms ease, box-shadow 300ms ease, transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.cc-stage-item:hover .cc-marker {
+    border-color: var(--primary);
+    background-color: rgba(56, 217, 255, 0.12);
+    box-shadow: 0 0 0 4px rgba(56, 217, 255, 0.08);
+    transform: scale(1.05);
+}
+
+.cc-arrow {
+    transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+:is(a, button):hover > .cc-arrow,
+:is(a, button):focus-visible > .cc-arrow {
+    transform: translateX(3px);
+}
+
+@keyframes cc-rise {
+    from { opacity: 0; transform: translateY(10px); }
+}
+.cc-rise {
+    animation: cc-rise 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: var(--cc-delay, 0ms);
+}
+
+@keyframes cc-grow {
+    from { transform: scaleX(0); }
+}
+.cc-grow {
+    transform-origin: left;
+    animation: cc-grow 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: var(--cc-delay, 0ms);
+}
+
+@keyframes cc-stage {
+    from { opacity: 0; transform: translateX(-6px); }
+}
+.cc-stage {
+    animation: cc-stage 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: var(--cc-delay, 0ms);
+}
+
+@keyframes cc-connector {
+    from { transform: scaleY(0); }
+}
+.cc-connector {
+    transform-origin: top;
+    animation: cc-connector 450ms ease-out both;
+    animation-delay: var(--cc-delay, 0ms);
+}
+
+@keyframes cc-connector-x {
+    from { transform: scaleX(0); }
+}
+.cc-connector-x {
+    transform-origin: left;
+    animation: cc-connector-x 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: var(--cc-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cc-rise,
+    .cc-grow,
+    .cc-stage,
+    .cc-connector,
+    .cc-connector-x {
+        animation: none !important;
+    }
+    .cc-card,
+    .cc-tile,
+    .cc-marker,
+    .cc-arrow {
+        transition: none !important;
+    }
+    .cc-stage-item:hover .cc-marker,
+    :is(a, button):hover > .cc-arrow,
+    :is(a, button):focus-visible > .cc-arrow {
+        transform: none !important;
+    }
+}
+
+/* ==========================================================================
+   Authenticated application — light theme
+   (layouts/AppLayout.tsx, pages/BriefingPage.tsx via layouts/useAppTheme.ts)
+   useAppTheme swaps <html class="dark"> for .netra-app-theme while the
+   signed-in app is mounted. Tokens live on <html>, so portalled sheets,
+   dialogs, menus, tooltips and toasts follow the same theme. Register and
+   password-recovery pages keep the dark :root tokens above.
+   ========================================================================== */
+
+html.netra-app-theme {
+    color-scheme: light;
+
+    --background: #F4F6FA;
+    --surface: #FFFFFF;
+    --surface-raised: #FFFFFF;
+    --foreground: #0B1B33;
+    --card: #FFFFFF;
+    --card-foreground: #0B1B33;
+    --popover: #FFFFFF;
+    --popover-foreground: #0B1B33;
+
+    --primary: #1D4ED8;
+    --primary-foreground: #FFFFFF;
+    --secondary: #EEF2F7;
+    --secondary-foreground: #0B1B33;
+    --muted: #F1F4F8;
+    --muted-foreground: #556479;
+    --accent: #EEF3FF;
+    --accent-foreground: #0B1B33;
+    --destructive: #DC2626;
+    --brand-violet: #5B4FD9;
+    --tech-cyan: #0891B2;
+
+    --border: #E3E8EF;
+    --input: #D3DAE4;
+    --ring: rgba(29, 78, 216, 0.35);
+
+    /* Severity shades chosen for readable text on white and on their /10 tint. */
+    --sev-critical: #D92D20;
+    --sev-high: #C2410C;
+    --sev-medium: #B45309;
+    --sev-low: #047857;
+    --sev-info: #2563EB;
+    --success: #047857;
+    --warning: #B45309;
+
+    --chart-1: #2563EB;
+    --chart-2: #0891B2;
+    --chart-3: #059669;
+    --chart-4: #D97706;
+    --chart-5: #EA580C;
+
+    --sidebar: #FFFFFF;
+    --sidebar-foreground: #0B1B33;
+    --sidebar-primary: #1D4ED8;
+    --sidebar-primary-foreground: #FFFFFF;
+    --sidebar-accent: #EEF3FF;
+    --sidebar-accent-foreground: #0B1B33;
+    --sidebar-border: #E3E8EF;
+    --sidebar-ring: rgba(29, 78, 216, 0.35);
+
+    --panel-shadow: 0 1px 2px rgba(11, 27, 51, 0.04), 0 1px 3px rgba(11, 27, 51, 0.04);
+    --panel-shadow-lift: 0 2px 4px rgba(11, 27, 51, 0.04), 0 12px 28px -14px rgba(11, 27, 51, 0.18);
+    --inset-bg: #F7F9FC;
+    --inset-border: #E8EDF3;
+    --glass-bg: rgba(255, 255, 255, 0.86);
+    --grid-line: rgba(15, 42, 92, 0.045);
+}
+
+html.netra-app-theme,
+html.netra-app-theme body {
+    background: var(--background);
+}
+
+html.netra-app-theme ::selection {
+    background: rgba(29, 78, 216, 0.16);
+}
+
+html.netra-app-theme * {
+    scrollbar-color: rgba(85, 100, 121, 0.28) transparent;
+}
+
+/* Page title block shared by every authenticated page (components/netra/headers.tsx). */
+.app-page-header {
+    position: relative;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border);
+}
+
+/* Column header row for the grid-based data tables on list pages. */
+@layer components {
+    .app-table-head {
+        background: color-mix(in srgb, var(--muted) 70%, transparent);
+        font-size: 11px;
+        line-height: 1rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted-foreground);
+    }
+}
+
+/* Command Center surfaces, re-skinned for the light app. */
+html.netra-app-theme .cc-card {
+    background: var(--card);
+    border-color: var(--border);
+    box-shadow: var(--panel-shadow);
+}
+html.netra-app-theme .cc-card:hover {
+    border-color: #D3DAE4;
+    box-shadow: var(--panel-shadow-lift);
+}
+html.netra-app-theme .cc-card-hero {
+    background:
+        radial-gradient(ellipse 70% 90% at 0% 0%, rgba(29, 78, 216, 0.06), transparent 60%),
+        radial-gradient(ellipse 50% 70% at 100% 100%, rgba(8, 145, 178, 0.05), transparent 65%),
+        var(--card);
+}
+html.netra-app-theme .cc-gauge-halo {
+    background: radial-gradient(circle, rgba(29, 78, 216, 0.07), transparent 68%);
+}
+html.netra-app-theme .cc-tile:hover {
+    border-color: #D3DAE4;
+    background-color: #F7F9FC;
+}
+html.netra-app-theme .cc-stage-item:hover .cc-marker {
+    background-color: rgba(29, 78, 216, 0.08);
+    box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.06);
+}
+
+/* Legacy dark panels, if a page still uses them. */
+html.netra-app-theme .netra-panel,
+html.netra-app-theme .netra-section {
+    background: var(--card);
+    box-shadow: var(--panel-shadow);
+}
+
+/* Guide spotlight in the light palette. */
+@keyframes ng-spotlight-light {
+    0% { box-shadow: 0 0 0 1px rgb(29 78 216 / 0), 0 0 0 0 rgb(29 78 216 / 0); }
+    15%, 70% { box-shadow: 0 0 0 1px rgb(29 78 216 / 0.5), 0 0 0 6px rgb(29 78 216 / 0.08); }
+    100% { box-shadow: 0 0 0 1px rgb(29 78 216 / 0), 0 0 0 0 rgb(29 78 216 / 0); }
+}
+html.netra-app-theme .ng-spotlight {
+    animation-name: ng-spotlight-light;
+}
+
+/* Sidebar navigation: quiet rows, one clear active state, no outlines. */
+.app-nav-link {
+    transition: background-color 160ms ease, color 160ms ease;
+}
+.app-nav-link[aria-current="page"] {
+    background: var(--sidebar-accent);
+    color: var(--primary);
+}
+.app-nav-link[aria-current="page"]::before {
+    content: '';
+    position: absolute;
+    left: -0.625rem;
+    top: 0.5rem;
+    bottom: 0.5rem;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html.netra-app-theme .ng-spotlight {
+        animation: none;
+        box-shadow: 0 0 0 1px rgb(29 78 216 / 0.5), 0 0 0 6px rgb(29 78 216 / 0.08);
+    }
 }

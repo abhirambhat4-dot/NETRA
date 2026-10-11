@@ -30,7 +30,7 @@ interface Row {
 }
 
 const AXIS = { fill: 'var(--muted-foreground)', fontSize: 11 }
-const GRID = 'rgb(148 163 184 / 0.08)'
+const GRID = 'rgb(100 116 139 / 0.16)'
 
 function tickLabel(ts: string, range: TrendRange) {
   const d = new Date(ts)

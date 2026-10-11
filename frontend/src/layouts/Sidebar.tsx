@@ -21,28 +21,23 @@ export function Sidebar({ mode = 'responsive', onNavigate }: SidebarProps) {
   const { data: stats } = useQuery('sidebar-stats', dashboardService.getStats)
   const { data: systemHealth } = useQuery('sidebar-health', dashboardService.getSystemHealth)
   const healthy = systemHealth?.length ? systemHealth.every((c) => c.status === 'HEALTHY') : null
+  const healthyCount = systemHealth?.filter((c) => c.status === 'HEALTHY').length ?? 0
 
   return (
-    <div className="flex h-full flex-col bg-sidebar/85">
-      <div className={cn('flex h-16 shrink-0 items-center border-b border-sidebar-border/80', expanded ? 'px-4' : 'justify-center lg:justify-start lg:px-4')}>
-        <div className="flex items-center gap-2.5">
-          <div className="relative flex h-8 w-8 items-center justify-center rounded-md border border-primary/25 bg-primary/10">
-            <span className="absolute inset-1 rounded-sm border border-primary/30" />
-            <span className="relative h-2.5 w-2.5 rounded-full bg-primary shadow-[0_0_18px_rgba(56,217,255,0.8)]" />
-          </div>
-          <NetraLogo className={expanded ? '' : 'hidden lg:flex'} />
-          <NetraMark className={expanded ? 'hidden' : 'lg:hidden'} />
-        </div>
+    <div className="flex h-full flex-col bg-sidebar">
+      <div className={cn('flex h-16 shrink-0 items-center', expanded ? 'px-5' : 'justify-center lg:justify-start lg:px-5')}>
+        <NetraLogo className={expanded ? '' : 'hidden lg:flex'} />
+        <NetraMark className={expanded ? 'hidden' : 'lg:hidden'} />
       </div>
 
-      <nav className="flex-1 space-y-5 overflow-y-auto px-2.5 pt-4 pb-4" aria-label="Main">
+      <nav className="flex-1 space-y-6 overflow-y-auto px-2.5 pt-3 pb-4" aria-label="Main">
         {NAV_GROUPS.map((group) => (
           <div key={group.label}>
-            <div className={cn('mb-2 px-2.5 text-[10px] font-semibold tracking-[0.18em] text-muted-foreground/70 uppercase', full)}>
+            <div className={cn('mb-1.5 px-3 text-[11px] font-semibold tracking-[0.08em] text-muted-foreground/80 uppercase', full)}>
               {group.label}
             </div>
             {!expanded && <div className="mx-auto mb-2 h-px w-6 bg-sidebar-border lg:hidden" />}
-            <ul className="space-y-1">
+            <ul className="space-y-0.5">
               {group.items.map((item) => (
                 <li key={item.to}>
                   <SidebarLink
@@ -58,19 +53,19 @@ export function Sidebar({ mode = 'responsive', onNavigate }: SidebarProps) {
         ))}
       </nav>
 
-      <div className="shrink-0 p-2.5">
-        <div className={cn('surface-inset rounded-xl px-3 py-2.5', !expanded && 'max-lg:flex max-lg:justify-center max-lg:px-0')}>
-          <div className={cn('text-[10px] font-semibold tracking-[0.14em] text-muted-foreground/70 uppercase', full)}>System status</div>
-          <div className={cn('flex items-center gap-2', expanded ? 'mt-1.5' : 'lg:mt-1.5')}>
-            <StatusDot tone={healthy === null ? 'info' : healthy ? 'low' : 'medium'} pulse={healthy !== null} />
-            <span className={cn('text-xs font-medium', healthy === null ? 'text-muted-foreground' : healthy ? 'text-low' : 'text-medium', full)}>
-              {healthy === null ? 'Status unavailable' : healthy ? 'Operational' : 'Degraded'}
-            </span>
-            {systemHealth && systemHealth.length > 0 && (
-              <span className={cn('ml-auto font-mono text-[10px] text-muted-foreground', full)}>
-                {systemHealth.filter((c) => c.status === 'HEALTHY').length}/{systemHealth.length}
-              </span>
-            )}
+      <div className="shrink-0 border-t border-sidebar-border p-3">
+        <div
+          className={cn('flex items-center gap-2.5 rounded-lg px-2.5 py-2', !expanded && 'max-lg:justify-center max-lg:px-0')}
+          title={healthy === null ? 'System health is not available from the current API' : `${healthyCount} of ${systemHealth?.length} components healthy`}
+        >
+          <StatusDot tone={healthy === null ? 'neutral' : healthy ? 'low' : 'medium'} pulse={healthy === false} />
+          <div className={cn('min-w-0 flex-1 leading-tight', full)}>
+            <div className="text-[12px] font-medium text-foreground">
+              {healthy === null ? 'Status unavailable' : healthy ? 'All systems operational' : 'Degraded service'}
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              {systemHealth?.length ? `${healthyCount}/${systemHealth.length} components healthy` : 'No health report'}
+            </div>
           </div>
         </div>
       </div>
@@ -95,33 +90,22 @@ function SidebarLink({
     <NavLink
       to={item.to}
       onClick={onNavigate}
-      className={({ isActive }) =>
-        cn(
-          'group relative flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium transition-all duration-200',
-          !expanded && 'max-lg:justify-center max-lg:px-0',
-          isActive
-            ? 'bg-primary/10 text-foreground ring-1 ring-inset ring-primary/20'
-            : 'text-muted-foreground hover:bg-foreground/4 hover:text-foreground',
-        )
-      }
+      className={cn(
+        'app-nav-link group relative flex h-9 items-center gap-3 rounded-lg px-3 text-[13px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground',
+        !expanded && 'max-lg:justify-center max-lg:px-0',
+      )}
     >
       {({ isActive }) => (
         <>
-          <span
-            aria-hidden
-            className={cn(
-              'absolute top-2 bottom-2 left-0 w-0.5 rounded-full bg-primary transition-all duration-200',
-              isActive ? 'opacity-100' : 'scale-y-0 opacity-0',
-            )}
-          />
-          <Icon className={cn('size-4 shrink-0 transition-colors', isActive ? 'text-primary' : 'group-hover:text-foreground')} />
+          <Icon className={cn('size-[17px] shrink-0', isActive ? 'text-primary' : 'text-muted-foreground/80 group-hover:text-foreground')} strokeWidth={isActive ? 2.1 : 1.8} />
           <span className={cn('truncate', !expanded && 'hidden lg:block')}>{item.label}</span>
           {count !== undefined && count > 0 && (
             <span
               className={cn(
-                'ml-auto rounded-md bg-critical/12 px-1.5 font-mono text-[10px] leading-4.5 font-semibold text-critical',
-                !expanded && 'max-lg:absolute max-lg:top-0.5 max-lg:right-1.5 max-lg:ml-0 max-lg:px-1 max-lg:text-[9px]',
+                'ml-auto rounded-full bg-critical/10 px-1.5 font-mono text-[10px] leading-[18px] font-semibold text-critical',
+                !expanded && 'max-lg:absolute max-lg:top-0 max-lg:right-1.5 max-lg:ml-0 max-lg:bg-critical max-lg:px-1 max-lg:text-[9px] max-lg:leading-4 max-lg:text-white',
               )}
+              aria-label={`${count} active incidents`}
             >
               {count}
             </span>

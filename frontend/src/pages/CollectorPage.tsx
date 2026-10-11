@@ -56,7 +56,7 @@ function LiveCollectorPage() {
 
   return (
     <PageContainer>
-      <PageHeader eyebrow="Intake" title="Live Event Collector" description={DESCRIPTION} />
+      <PageHeader icon={RadioTower} eyebrow="Intake" title="Live Event Collector" description={DESCRIPTION} />
 
       <MetricStrip metrics={statusMetrics(data, error)} />
 
@@ -222,7 +222,7 @@ function CollectedEventRow({ event: e, entryIndex, selected, onSelectedChange }:
 function CollectorUnavailable() {
   return (
     <PageContainer>
-      <PageHeader eyebrow="Intake" title="Live Event Collector" description={DESCRIPTION} />
+      <PageHeader icon={RadioTower} eyebrow="Intake" title="Live Event Collector" description={DESCRIPTION} />
       <Panel title="NETRA Web Collector" description="Browser-based event intake">
         <EmptyState
           icon={ServerOff}

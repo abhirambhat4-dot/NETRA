@@ -1,5 +1,5 @@
 import { useState, type ComponentType, type ReactNode } from 'react'
-import { Monitor, RotateCcw, ShieldCheck, UserRound } from 'lucide-react'
+import { Monitor, RotateCcw, Settings as SettingsIcon, ShieldCheck, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/auth/AuthProvider'
 import { NetraGuideRobot } from '@/components/guide'
@@ -30,6 +30,7 @@ export function SettingsPage() {
   return (
     <PageContainer>
       <PageHeader
+        icon={SettingsIcon}
         eyebrow="Administration"
         title="Settings"
         description="Account context, browser-local preferences, and this frontend's current data mode."

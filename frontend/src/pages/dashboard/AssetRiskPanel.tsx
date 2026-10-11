@@ -31,7 +31,7 @@ export function AssetRiskPanel({ assets }: { assets?: AssetInventoryItem[] }) {
         <EmptyState title="No assets available" description="The current inventory has no registered assets to assess." />
       ) : (
         <div>
-          <div className={cn('hidden gap-4 border-y border-border px-5 py-2 text-[11px] font-medium text-muted-foreground md:grid', COLS)}>
+          <div className={cn('app-table-head hidden gap-4 border-y border-border px-5 py-2 md:grid', COLS)}>
             <span>Asset</span>
             <span>Criticality</span>
             <span>Exposure</span>

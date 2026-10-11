@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     frontend_base_url: str | None = None
     password_reset_token_expire_minutes: int = Field(default=30, gt=0, le=1440)
 
+    # Dataset CSV uploads (validation only). The API enforces both caps; any reverse proxy in front
+    # of it has its own request-size limit, which must be at least this size (docs/DATASET_IMPORTS.md).
+    import_max_upload_bytes: int = Field(default=25 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)
+    import_max_rows: int = Field(default=100_000, gt=0, le=10_000_000)
+
 
 @lru_cache
 def get_settings() -> Settings:
