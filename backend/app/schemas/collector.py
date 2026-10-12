@@ -80,3 +80,5 @@ class CollectorStatusResponse(CoreResponse):
     events_last_24h: int = Field(alias="eventsLast24h")
     last_received_at: datetime | None
     recent_events: list[EventResponse]
+    imported_events_total: int = Field(description="Events stored by dataset imports (not counted as collector events).")
+    recent_imported_events: list[EventResponse] = Field(description="Most recently imported events, newest import first.")

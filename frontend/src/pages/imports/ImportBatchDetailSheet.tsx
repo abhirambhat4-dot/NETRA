@@ -3,7 +3,14 @@ import type { BackendImportBatchDetail, ImportIssue } from '@/api/types'
 import { DetailSection, DetailSheet, ErrorState, KeyValueList, LoadingState, ToneBadge } from '@/components/netra'
 import { Button } from '@/components/ui/button'
 import { useQuery } from '@/hooks/useQuery'
-import { describeImportOutcome, describeStoredRows, formatBytes, issueLocation } from '@/lib/datasetImport'
+import {
+  delimiterLabel,
+  describeCoverage,
+  describeImportOutcome,
+  describeStoredRows,
+  formatBytes,
+  issueLocation,
+} from '@/lib/datasetImport'
 import { formatDateTime, formatNumber } from '@/lib/format'
 import { ROUTES } from '@/lib/navigation'
 import { importService } from '@/services'
@@ -76,6 +83,41 @@ function Body({ batch: b }: { batch: BackendImportBatchDetail }) {
         </div>
       </DetailSection>
 
+      {b.normalization?.fieldMapping && (
+        <DetailSection title="Field mapping">
+          <KeyValueList
+            columns={2}
+            items={[
+              { label: 'Record type', value: b.normalization.recordType ?? '—', mono: true },
+              { label: 'Timestamp format', value: b.normalization.timestampFormat ?? '—', mono: true },
+              { label: 'Offset for zoneless times', value: `UTC${b.normalization.utcOffset ?? '+00:00'}`, mono: true },
+              {
+                label: 'File format',
+                value: `${b.normalization.encoding ?? '—'} · ${delimiterLabel(b.normalization.delimiter ?? ',')}`,
+              },
+              ...Object.entries(b.normalization.fieldMapping).map(([field, column]) => ({
+                label: field,
+                value: <span title={column}>{column}</span>,
+              })),
+              ...(b.normalization.defaultEventType
+                ? [{ label: 'Default event type', value: b.normalization.defaultEventType }]
+                : []),
+            ]}
+          />
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Recorded on every stored event, with all original columns by name, so each event can be traced to its source cells.
+          </p>
+        </DetailSection>
+      )}
+
+      {b.eventCoverage && describeCoverage(b.eventCoverage).length > 0 && (
+        <DetailSection title="Assessment readiness">
+          <ul className="space-y-1 text-xs leading-relaxed text-muted-foreground">
+            {describeCoverage(b.eventCoverage).map((note) => <li key={note}>{note}</li>)}
+          </ul>
+        </DetailSection>
+      )}
+
       <DetailSection title="Validation issues">
         {b.errorTotal === 0 ? (
           <p className="text-xs text-muted-foreground">No issues found.</p>
@@ -116,7 +158,7 @@ export function RowCounts({ batch }: { batch: BackendImportBatchDetail }) {
     { label: 'Rejected', value: batch.rejectedRows, className: batch.rejectedRows > 0 ? 'text-critical' : '' },
     { label: 'Issues', value: batch.errorTotal, className: batch.errorTotal > 0 ? 'text-medium' : '' },
     { label: 'Events stored', value: batch.eventsCreated ?? 0, className: '' },
-    { label: 'Duplicates', value: batch.duplicateRows ?? 0, className: '' },
+    { label: 'Skipped (duplicates)', value: batch.duplicateRows ?? 0, className: '' },
   ]
   return (
     <dl className="surface-inset grid grid-cols-2 gap-px overflow-hidden rounded-lg sm:grid-cols-3">

@@ -81,5 +81,9 @@ def get_collector_status(
 ) -> CollectorStatusResponse:
     summary = collector_status(db)
     return CollectorStatusResponse(
-        **{**summary, "recent_events": [event_response(event) for event in summary["recent_events"]]}
+        **{
+            **summary,
+            "recent_events": [event_response(event) for event in summary["recent_events"]],
+            "recent_imported_events": [event_response(event) for event in summary["recent_imported_events"]],
+        }
     )

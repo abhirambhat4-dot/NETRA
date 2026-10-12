@@ -731,6 +731,10 @@ export interface BackendCollectorStatusResponse {
   eventsLast24h: number
   lastReceivedAt: string | null
   recentEvents: BackendEventResponse[]
+  /** Events stored by dataset imports; never counted as collector events. */
+  importedEventsTotal: number
+  /** Most recently imported events, newest import first. */
+  recentImportedEvents: BackendEventResponse[]
 }
 
 export interface CollectorStatus {
@@ -740,6 +744,8 @@ export interface CollectorStatus {
   eventsLast24h: number
   lastReceivedAt: string | null
   recentEvents: EventsPageItem[]
+  importedEventsTotal: number
+  recentImportedEvents: EventsPageItem[]
 }
 
 /** One event for POST /api/collector/events. Source is always assigned by the server. */
@@ -861,7 +867,7 @@ export interface AssessmentFilters {
 }
 
 // ---------------------------------------------------------------------------
-// Dataset import (backend: app/schemas/imports.py) — validation only, no rows are stored
+// Dataset import (backend: app/schemas/imports.py) — normalising profiles store accepted rows as events
 // ---------------------------------------------------------------------------
 
 export type ImportBatchStatus = 'VALIDATED' | 'REJECTED'
@@ -899,11 +905,107 @@ export interface BackendImportBatchSummary {
   completedAt: string | null
 }
 
+/** What a batch's stored events can support: Security Assessment reads only asset-linked events. */
+export interface ImportEventCoverage {
+  events: number
+  linkedToAsset: number
+  /** An IP address that no single registered asset matches. */
+  addressWithoutAsset: number
+  /** No IP address at all, so the event cannot be linked to an asset. */
+  withoutAddress: number
+}
+
 /** POST /api/imports and GET /api/imports/{id}. */
 export interface BackendImportBatchDetail extends BackendImportBatchSummary {
   /** At most 100 issues; errorTotal counts all of them. */
   errorSample: ImportIssue[]
   errorSampleTruncated: boolean
+  /** How rows were interpreted (security-csv: record type, field mapping, timestamp reading); null if nothing was stored. */
+  normalization?: ImportNormalization | null
+  eventCoverage?: ImportEventCoverage | null
+}
+
+export interface ImportNormalization {
+  profile: string
+  profileVersion: string
+  recordType?: ImportRecordType
+  /** Canonical field name → source column name. */
+  fieldMapping?: Partial<Record<CanonicalFieldName, string>>
+  timestampFormat?: string
+  utcOffset?: string
+  encoding?: string
+  delimiter?: string
+  defaultEventType?: string
+}
+
+export type CanonicalFieldName =
+  | 'occurred_at'
+  | 'event_type'
+  | 'src_ip'
+  | 'dest_ip'
+  | 'src_port'
+  | 'dest_port'
+  | 'protocol'
+  | 'severity'
+  | 'message'
+  | 'outcome'
+  | 'label'
+
+export type ImportRecordType = 'security_event' | 'network_flow'
+export type SuggestionConfidence = 'high' | 'low' | 'ambiguous' | 'none'
+
+/** The `mapping` form field of POST /api/imports for the security-csv profile. */
+export interface FieldMappingRequest {
+  recordType: ImportRecordType
+  fields: Partial<Record<CanonicalFieldName, string>>
+  timestampFormat: string
+  utcOffset: string
+  encoding: string
+  delimiter: string
+  defaultEventType?: string
+}
+
+/** POST /api/imports/preview — read-only; nothing is recorded. */
+export interface BackendImportPreview {
+  originalFilename: string
+  fileSizeBytes: number
+  fileSha256: string
+  encoding: string
+  encodingConfident: boolean
+  delimiter: string
+  delimiterConfident: boolean
+  columns: { index: number; name: string; mappable: boolean; inferredKind: string; nonEmpty: number }[]
+  /** First sampled rows; cells truncated, formula-like cells prefixed with an apostrophe by the API. */
+  rows: string[][]
+  sampledRows: number
+  moreRows: boolean
+  suggestedRecordType: ImportRecordType
+  suggestions: {
+    field: CanonicalFieldName
+    column: string | null
+    columnIndex: number | null
+    confidence: SuggestionConfidence
+    reason: string
+    candidates: string[]
+  }[]
+  suggestedTimestampFormat: string | null
+  timestampFormatCandidates: string[]
+  timestampHasZone: boolean | null
+  recognizedProfile: string | null
+  warnings: string[]
+  needsReview: boolean
+  alreadyImported: boolean
+  alreadyImportedBatchId: string | null
+  fields: { name: CanonicalFieldName; label: string; kind: string; description: string }[]
+  recordTypes: { name: ImportRecordType; title: string; description: string; required: CanonicalFieldName[] }[]
+  timestampFormats: { name: string; label: string }[]
+  encodings: string[]
+  delimiters: { value: string; label: string }[]
+}
+
+export interface ImportPreviewOverrides {
+  encoding?: string
+  delimiter?: string
 }
 
 export interface BackendImportBatchPage {

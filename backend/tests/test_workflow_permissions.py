@@ -37,6 +37,7 @@ WORKFLOW_ROUTES = [
     "/api/events/ingest",
     "/api/collector/events",
     "/api/imports",
+    "/api/imports/preview",
     "/api/assessments",
 ]
 # Writes that are public by design: account creation and recovery. Exempt by method and path, so another

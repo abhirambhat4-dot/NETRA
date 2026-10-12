@@ -222,6 +222,18 @@ def collector_status(db: Session) -> dict[str, Any]:
         .limit(RECENT_EVENT_LIMIT)
     ).unique().all()
     receiving = last_received_at is not None and now - last_received_at <= RECEIVING_WINDOW
+    # Dataset imports are reported separately: they are uploaded files, not collector submissions, so
+    # they never count towards the collector's own totals or its receiving status.
+    is_imported = SecurityEvent.import_batch_id.is_not(None)
+    imported_total = int(db.scalar(select(func.count()).select_from(SecurityEvent).where(is_imported)) or 0)
+    recent_imported = db.scalars(
+        select(SecurityEvent)
+        .where(is_imported)
+        .options(joinedload(SecurityEvent.asset), selectinload(SecurityEvent.incidents))
+        # A batch's events share created_at (one transaction); keep its file order within it.
+        .order_by(SecurityEvent.created_at.desc(), SecurityEvent.source_row, SecurityEvent.id)
+        .limit(RECENT_EVENT_LIMIT)
+    ).unique().all()
     return {
         "collector": COLLECTOR_NAME,
         "status": "receiving" if receiving else "idle",
@@ -229,4 +241,6 @@ def collector_status(db: Session) -> dict[str, Any]:
         "events_last_24h": last_24h,
         "last_received_at": last_received_at,
         "recent_events": list(recent),
+        "imported_events_total": imported_total,
+        "recent_imported_events": list(recent_imported),
     }

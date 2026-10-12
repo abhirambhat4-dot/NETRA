@@ -71,6 +71,9 @@ def link_asset(event: NormalizedEvent, index: Mapping[str, set[uuid.UUID]]) -> t
     if len(matches) == 1:
         ((asset_id, fields),) = matches.items()
         return asset_id, {"rule": ASSET_LINK_RULE, "result": "linked", "assetId": str(asset_id), "matchedOn": fields}
+    if event.src_ip is None and event.dest_ip is None:
+        # Asset-based assessment reads only asset-linked events, so this event cannot inform one.
+        return None, {"rule": ASSET_LINK_RULE, "result": "event has no IP address to match"}
     if not matches:
         return None, {"rule": ASSET_LINK_RULE, "result": "no asset has the source or destination IP"}
     return None, {"rule": ASSET_LINK_RULE, "result": f"not linked: {len(matches)} assets match", "candidates": sorted(map(str, matches))}
@@ -78,7 +81,7 @@ def link_asset(event: NormalizedEvent, index: Mapping[str, set[uuid.UUID]]) -> t
 
 def accepted_rows(file: BinaryIO, profile: DatasetProfile) -> Iterator[tuple[int, dict[str, str]]]:
     """(row number, values) for each row that passes the profile, numbered exactly as validation numbers them."""
-    from app.services.dataset_import import check_record, open_csv
+    from app.services.dataset_import import check_record, is_blank, open_csv
 
     with open_csv(file, profile) as reader:
         header = next(reader)
@@ -86,7 +89,7 @@ def accepted_rows(file: BinaryIO, profile: DatasetProfile) -> Iterator[tuple[int
         row_number = 1
         for record in reader:
             row_number += 1
-            if not record or check_record(profile, header, positions, record, row_number):
+            if is_blank(profile, record) or check_record(profile, header, positions, record, row_number):
                 continue
             yield row_number, {name: record[index] for name, index in positions.items()}
 

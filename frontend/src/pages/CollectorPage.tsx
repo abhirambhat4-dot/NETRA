@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronRight, MonitorSmartphone, RadioTower, ServerOff } from 'lucide-react'
+import { ChevronRight, FileUp, MonitorSmartphone, RadioTower, ServerOff } from 'lucide-react'
 import type { CollectorStatus, EventsPageItem } from '@/api/types'
 import {
   EmptyState,
@@ -10,6 +10,7 @@ import {
   PageContainer,
   PageHeader,
   Panel,
+  SegmentedControl,
   SeverityBadge,
   StatusDot,
   ToneBadge,
@@ -26,7 +27,9 @@ import { CreateIncidentBar } from './collector/CreateIncidentBar'
 import { SubmitEventsPanel } from './collector/SubmitEventsPanel'
 
 const REFRESH_INTERVAL_MS = 15_000
-const DESCRIPTION = "Capture security signals directly into NETRA's intelligence pipeline."
+type EventView = 'collector' | 'imports'
+
+const DESCRIPTION ="Capture security signals directly into NETRA's intelligence pipeline."
 
 export function CollectorPage() {
   return USE_MOCKS ? <CollectorUnavailable /> : <LiveCollectorPage />
@@ -36,8 +39,10 @@ function LiveCollectorPage() {
   const { data, error, reload } = useQuery('collector-status', collectorService.getStatus)
   const unauthorized = error instanceof HttpError && error.status === 401
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
-  // Only events currently displayed by the collector can be selected.
-  const selected = (data?.recentEvents ?? []).filter((event) => selectedIds.has(event.id))
+  const [view, setView] = useState<EventView>('collector')
+  const shown = (view === 'collector' ? data?.recentEvents : data?.recentImportedEvents) ?? []
+  // Only events currently displayed can be selected.
+  const selected = shown.filter((event) => selectedIds.has(event.id))
   const toggle = (id: string, checked: boolean) =>
     setSelectedIds((current) => {
       const next = new Set(current)
@@ -66,8 +71,26 @@ function LiveCollectorPage() {
         <CollectorIdentity className="xl:col-span-4" />
 
         <Panel
-          title="Recent collected events"
-          description="Latest events received by the collector · select events to create an incident, or open one for its full record"
+          title={view === 'collector' ? 'Recent collected events' : 'Recently imported events'}
+          description={
+            view === 'collector'
+              ? 'Latest events received by the collector · select events to create an incident, or open one for its full record'
+              : 'Latest events stored by dataset imports, newest import first · stored as INFO; labels in the file are not detections'
+          }
+          actions={
+            <SegmentedControl<EventView>
+              aria-label="Event source"
+              value={view}
+              onChange={(next) => {
+                setView(next)
+                setSelectedIds(new Set())
+              }}
+              options={[
+                { value: 'collector', label: 'Collector' },
+                { value: 'imports', label: data ? `Imports · ${formatNumber(data.importedEventsTotal)}` : 'Imports' },
+              ]}
+            />
+          }
           flush
           className="xl:col-span-8"
         >
@@ -84,16 +107,23 @@ function LiveCollectorPage() {
             </div>
           ) : !data ? (
             <LoadingState className="px-5 pt-1" count={5} label="Loading collector status…" />
-          ) : data.totalEvents === 0 ? (
+          ) : view === 'collector' && data.totalEvents === 0 ? (
             <EmptyState
               icon={RadioTower}
               title="No collector events received yet."
               description="Events appear here after the collector receives its first submission."
             />
+          ) : view === 'imports' && data.importedEventsTotal === 0 ? (
+            <EmptyState
+              icon={FileUp}
+              title="No imported events yet."
+              description="Events appear here after a dataset import stores its first validated rows."
+              action={<Button asChild variant="outline" size="sm"><Link to={ROUTES.imports}>Open Dataset Import</Link></Button>}
+            />
           ) : (
             <>
               <ul className="border-t border-border">
-                {data.recentEvents.map((event, index) => (
+                {shown.map((event, index) => (
                   <CollectedEventRow
                     key={event.id}
                     event={event}

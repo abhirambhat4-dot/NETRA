@@ -1,4 +1,14 @@
-import type { BackendImportBatchSummary, ImportIssue } from '@/api/types'
+import type {
+  BackendImportBatchSummary,
+  BackendImportPreview,
+  CanonicalFieldName,
+  FieldMappingRequest,
+  ImportEventCoverage,
+  ImportIssue,
+  ImportPreviewOverrides,
+  ImportRecordType,
+  SuggestionConfidence,
+} from '@/api/types'
 import type { Tone } from '@/lib/tones'
 
 // Dataset import helpers. Type-only imports keep this module runnable under `node --test`.
@@ -9,8 +19,17 @@ export interface ImportProfileOption {
   description: string
 }
 
-/** Only profiles the backend implements (app/services/dataset_profiles.py). */
+/** Field-mapped import of security CSVs from any source (backend: app/services/security_csv.py). */
+export const SECURITY_CSV_PROFILE = 'security-csv'
+
+/** Only profiles the backend implements (app/services/dataset_profiles.py, security_csv.py). */
 export const IMPORT_PROFILES: readonly ImportProfileOption[] = [
+  {
+    id: SECURITY_CSV_PROFILE,
+    label: 'Security CSV (map your columns)',
+    description:
+      'Any security CSV. NETRA previews the file and suggests which columns hold the timestamp, addresses, event type and other fields. Nothing is imported until you confirm the mapping.',
+  },
   {
     id: 'generic-csv',
     label: 'Generic CSV (structure only)',
@@ -28,10 +47,25 @@ export const IMPORT_PROFILES: readonly ImportProfileOption[] = [
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 export const MAX_ROWS = 100_000
 
-/** Exact multipart field names read by POST /api/imports. */
-export function buildImportFormData(file: Blob, filename: string, profile: string): FormData {
+/** Exact multipart field names read by POST /api/imports; `mapping` is sent only for security-csv. */
+export function buildImportFormData(
+  file: Blob,
+  filename: string,
+  profile: string,
+  mapping?: FieldMappingRequest,
+): FormData {
   const form = new FormData()
   form.append('profile', profile)
+  if (mapping) form.append('mapping', JSON.stringify(mapping))
+  form.append('file', file, filename)
+  return form
+}
+
+/** Exact multipart field names read by POST /api/imports/preview. */
+export function buildPreviewFormData(file: Blob, filename: string, overrides: ImportPreviewOverrides = {}): FormData {
+  const form = new FormData()
+  if (overrides.encoding) form.append('encoding', overrides.encoding)
+  if (overrides.delimiter) form.append('delimiter', overrides.delimiter)
   form.append('file', file, filename)
   return form
 }
@@ -168,4 +202,129 @@ export function issueLocation(issue: ImportIssue): string {
   if (parts.length === 0) return 'File'
   const [first, ...rest] = parts
   return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(' · ')
+}
+
+// ---------------------------------------------------------------------------
+// Security CSV field mapping
+// ---------------------------------------------------------------------------
+
+/** The user's working mapping; an empty string means "not mapped" or "not chosen". */
+export interface MappingDraft {
+  recordType: ImportRecordType
+  fields: Partial<Record<CanonicalFieldName, string>>
+  timestampFormat: string
+  utcOffset: string
+  encoding: string
+  delimiter: string
+  defaultEventType: string
+}
+
+export const UTC_OFFSET_PATTERN = /^[+-](0\d|1[0-4]):[0-5]\d$/
+const DEFAULT_EVENT_TYPE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 _.:/-]*$/
+
+export const CONFIDENCE_META: Record<SuggestionConfidence, { label: string; tone: Tone }> = {
+  high: { label: 'Detected', tone: 'low' },
+  low: { label: 'Check', tone: 'medium' },
+  ambiguous: { label: 'Ambiguous', tone: 'medium' },
+  none: { label: 'Not found', tone: 'neutral' },
+}
+
+/**
+ * Starting point for the mapping form. Only high-confidence suggestions (column name and sampled values
+ * agree) are preselected; everything else is left for the user, so nothing is silently guessed.
+ */
+export function initialDraft(preview: BackendImportPreview): MappingDraft {
+  const fields: Partial<Record<CanonicalFieldName, string>> = {}
+  for (const suggestion of preview.suggestions) {
+    if (suggestion.confidence === 'high' && suggestion.column) fields[suggestion.field] = suggestion.column
+  }
+  return {
+    recordType: preview.suggestedRecordType,
+    fields,
+    timestampFormat: preview.suggestedTimestampFormat ?? '',
+    utcOffset: '+00:00',
+    encoding: preview.encoding,
+    delimiter: preview.delimiter,
+    defaultEventType: '',
+  }
+}
+
+/** Header names that can be mapped: blank and repeated names cannot be addressed by name. */
+export function mappableColumns(preview: BackendImportPreview): string[] {
+  return preview.columns.filter((column) => column.mappable).map((column) => column.name)
+}
+
+export function requiredFields(preview: BackendImportPreview, recordType: ImportRecordType): CanonicalFieldName[] {
+  return preview.recordTypes.find((type) => type.name === recordType)?.required ?? []
+}
+
+/** Why the draft cannot be imported yet; empty when it is complete. Mirrors the API's FieldMapping checks. */
+export function draftProblems(draft: MappingDraft, preview: BackendImportPreview): string[] {
+  const problems: string[] = []
+  const label = (name: CanonicalFieldName) => preview.fields.find((field) => field.name === name)?.label ?? name
+  const typeTitle = preview.recordTypes.find((type) => type.name === draft.recordType)?.title ?? draft.recordType
+  const defaultType = draft.defaultEventType.trim()
+  for (const name of requiredFields(preview, draft.recordType)) {
+    if (draft.fields[name]) continue
+    if (name !== 'event_type') problems.push(`${label(name)} is required for ${typeTitle} records: choose its column.`)
+    else if (!defaultType) {
+      problems.push(`${label(name)} is required for ${typeTitle} records: choose its column or enter a default event type.`)
+    }
+  }
+  if (!draft.timestampFormat) problems.push('Choose the timestamp format.')
+  if (!UTC_OFFSET_PATTERN.test(draft.utcOffset)) problems.push('The UTC offset must look like +00:00 or -05:30.')
+  if (!draft.fields.event_type && defaultType && (defaultType.length > 100 || !DEFAULT_EVENT_TYPE_PATTERN.test(defaultType))) {
+    problems.push('The default event type may use letters, digits, spaces and _ . : / - (up to 100 characters).')
+  }
+  const seen = new Map<string, CanonicalFieldName>()
+  for (const [name, column] of Object.entries(draft.fields) as [CanonicalFieldName, string][]) {
+    if (!column) continue
+    const first = seen.get(column.toLowerCase())
+    if (first) problems.push(`Column "${column}" is mapped to both ${label(first)} and ${label(name)}.`)
+    else seen.set(column.toLowerCase(), name)
+  }
+  return problems
+}
+
+/** The confirmed draft as the API's mapping field; unmapped fields are omitted. */
+export function draftToMapping(draft: MappingDraft): FieldMappingRequest {
+  const fields: Partial<Record<CanonicalFieldName, string>> = {}
+  for (const [name, column] of Object.entries(draft.fields) as [CanonicalFieldName, string][]) {
+    if (column) fields[name] = column
+  }
+  const mapping: FieldMappingRequest = {
+    recordType: draft.recordType,
+    fields,
+    timestampFormat: draft.timestampFormat,
+    utcOffset: draft.utcOffset,
+    encoding: draft.encoding,
+    delimiter: draft.delimiter,
+  }
+  const defaultType = draft.defaultEventType.trim()
+  if (!fields.event_type && defaultType) mapping.defaultEventType = defaultType
+  return mapping
+}
+
+/** Plain-language notes on what the stored events can and cannot support. */
+export function describeCoverage(coverage: ImportEventCoverage): string[] {
+  const notes: string[] = []
+  const events = (count: number) => `${count.toLocaleString('en-US')} event${count === 1 ? '' : 's'}`
+  if (coverage.linkedToAsset > 0) {
+    notes.push(`${events(coverage.linkedToAsset)} matched a registered asset by IP address and can inform that asset's Security Assessment.`)
+  }
+  if (coverage.addressWithoutAsset > 0) {
+    notes.push(`${events(coverage.addressWithoutAsset)} have IP addresses that match no single registered asset, so no asset assessment uses them.`)
+  }
+  if (coverage.withoutAddress > 0) {
+    notes.push(
+      `${events(coverage.withoutAddress)} have no IP address. They are listed as events but cannot be linked to an asset, so Security Assessment cannot use them.`,
+    )
+  }
+  return notes
+}
+
+const DELIMITER_LABELS: Record<string, string> = { ',': 'Comma', ';': 'Semicolon', '\t': 'Tab', '|': 'Pipe' }
+
+export function delimiterLabel(value: string): string {
+  return DELIMITER_LABELS[value] ?? value
 }
