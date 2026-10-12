@@ -43,7 +43,7 @@ export function LoginPage() {
     setLoading(true)
     try {
       await login(email.trim(), password, remember)
-      navigate(hasCompletedBriefing() ? ROUTES.dashboard : ROUTES.briefing, { replace: true })
+      navigate(hasCompletedBriefing() ? ROUTES.commandHome : ROUTES.briefing, { replace: true })
     } catch (cause) {
       setError(cause instanceof HttpError && cause.status === 401
         ? INVALID_CREDENTIALS

@@ -20,6 +20,7 @@ export const ROUTES = {
   forgotPassword: '/forgot-password',
   resetPassword: '/reset-password',
   briefing: '/briefing',
+  commandHome: '/home',
   dashboard: '/dashboard',
   events: '/events',
   incidents: '/incidents',

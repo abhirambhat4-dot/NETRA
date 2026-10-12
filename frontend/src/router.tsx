@@ -37,6 +37,17 @@ export const router = createBrowserRouter([
     ],
   },
   {
+    path: ROUTES.commandHome,
+    element: <RequireAuth><Outlet /></RequireAuth>,
+    children: [
+      {
+        index: true,
+        lazy: page(() => import('@/pages/CommandHomePage'), 'CommandHomePage'),
+        hydrateFallbackElement: <div className="min-h-svh bg-background" />,
+      },
+    ],
+  },
+  {
     element: <RequireAuth><AppLayout /></RequireAuth>,
     hydrateFallbackElement: <div className="min-h-svh bg-background" />,
     children: [
