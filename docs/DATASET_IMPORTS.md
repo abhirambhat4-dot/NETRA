@@ -14,8 +14,11 @@ the outcome as an **import batch**. Imports are validation only:
 
 ## Endpoints
 
-All three require a bearer token (`get_current_user`). There is no role model: any active user can
-upload, and each user sees only the batches they uploaded.
+All three require a bearer token for an active account. Uploading (`POST`) also requires the
+`operate_workflow` permission, which the `operator`, `approver` and `admin` roles all hold; any other
+role gets `403`. The two `GET` endpoints need only a valid token. Each user sees only the batches they
+uploaded. Roles are defined in `backend/app/core/permissions.py` (see `DEMO_DATA.md` for creating
+accounts).
 
 | Method | Path | Result |
 |---|---|---|

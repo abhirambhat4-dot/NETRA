@@ -257,9 +257,10 @@ def test_elevated_roles_can_still_verify(core_api: CoreApi, role: str) -> None:
     assert response.json()["state"] == "VERIFIED"
 
 
-# Registration
+# Registration (enabled explicitly: ALLOW_PUBLIC_REGISTRATION is off by default)
 
 
+@pytest.mark.usefixtures("open_registration")
 def test_registration_assigns_operator_even_when_a_role_is_supplied(
     auth_client: TestClient, auth_db: sessionmaker[Session]
 ) -> None:
@@ -281,6 +282,7 @@ def test_registration_assigns_operator_even_when_a_role_is_supplied(
     assert stored.role == Role.OPERATOR
 
 
+@pytest.mark.usefixtures("open_registration")
 def test_newly_registered_user_cannot_approve(core_api: CoreApi) -> None:
     credentials = {"email": "new-user@example.com", "password": "a-long-test-password"}
     registered = core_api.client.post(
@@ -298,6 +300,7 @@ def test_newly_registered_user_cannot_approve(core_api: CoreApi) -> None:
     assert_still_pending(core_api, incident_id, authorization_id)
 
 
+@pytest.mark.usefixtures("open_registration")
 def test_newly_registered_operator_can_still_request_authorization(core_api: CoreApi) -> None:
     credentials = {"email": "requester@example.com", "password": "a-long-test-password"}
     core_api.client.post("/api/auth/register", json={**credentials, "full_name": "Requester"})

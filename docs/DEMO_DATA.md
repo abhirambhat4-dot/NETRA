@@ -53,9 +53,61 @@ a requester cannot approve their own request. Containment uses the existing simu
 | `INC-DEMO-0002` | VERIFIED, authorization PENDING | 60.95 | BLOCK_IP | Live: Approve → Contain → Verify containment → Cyber Memory in the UI |
 | `INC-DEMO-0003` | PRIORITISED | 32.8 | INVESTIGATE | Contrast: NETRA does not escalate everything |
 
-The live approval of `INC-DEMO-0002` needs a signed-in user whose role is `approver` or `admin`.
-Registration always creates `operator` accounts, which can request authorizations and execute
-approved containment but cannot approve or reject.
+The live approval of `INC-DEMO-0002` needs a signed-in user whose role is `approver` or `admin`,
+and a different person from the one who requested it (self-approval is refused).
+
+## Accounts and roles
+
+Roles live in `users.role` and are defined in `backend/app/core/permissions.py`. A role not listed
+there grants nothing.
+
+| Role | Can do |
+|---|---|
+| `operator` | The incident workflow and intake (`operate_workflow`), request authorization, execute and verify approved containment. Cannot approve or reject. |
+| `approver` | Everything an operator can, plus approve or reject authorization requests. |
+| `admin` | Same permissions as `approver`. |
+
+Every signed-in active user can read NETRA's data. Role and active status are read from the database on
+each request, so changes apply to existing sessions immediately.
+
+**Self-registration is off by default.** `POST /api/auth/register` answers `403` unless the backend
+sets `ALLOW_PUBLIC_REGISTRATION=true`; when on, it always creates `operator` accounts, whatever role
+the client sends. Otherwise an administrator creates accounts with `backend/scripts/netra_users.py`.
+
+### Creating the first approver or admin
+
+Run from `backend/` with the virtual environment, in PowerShell or cmd (the hidden password prompt
+needs a Windows console). The script resolves the database exactly as the application does: a
+`DATABASE_URL` set in the current shell wins over the one in `backend/.env`. Every command first prints
+only `target: host:port/database`, never the user name, password or connection string.
+
+Find the target with the read-only `list`, then confirm that exact `host:port/database` on every write:
+
+```powershell
+python scripts\netra_users.py list
+# target: localhost:5432/netra          <- copy this value
+python scripts\netra_users.py create --email approver@example.com --name "Demo Approver" --role approver --confirm-target localhost:5432/netra
+```
+
+- `create` prompts twice for the password with input hidden; it is never accepted as an argument, and
+  the same 8–128 character rule as registration applies.
+- Every write (`create`, `set-role`, `activate`, `deactivate`) needs `--confirm-target` with the
+  target's host, port and database (the host is case-insensitive; the database name is not). The
+  database name alone is not accepted, because different hosts can use the same name. It is checked
+  before any connection is opened; on a mismatch nothing is changed.
+- A write is also refused, before connecting, if the target is ambiguous: `DATABASE_URL` without a
+  host, `DATABASE_URL` query options that redirect the connection (`host`, `hostaddr`, `port`, `dbname`,
+  `service`, `servicefile`; `sslmode` and similar are fine), or any of `PGHOST`, `PGHOSTADDR`, `PGPORT`,
+  `PGDATABASE`, `PGSERVICE`, `PGSERVICEFILE` set in the shell.
+- If the printed target is not the one you expect, check for a `DATABASE_URL` left set in your shell
+  (`echo $env:DATABASE_URL` would print the secret, so use `Test-Path env:DATABASE_URL` instead).
+- `set-role --role approver|admin|operator` changes a role; `deactivate` blocks sign-in and stops the
+  account's existing tokens working; `activate` reverses it.
+- Connection strings, passwords and password hashes are never printed.
+
+To provision accounts on a Neon database, set its `DATABASE_URL` for that one command, as for the seed
+under Commands above, and confirm the printed target before writing. Production accounts need a production change
+approval; do not create them as part of a demo.
 
 Event times are set relative to the first `--apply` (within the previous two hours), so seed
 within 24 hours of a demo if the Dashboard's 24-hour counters should include them. Re-runs never

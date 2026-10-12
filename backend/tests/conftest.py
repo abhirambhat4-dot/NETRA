@@ -17,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 # Provide an ephemeral key when a developer has not configured one locally.
 os.environ.setdefault("JWT_SECRET_KEY", secrets.token_urlsafe(32))
 
+from app.api.auth import registration_enabled
 from app.db.dependencies import get_db
 from app.db.base import Base
 from app.db.session import engine as postgres_engine
@@ -90,6 +91,16 @@ def auth_client(auth_db: sessionmaker[Session]) -> Any:
         yield TestClient(app)
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.fixture
+def open_registration() -> Any:
+    """Enable self-registration for one test; ALLOW_PUBLIC_REGISTRATION is off by default."""
+    app.dependency_overrides[registration_enabled] = lambda: True
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(registration_enabled, None)
 
 
 APPROVER_EMAIL = "core-api-approver@example.com"

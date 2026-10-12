@@ -93,11 +93,25 @@ def require_permission(permission: Permission) -> Callable[..., User]:
     return dependency
 
 
+# Identical for every request, so a closed registration never reveals whether an email is registered.
+REGISTRATION_DISABLED = "Self-registration is not available. Ask a NETRA administrator to create your account."
+
+
+def registration_enabled() -> bool:
+    """Whether POST /register may create accounts (ALLOW_PUBLIC_REGISTRATION); a dependency so tests can switch it."""
+    return get_settings().allow_public_registration
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(
     request: RegisterRequest,
+    enabled: Annotated[bool, Depends(registration_enabled)],
     db: Annotated[Session, Depends(get_db)],
 ) -> User:
+    # Checked before any lookup: nothing is read or written while registration is closed.
+    if not enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=REGISTRATION_DISABLED)
+
     existing = db.scalar(select(User).where(User.email == request.email))
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered")

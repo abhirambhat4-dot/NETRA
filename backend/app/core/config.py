@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=60, gt=0)
     cors_origins: list[str] = ["http://localhost:5173"]
 
+    # Self-service sign-up through POST /api/auth/register. Off unless a deployment opts in; otherwise
+    # an administrator creates accounts with backend/scripts/netra_users.py.
+    allow_public_registration: bool = False
+
     # Password reset delivery over SMTP. Reset requests answer 503 until host, sender and
     # frontend URL are configured; port 465 uses implicit TLS, any other port requires STARTTLS.
     email_host: str | None = None

@@ -1,7 +1,8 @@
 """Roles and the controlled-response permissions they grant.
 
-Roles are stored as plain strings in ``users.role``. Registration always assigns ``operator``;
-``approver`` and ``admin`` are never self-assigned and are granted only by changing the stored role.
+Roles are stored as plain strings in ``users.role``. Self-registration, when enabled, always assigns
+``operator``; ``approver`` and ``admin`` are never self-assigned and are granted only by changing the
+stored role (``backend/scripts/netra_users.py``).
 A role that is not listed here grants no permissions.
 """
 

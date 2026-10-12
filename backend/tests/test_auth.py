@@ -3,11 +3,15 @@ from typing import Any
 from uuid import UUID
 
 import jwt
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
 from app.models.user import User
+
+# These tests create their accounts through self-registration, which is off by default.
+pytestmark = pytest.mark.usefixtures("open_registration")
 
 AUTH_URL = "/api/auth"
 REGISTER_DATA = {
