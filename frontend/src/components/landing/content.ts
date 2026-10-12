@@ -16,17 +16,15 @@ export const LANDING_LINKS = {
 
 export const SECTION_IDS = {
   main: 'main-content',
-  problem: 'problem',
   lifecycle: 'lifecycle',
   capabilities: 'capabilities',
-  prioritisation: 'prioritisation',
   scope: 'scope',
 } as const
 
 export type SectionId = (typeof SECTION_IDS)[keyof typeof SECTION_IDS]
 
 export const NAV_ANCHORS: { label: string; id: SectionId }[] = [
-  { label: 'Lifecycle', id: SECTION_IDS.lifecycle },
+  { label: 'How it works', id: SECTION_IDS.lifecycle },
   { label: 'Capabilities', id: SECTION_IDS.capabilities },
   { label: 'Scope', id: SECTION_IDS.scope },
 ]
@@ -35,13 +33,13 @@ export const HERO = {
   eyebrow: LANDING_TAGLINE,
   title: 'Know what to investigate first — and why.',
   description:
-    'NETRA connects the security evidence that is actually available, explains each risk priority with the factors behind it and the evidence that is missing, and helps analysts review decisions and sensible next steps before anything is acted on.',
+    'NETRA links the security evidence that is actually available, explains each risk priority with its reasons and missing evidence, and keeps a person in control of every response.',
   primaryCta: 'Sign in to NETRA',
   secondaryCta: 'See how it works',
   highlights: [
     'Reasons and evidence gaps shown for each priority',
-    'Human approval before a response action',
-    'Containment simulated in the current scope',
+    'Live tracking of submitted events and incident status',
+    'Human approval before a response; containment is simulated',
   ],
 } as const
 
@@ -63,21 +61,6 @@ export const EVIDENCE_PREVIEW = {
     { key: 'traceability', label: 'Traceability', text: 'Source records, rule and version behind the result.' },
   ] satisfies EvidenceStep[],
 } as const
-
-export const PROBLEMS: { title: string; text: string }[] = [
-  {
-    title: 'Security evidence is scattered',
-    text: 'Events, alerts, asset details, vulnerabilities and threat indicators often live in separate places, so it is hard to see which records are actually related.',
-  },
-  {
-    title: 'Priorities need understandable reasons',
-    text: 'A score on its own is hard to trust. Analysts need to see which factors raised a priority and which information was missing.',
-  },
-  {
-    title: 'Decisions need a traceable trail',
-    text: 'When a response is approved, the evidence, the approval and the outcome should stay connected so they can be reviewed later.',
-  },
-]
 
 export type LifecycleKey = 'DETECT' | 'UNDERSTAND' | 'PRIORITISE' | 'VERIFY' | 'AUTHORIZE' | 'CONTAIN' | 'LEARN'
 
@@ -137,6 +120,55 @@ export const LIFECYCLE: LifecycleStage[] = [
 export const LIFECYCLE_NOTE =
   'Containment is simulated in the current scope. Real host or firewall changes would require a separately implemented, secure and approved integration.'
 
+export interface WorkflowStep {
+  key: 'MONITOR' | 'DETECT' | 'ASSESS' | 'AUTHORIZE' | 'RESPOND' | 'LEARN'
+  label: string
+  summary: string
+  detail: string
+  simulated?: boolean
+}
+
+/** The landing page's condensed workflow. LIFECYCLE above stays the in-app seven-stage model. */
+export const WORKFLOW: WorkflowStep[] = [
+  {
+    key: 'MONITOR',
+    label: 'Monitor',
+    summary: 'Track incoming events',
+    detail: 'Collector submissions and dataset imports arrive as security events.',
+  },
+  {
+    key: 'DETECT',
+    label: 'Detect',
+    summary: 'Correlate related activity',
+    detail: 'Rule-based correlation links related events to incidents.',
+  },
+  {
+    key: 'ASSESS',
+    label: 'Assess',
+    summary: 'Explain the risk',
+    detail: 'Documented factors score each incident, with evidence and gaps shown.',
+  },
+  {
+    key: 'AUTHORIZE',
+    label: 'Authorize',
+    summary: 'Verify and approve',
+    detail: 'An analyst verifies; a person approves or rejects the recommended action.',
+  },
+  {
+    key: 'RESPOND',
+    label: 'Respond',
+    summary: 'Record the response',
+    detail: 'Containment is simulated: no host or firewall is changed.',
+    simulated: true,
+  },
+  {
+    key: 'LEARN',
+    label: 'Learn',
+    summary: 'Keep the lesson',
+    detail: 'Outcomes and lessons are stored in Cyber Memory for review.',
+  },
+]
+
 export type FeatureStatus = 'available' | 'in-progress' | 'planned'
 
 export const STATUS_META: Record<FeatureStatus, { label: string; description: string }> = {
@@ -154,14 +186,7 @@ export const STATUS_META: Record<FeatureStatus, { label: string; description: st
   },
 }
 
-export type FeatureId =
-  | 'ingestion'
-  | 'correlation'
-  | 'risk'
-  | 'response'
-  | 'memory'
-  | 'assessment'
-  | 'live-feed'
+export type FeatureId = 'tracking' | 'ingestion' | 'correlation' | 'risk' | 'response' | 'assessment'
 
 export interface Feature {
   id: FeatureId
@@ -173,131 +198,63 @@ export interface Feature {
 
 export const FEATURES: Feature[] = [
   {
+    id: 'tracking',
+    name: 'Live Event Tracking',
+    description:
+      'The Live Event Collector lists events submitted to NETRA and refreshes automatically while open. Incidents are tracked by status through to closure.',
+    status: 'available',
+    boundary: 'Only events submitted to NETRA; no external feeds or agents are connected.',
+  },
+  {
     id: 'ingestion',
     name: 'Security Data Ingestion',
     description:
-      'Signed-in users can upload a CSV file and validate it against a supported profile: a generic CSV profile or CIC-IDS2017. Each upload is recorded as an import batch with accepted and rejected row counts and reasons, and a file that was already validated is detected.',
+      'CSV uploads are validated against a supported profile. Accepted CIC-IDS2017 rows are stored as provenance-tagged security events.',
     status: 'in-progress',
-    boundary:
-      'Uploads are validated and recorded only. Rows are not yet stored as security events or used to create findings.',
+    boundary: 'Dataset labels are not treated as proof of detection.',
   },
   {
     id: 'correlation',
     name: 'Detection & Evidence Correlation',
     description:
-      'Events arrive through manual intake or the authenticated web collector. Rule-based correlation links events to an incident when they share an IP address, fall within a time window and belong to a related event family.',
+      'Rule-based correlation links events into incidents by shared IP address, time window and related event family.',
     status: 'in-progress',
-    boundary:
-      'Automatic detection over imported datasets is not implemented yet. Dataset labels are not treated as proof of independent detection.',
+    boundary: 'Automatic detection over imported datasets is not implemented yet.',
   },
   {
     id: 'risk',
     name: 'Explainable Risk Assessment',
     description:
-      'Incidents are scored from six documented factors. Each factor carries its reason and supporting evidence, and missing evidence is listed rather than silently ignored.',
+      'Incidents are scored from six documented factors, each with its reason and supporting evidence. Missing evidence is listed, not hidden.',
     status: 'available',
-    boundary:
-      'A score is only as reliable as the documented method and the evidence available. It is a heuristic, not a guarantee.',
+    boundary: 'A heuristic based on the evidence available, not a guarantee.',
   },
   {
     id: 'response',
     name: 'Decision & Controlled Response',
     description:
-      'NETRA recommends a response action with its rationale. An analyst verifies the incident, a person approves or rejects the action, and the response outcome is recorded.',
+      'An analyst verifies, a person approves or rejects the recommended action, and outcomes and lessons are kept in Cyber Memory.',
     status: 'available',
-    boundary:
-      'Containment is simulated in the current scope. Real infrastructure changes would need separate secure integrations and approval controls.',
-  },
-  {
-    id: 'memory',
-    name: 'Cyber Memory & Learning',
-    description:
-      'When an incident is closed, its response outcome and lessons learned can be recorded in Cyber Memory, where they can be searched and reviewed later.',
-    status: 'available',
-    boundary:
-      'Records support human review. NETRA does not claim to learn on its own or to adjust future scores from these records.',
+    boundary: 'Containment is simulated; no host or firewall is changed.',
   },
   {
     id: 'assessment',
     name: 'Security Assessment',
     description:
-      'Assesses one asset at a time from the available asset, vulnerability, incident, event and threat-indicator records, and keeps each result as a snapshot with traceable evidence.',
+      'Assesses one asset at a time from its available records and keeps each result as a snapshot with traceable evidence.',
     status: 'in-progress',
-    boundary:
-      'The assessment engine and API exist and have backend tests, but end-to-end verification in the browser and in deployment is still pending.',
-  },
-  {
-    id: 'live-feed',
-    name: 'Future Live-Feed Readiness',
-    description:
-      'Submitted events go through a shared intake service. The authenticated web collector uses it today, and authorised live feeds are intended to use the same path later.',
-    status: 'planned',
-    boundary:
-      'Readiness is not an active integration. No live feed adapters are connected, and collector events are stored as manually submitted data.',
+    boundary: 'End-to-end browser and deployment verification is still pending.',
   },
 ]
 
-export interface RiskFactor {
-  /** Key in FACTOR_WEIGHTS, backend/app/services/risk_engine.py (asserted by tests). */
-  key: 'asset_criticality' | 'vulnerability' | 'anomaly' | 'detection' | 'threat_intelligence' | 'attack_context'
-  label: string
-  text: string
-}
-
-export const RISK_FACTORS: RiskFactor[] = [
-  { key: 'asset_criticality', label: 'Asset criticality', text: 'How important the affected asset is.' },
-  { key: 'vulnerability', label: 'Vulnerability', text: 'Known vulnerability severity on the affected asset.' },
-  { key: 'anomaly', label: 'Anomaly', text: 'Behavioural anomaly evidence on the linked events.' },
-  { key: 'detection', label: 'Detection', text: 'How much the detection source can be relied on, from signature alerts to unverified manual input.' },
-  { key: 'threat_intelligence', label: 'Threat intelligence', text: 'Active matches against known threat indicators.' },
-  { key: 'attack_context', label: 'Attack context', text: 'Patterns in the linked events, such as reconnaissance, authentication or outbound activity.' },
-]
-
-export const PRIORITISATION = {
-  eyebrow: 'Explainable prioritisation',
-  title: 'Every priority shows its working.',
-  description:
-    'A risk priority is built from documented factors. For each factor NETRA shows the reason and the supporting evidence, so an analyst can see why an incident ranks where it does.',
-  missingTitle: 'Missing evidence is flagged, not hidden',
-  missingText:
-    'When a factor has no supporting evidence, it contributes nothing and the gap is listed. The absence of a threat-intelligence match, for example, is not treated as proof that activity is benign.',
-} as const
-
-export const PRINCIPLES: { title: string; text: string }[] = [
-  {
-    title: 'Traceable evidence',
-    text: 'Decisions should be supported by evidence that can be traced back to its source records.',
-  },
-  {
-    title: 'Human authorisation',
-    text: 'A person must approve a recommended response action before it is carried out.',
-  },
-  {
-    title: 'Simulated containment',
-    text: 'Containment is simulated in the current scope. No host, network or firewall is changed.',
-  },
-  {
-    title: 'Recorded lessons',
-    text: 'Outcomes and lessons can be recorded and reviewed. Automatic learning is not claimed.',
-  },
-  {
-    title: 'Honest examples',
-    text: 'Illustrative examples are always labelled and are never presented as live findings.',
-  },
-  {
-    title: 'Readiness is not integration',
-    text: 'Future live-feed readiness is not presented as a currently active integration.',
-  },
-]
-
-/** The PDF's "Not claimed as completed or included by default" list. */
+/** The PDF's "Not claimed as completed or included by default" list, condensed. */
 export const NON_CLAIMS: string[] = [
-  'An AI or LLM analyst, or an autonomous learning system.',
-  'Website or URL safety checks, phishing or email analysis, QR analysis or screenshot verification.',
-  'Active commercial SIEM or EDR integrations.',
-  'Real host isolation or firewall changes.',
-  'Support for arbitrary datasets without a source-specific mapping.',
-  'Guaranteed detection of every attack, or a fixed processing time regardless of dataset size and hardware.',
+  'An AI or LLM analyst, or an autonomous learning system',
+  'Active commercial SIEM or EDR integrations, or external live threat feeds',
+  'Real host isolation or firewall changes',
+  'Phishing, URL, QR or screenshot analysis',
+  'Support for arbitrary datasets without a source-specific mapping',
+  'Guaranteed detection of every attack',
 ]
 
 export const CLOSING_CTA = {

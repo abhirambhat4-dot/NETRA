@@ -1,17 +1,16 @@
 import type { LucideIcon } from 'lucide-react'
-import { BookOpen, ClipboardCheck, FileUp, Gauge, Network, RadioTower, UserCheck } from 'lucide-react'
+import { ClipboardCheck, FileUp, Gauge, Network, RadioTower, UserCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Feature, FeatureId } from './content'
 import { StatusChip } from './StatusChip'
 
 const ICONS: Record<FeatureId, LucideIcon> = {
+  tracking: RadioTower,
   ingestion: FileUp,
   correlation: Network,
   risk: Gauge,
   response: UserCheck,
-  memory: BookOpen,
   assessment: ClipboardCheck,
-  'live-feed': RadioTower,
 }
 
 export function FeatureCard({ feature, wide = false }: { feature: Feature; wide?: boolean }) {

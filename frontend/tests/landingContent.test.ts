@@ -11,12 +11,9 @@ import {
   LIFECYCLE_NOTE,
   NAV_ANCHORS,
   NON_CLAIMS,
-  PRINCIPLES,
-  PRIORITISATION,
-  PROBLEMS,
-  RISK_FACTORS,
   SECTION_IDS,
   STATUS_META,
+  WORKFLOW,
   type FeatureId,
   type FeatureStatus,
 } from '../src/components/landing/content.ts'
@@ -24,7 +21,7 @@ import { ROUTES } from '../src/lib/navigation.ts'
 
 const source = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-/** Copy that states what NETRA does. Boundaries, principles and non-claims are excluded: they negate. */
+/** Copy that states what NETRA does. Boundaries and non-claims are excluded: they negate. */
 const positiveCopy = [
   HERO.eyebrow,
   HERO.title,
@@ -32,12 +29,9 @@ const positiveCopy = [
   ...HERO.highlights,
   EVIDENCE_PREVIEW.title,
   ...EVIDENCE_PREVIEW.steps.map((s) => s.text),
-  ...PROBLEMS.flatMap((p) => [p.title, p.text]),
   ...LIFECYCLE.flatMap((s) => [s.summary, s.detail]),
-  ...FEATURES.map((f) => f.description),
-  ...RISK_FACTORS.map((f) => f.text),
-  PRIORITISATION.title,
-  PRIORITISATION.description,
+  ...WORKFLOW.flatMap((s) => [s.label, s.summary, s.detail]),
+  ...FEATURES.flatMap((f) => [f.name, f.description]),
   CLOSING_CTA.title,
   CLOSING_CTA.description,
 ]
@@ -45,9 +39,7 @@ const positiveCopy = [
 const allCopy = [
   ...positiveCopy,
   LIFECYCLE_NOTE,
-  PRIORITISATION.missingText,
   ...FEATURES.map((f) => f.boundary),
-  ...PRINCIPLES.flatMap((p) => [p.title, p.text]),
   ...NON_CLAIMS,
   ...Object.values(STATUS_META).map((s) => s.description),
 ]
@@ -78,17 +70,27 @@ test('CONTAIN is present and containment is stated as simulated', () => {
   assert.match(LIFECYCLE_NOTE, /simulated/i)
 })
 
-test('exactly the seven locked feature areas, each with a status and a boundary', () => {
+test('the landing workflow is the six-step sequence and Respond is marked simulated', () => {
+  assert.deepEqual(
+    WORKFLOW.map((s) => s.label),
+    ['Monitor', 'Detect', 'Assess', 'Authorize', 'Respond', 'Learn'],
+  )
+  const simulated = WORKFLOW.filter((s) => s.simulated)
+  assert.deepEqual(simulated.map((s) => s.key), ['RESPOND'])
+  assert.match(simulated[0].detail, /simulated/i)
+  assert.match(source('../src/components/landing/LifecycleFlow.tsx'), /WORKFLOW\.map/)
+})
+
+test('exactly the six locked feature areas, each with a status and a boundary', () => {
   assert.deepEqual(
     FEATURES.map((f) => f.name),
     [
+      'Live Event Tracking',
       'Security Data Ingestion',
       'Detection & Evidence Correlation',
       'Explainable Risk Assessment',
       'Decision & Controlled Response',
-      'Cyber Memory & Learning',
       'Security Assessment',
-      'Future Live-Feed Readiness',
     ],
   )
   for (const f of FEATURES) {
@@ -100,25 +102,31 @@ test('exactly the seven locked feature areas, each with a status and a boundary'
 
 test('feature statuses match the verified implementation; upgrading one must be deliberate', () => {
   const expected: Record<FeatureId, FeatureStatus> = {
-    ingestion: 'in-progress', // validation-only imports: rows are not stored
+    tracking: 'available', // collector status polling + incident lifecycle; no external feeds
+    ingestion: 'in-progress', // CIC-IDS2017 rows stored as events; no detection over datasets
     correlation: 'in-progress', // rule-based correlation only; no detection over datasets
     risk: 'available',
     response: 'available', // containment simulated
-    memory: 'available', // records and search; no learning loop
     assessment: 'in-progress', // end-to-end verification pending
-    'live-feed': 'planned', // readiness, no adapters
   }
   assert.deepEqual(Object.fromEntries(FEATURES.map((f) => [f.id, f.status])), expected)
 })
 
 test('known boundaries are preserved', () => {
   const boundary = (id: FeatureId) => FEATURES.find((f) => f.id === id)!.boundary
-  assert.match(boundary('ingestion'), /not yet stored as security events/i)
+  assert.match(boundary('tracking'), /no external feeds/i)
+  assert.match(boundary('ingestion'), /not treated as proof of detection/i)
   assert.match(boundary('correlation'), /not implemented yet/i)
   assert.match(boundary('response'), /simulated/i)
-  assert.match(boundary('memory'), /does not claim/i)
   assert.match(boundary('assessment'), /verification .* pending/i)
-  assert.match(boundary('live-feed'), /not an active integration/i)
+})
+
+test('live tracking is described as tracking submitted data, not external monitoring', () => {
+  const tracking = FEATURES.find((f) => f.id === 'tracking')!
+  assert.match(tracking.description, /Live Event Collector/)
+  assert.match(tracking.description, /submitted to NETRA/)
+  assert.match(source('../src/pages/CollectorPage.tsx'), /REFRESH_INTERVAL_MS/)
+  assert.match(NON_CLAIMS.join(' '), /external live threat feeds/)
 })
 
 test('no numeric operational metrics in any copy', () => {
@@ -156,7 +164,7 @@ test('no misleading capability claims in positive copy', () => {
 
 test('non-claims cover the PDF scope boundaries', () => {
   const joined = NON_CLAIMS.join(' ')
-  for (const pattern of [/AI or LLM analyst/, /autonomous learning/, /phishing/, /QR/, /SIEM or EDR/, /firewall/, /arbitrary datasets/, /Guaranteed detection/]) {
+  for (const pattern of [/AI or LLM analyst/, /autonomous learning/, /phishing/i, /QR/, /SIEM or EDR/, /firewall/, /arbitrary datasets/, /Guaranteed detection/]) {
     assert.match(joined, pattern)
   }
 })
@@ -190,12 +198,4 @@ test('anchor ids are unique and every linked section is rendered', () => {
   }
   assert.match(page, /href=\{`#\$\{SECTION_IDS\.main\}`\}/, 'skip link must target main')
   assert.match(source('../src/components/landing/LandingHero.tsx'), /href=\{`#\$\{SECTION_IDS\.lifecycle\}`\}/)
-})
-
-test('risk factors match FACTOR_WEIGHTS in the backend risk engine', () => {
-  const engine = source('../../backend/app/services/risk_engine.py')
-  const block = engine.match(/FACTOR_WEIGHTS = \{([\s\S]*?)\}/)
-  assert.ok(block, 'FACTOR_WEIGHTS not found in risk_engine.py')
-  const keys = [...block[1].matchAll(/"([a-z_]+)":/g)].map((m) => m[1])
-  assert.deepEqual(RISK_FACTORS.map((f) => f.key), keys)
 })
