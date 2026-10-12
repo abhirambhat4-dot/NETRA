@@ -16,9 +16,7 @@ export function SurfaceCard({ interactive, flush, className, ...props }: Surface
       className={cn(
         'surface-panel relative rounded-xl transition-[border-color,transform,box-shadow] duration-200',
         !flush && 'p-5',
-        interactive
-          ? 'cursor-pointer hover:-translate-y-0.5 hover:border-primary/25'
-          : 'hover:border-foreground/12',
+        interactive && 'cursor-pointer hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-[var(--panel-shadow-lift)]',
         className,
       )}
       {...props}
@@ -40,17 +38,17 @@ export function Panel({ title, description, actions, flush, className, bodyClass
   return (
     <section
       className={cn(
-        'surface-panel flex min-w-0 flex-col rounded-xl transition-[border-color] duration-200 hover:border-foreground/12',
+        'surface-panel flex min-w-0 flex-col rounded-xl',
         className,
       )}
       {...props}
     >
-      <header className="flex items-start justify-between gap-4 px-5 pt-4.5 pb-3">
+      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-5 pt-5 pb-4">
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
-          {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+          <h2 className="text-[15px] font-semibold tracking-tight text-foreground">{title}</h2>
+          {description && <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{description}</p>}
         </div>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
       </header>
       <div className={cn('flex-1', flush ? 'pb-2' : 'px-5 pb-5', bodyClassName)}>{children}</div>
     </section>

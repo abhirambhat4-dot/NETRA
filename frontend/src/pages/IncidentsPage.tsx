@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { ShieldAlert } from 'lucide-react'
 import type {
   BackendResponseAction,
   IncidentQueueItem,
@@ -107,8 +108,9 @@ export function IncidentsPage() {
   return (
     <PageContainer>
       <PageHeader
+        icon={ShieldAlert}
         eyebrow="Prioritisation workspace"
-        title="INCIDENTS"
+        title="Incidents"
         description="See which correlated situations matter most, why their risk is elevated, and where analyst action is waiting."
       />
 
@@ -195,7 +197,7 @@ export function IncidentsPage() {
 
         {/* Column legend (desktop) */}
         {filtered.length > 0 && (
-          <div className="hidden items-center gap-4 border-b border-border px-5 py-2 text-[11px] font-medium text-muted-foreground lg:flex">
+          <div className="app-table-head hidden items-center gap-4 border-y border-border px-5 py-2.5 lg:flex">
             <span className="w-11 shrink-0">Risk</span>
             <span className="flex-1">Incident</span>
             <span className="w-36 shrink-0">Affected asset</span>
@@ -227,7 +229,7 @@ export function IncidentsPage() {
           groups.map((g) => (
             <div key={g.label || 'all'}>
               {g.label && (
-                <div className="flex items-center gap-3 border-b border-border bg-foreground/1.5 px-5 py-2 text-[11px] font-medium text-muted-foreground">
+                <div className="flex items-center gap-3 border-b border-border bg-muted/40 px-5 py-2 text-[11px] font-medium text-muted-foreground">
                   <span>{g.label}</span>
                   <span className="font-mono">{g.items.length}</span>
                   {g.bar && <SeverityBar incidents={g.items} />}

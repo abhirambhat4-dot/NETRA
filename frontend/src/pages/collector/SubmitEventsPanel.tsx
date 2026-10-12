@@ -2,6 +2,7 @@ import type * as React from 'react'
 import { useState } from 'react'
 import { CircleAlert, CircleCheck, Copy, Loader2, Plus, Send, Trash2 } from 'lucide-react'
 import type { AssetInventoryItem, CollectorSubmitResponse, Severity } from '@/api/types'
+import { useAuth } from '@/auth/AuthProvider'
 import { Disclosure, Panel, ToneBadge } from '@/components/netra'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useQuery } from '@/hooks/useQuery'
+import { permissionExplanation } from '@/lib/authorizationAccess'
 import { SEVERITY_ORDER } from '@/lib/tones'
 import { cn } from '@/lib/utils'
 import { assetInventoryService, collectorService } from '@/services'
@@ -50,6 +52,8 @@ export function SubmitEventsPanel() {
   const [requestError, setRequestError] = useState<string | null>(null)
   const [outcome, setOutcome] = useState<{ response: CollectorSubmitResponse; events: SubmittedEvent[] } | null>(null)
   const assets = useQuery('collector-assets', () => assetInventoryService.list())
+  // Presentation only: the API enforces the role, and answers 403 for a role that is not recognised.
+  const roleBlocked = permissionExplanation(useAuth().user, 'workflow', 'Submitting events')
 
   const update = (key: string, patch: Partial<EventDraft>) => {
     setDrafts((current) => current.map((draft) => (draft.key === key ? { ...draft, ...patch, rejection: undefined } : draft)))
@@ -62,7 +66,7 @@ export function SubmitEventsPanel() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
-    if (submitting) return
+    if (submitting || roleBlocked) return
     setRequestError(null)
     const now = Date.now()
     const found = Object.fromEntries(drafts.map((draft) => [draft.key, validateDraft(draft, now)]))
@@ -144,13 +148,14 @@ export function SubmitEventsPanel() {
           >
             <Plus /> Add event
           </Button>
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" disabled={submitting || !!roleBlocked}>
             {submitting ? <Loader2 className="animate-spin" /> : <Send />}
             {submitting
               ? `Submitting ${drafts.length} event${drafts.length === 1 ? '' : 's'}…`
               : `${requestError ? 'Retry submission' : 'Submit'} ${drafts.length} event${drafts.length === 1 ? '' : 's'}`}
           </Button>
         </div>
+        {roleBlocked && <p role="note" className="text-xs text-muted-foreground">{roleBlocked}</p>}
       </form>
 
       {outcome && <SubmissionOutcome {...outcome} />}
@@ -206,11 +211,11 @@ function DraftRow({
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Field label="Event type" htmlFor={id('type')} error={errors.eventType} required>
           <Input id={id('type')} value={draft.eventType} maxLength={100} placeholder="e.g. suspicious_login" disabled={disabled}
-            aria-invalid={!!errors.eventType} onChange={(e) => onChange({ eventType: e.target.value })} className="h-9 bg-black/20" />
+            aria-invalid={!!errors.eventType} onChange={(e) => onChange({ eventType: e.target.value })} className="h-9 bg-card" />
         </Field>
         <Field label="Severity" htmlFor={id('severity')} error={errors.severity} required>
           <Select value={draft.severity || undefined} onValueChange={(value) => onChange({ severity: value as Severity })} disabled={disabled}>
-            <SelectTrigger id={id('severity')} aria-invalid={!!errors.severity} className="h-9 w-full bg-black/20">
+            <SelectTrigger id={id('severity')} aria-invalid={!!errors.severity} className="h-9 w-full bg-card">
               <SelectValue placeholder="Select severity" />
             </SelectTrigger>
             <SelectContent>
@@ -222,11 +227,11 @@ function DraftRow({
         </Field>
         <Field label="Occurred at (local time)" htmlFor={id('occurred')} error={errors.occurredAt}>
           <Input id={id('occurred')} type="datetime-local" value={draft.occurredAt} disabled={disabled}
-            aria-invalid={!!errors.occurredAt} onChange={(e) => onChange({ occurredAt: e.target.value })} className="h-9 bg-black/20" />
+            aria-invalid={!!errors.occurredAt} onChange={(e) => onChange({ occurredAt: e.target.value })} className="h-9 bg-card" />
         </Field>
         <Field label="Asset" htmlFor={id('asset')}>
           <Select value={draft.assetId || NO_ASSET} onValueChange={(value) => onChange({ assetId: value === NO_ASSET ? '' : value })} disabled={disabled}>
-            <SelectTrigger id={id('asset')} className="h-9 w-full bg-black/20">
+            <SelectTrigger id={id('asset')} className="h-9 w-full bg-card">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -254,30 +259,30 @@ function DraftRow({
         <div className="grid gap-3 pt-2 sm:grid-cols-2 xl:grid-cols-4">
           <Field label="Signature" htmlFor={id('signature')} error={errors.signature} className="sm:col-span-2">
             <Input id={id('signature')} value={draft.signature} maxLength={512} disabled={disabled} placeholder="What was observed"
-              aria-invalid={!!errors.signature} onChange={(e) => onChange({ signature: e.target.value })} className="h-9 bg-black/20" />
+              aria-invalid={!!errors.signature} onChange={(e) => onChange({ signature: e.target.value })} className="h-9 bg-card" />
           </Field>
           <Field label="Protocol" htmlFor={id('protocol')} error={errors.protocol}>
             <Input id={id('protocol')} value={draft.protocol} maxLength={16} disabled={disabled} placeholder="TCP"
-              aria-invalid={!!errors.protocol} onChange={(e) => onChange({ protocol: e.target.value })} className="h-9 bg-black/20" />
+              aria-invalid={!!errors.protocol} onChange={(e) => onChange({ protocol: e.target.value })} className="h-9 bg-card" />
           </Field>
           <Field label="Anomaly score (0–1)" htmlFor={id('anomaly')} error={errors.anomalyScore}>
             <Input id={id('anomaly')} type="number" inputMode="decimal" min={0} max={1} step={0.01} placeholder="0.85" disabled={disabled}
-              value={draft.anomalyScore} aria-invalid={!!errors.anomalyScore} onChange={(e) => onChange({ anomalyScore: e.target.value })} className="h-9 bg-black/20" />
+              value={draft.anomalyScore} aria-invalid={!!errors.anomalyScore} onChange={(e) => onChange({ anomalyScore: e.target.value })} className="h-9 bg-card" />
           </Field>
           <Field label="Source IP" htmlFor={id('src-ip')} error={errors.srcIp}>
-            <Input id={id('src-ip')} value={draft.srcIp} disabled={disabled} placeholder="198.51.100.20" className="h-9 bg-black/20 font-mono"
+            <Input id={id('src-ip')} value={draft.srcIp} disabled={disabled} placeholder="198.51.100.20" className="h-9 bg-card font-mono"
               aria-invalid={!!errors.srcIp} onChange={(e) => onChange({ srcIp: e.target.value })} />
           </Field>
           <Field label="Source port" htmlFor={id('src-port')} error={errors.srcPort}>
-            <Input id={id('src-port')} inputMode="numeric" value={draft.srcPort} disabled={disabled} placeholder="51515" className="h-9 bg-black/20 font-mono"
+            <Input id={id('src-port')} inputMode="numeric" value={draft.srcPort} disabled={disabled} placeholder="51515" className="h-9 bg-card font-mono"
               aria-invalid={!!errors.srcPort} onChange={(e) => onChange({ srcPort: e.target.value })} />
           </Field>
           <Field label="Destination IP" htmlFor={id('dest-ip')} error={errors.destIp}>
-            <Input id={id('dest-ip')} value={draft.destIp} disabled={disabled} placeholder="10.0.0.12" className="h-9 bg-black/20 font-mono"
+            <Input id={id('dest-ip')} value={draft.destIp} disabled={disabled} placeholder="10.0.0.12" className="h-9 bg-card font-mono"
               aria-invalid={!!errors.destIp} onChange={(e) => onChange({ destIp: e.target.value })} />
           </Field>
           <Field label="Destination port" htmlFor={id('dest-port')} error={errors.destPort}>
-            <Input id={id('dest-port')} inputMode="numeric" value={draft.destPort} disabled={disabled} placeholder="443" className="h-9 bg-black/20 font-mono"
+            <Input id={id('dest-port')} inputMode="numeric" value={draft.destPort} disabled={disabled} placeholder="443" className="h-9 bg-card font-mono"
               aria-invalid={!!errors.destPort} onChange={(e) => onChange({ destPort: e.target.value })} />
           </Field>
           <Field label="Raw JSON data" htmlFor={id('raw')} error={errors.rawJson} className="sm:col-span-2 xl:col-span-4"

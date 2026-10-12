@@ -59,6 +59,9 @@ EXPECTED_TABLES = {
     "cyber_memories",
     "users",
     "password_reset_tokens",
+    "security_assessments",
+    "assessment_findings",
+    "import_batches",
 }
 
 
@@ -155,6 +158,7 @@ def test_foreign_keys_reference_expected_tables(isolated_db: IsolatedDb) -> None
     }
     assert fks == {
         ("security_events", "asset_id", "assets"),
+        ("security_events", "import_batch_id", "import_batches"),
         ("incidents", "asset_id", "assets"),
         ("vulnerabilities", "asset_id", "assets"),
         ("incident_events", "incident_id", "incidents"),
@@ -168,6 +172,10 @@ def test_foreign_keys_reference_expected_tables(isolated_db: IsolatedDb) -> None
         ("cyber_memories", "incident_id", "incidents"),
         ("cyber_memories", "decision_id", "decisions"),
         ("password_reset_tokens", "user_id", "users"),
+        ("security_assessments", "asset_id", "assets"),
+        ("security_assessments", "requested_by_id", "users"),
+        ("assessment_findings", "assessment_id", "security_assessments"),
+        ("import_batches", "uploaded_by_id", "users"),
     }
 
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Link2 } from 'lucide-react'
+import { Activity, Link2 } from 'lucide-react'
 import type { BackendEventSource, EventStatus, EventsPageItem, Severity } from '@/api/types'
 import {
   EmptyState,
@@ -34,6 +34,8 @@ const PAGE_SIZE = 14
 type SevFilter = Severity | 'ALL'
 type SrcFilter = BackendEventSource | 'HYBRID' | 'ALL'
 type StatusFilter = EventStatus | 'ALL'
+// A full-size dataset upload can store up to 100,000 events; the feed loads the most recent ones only.
+const EVENTS_LOAD_LIMIT = 2000
 const EVENT_SOURCES = USE_MOCKS ? [...BACKEND_EVENT_SOURCES, 'HYBRID' as const] : BACKEND_EVENT_SOURCES
 
 export function SecurityEventsPage() {
@@ -45,14 +47,21 @@ export function SecurityEventsPage() {
   const [page, setPage] = useState(1)
   const now = useNow(60_000)
 
-  const events = useQuery('events-all', () => eventService.listForEventsPage())
+  // Set by "View stored events" on an import batch: only the events that batch stored. Filtered by the
+  // API, so a batch's events load even when they are older than the most recent EVENTS_LOAD_LIMIT.
+  const batchFilter = params.get('batch')
+  const events = useQuery(`events-all-${batchFilter ?? 'any'}`, () =>
+    eventService.listForEventsPage(batchFilter ? { importBatchId: batchFilter } : {}, { maxEvents: EVENTS_LOAD_LIMIT }),
+  )
 
   const all = useMemo(() => events.data?.items ?? [], [events.data])
+  const unloaded = Math.max(0, (events.data?.total ?? 0) - all.length)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return all.filter(
       (e) =>
+        (!batchFilter || e.importBatchId === batchFilter) &&
         (severity === 'ALL' || e.severity === severity) &&
         (source === 'ALL' || e.detectionSource === source) &&
         (status === 'ALL' || e.status === status) &&
@@ -61,7 +70,7 @@ export function SecurityEventsPage() {
             .filter(Boolean)
             .some((f) => String(f).toLowerCase().includes(q))),
     )
-  }, [all, search, severity, source, status])
+  }, [all, batchFilter, search, severity, source, status])
 
   const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const selectedId = params.get('event')
@@ -90,7 +99,7 @@ export function SecurityEventsPage() {
 
   const count = (pred: (e: EventsPageItem) => boolean) => all.filter(pred).length
   const correlated = count((e) => e.status === 'CORRELATED')
-  const filtersActive = severity !== 'ALL' || source !== 'ALL' || status !== 'ALL' || search !== ''
+  const filtersActive = severity !== 'ALL' || source !== 'ALL' || status !== 'ALL' || search !== '' || batchFilter !== null
   const criticalHigh = count((e) => e.severity === 'CRITICAL' || e.severity === 'HIGH')
   const sourceCount = new Set(all.map((event) => event.detectionSource)).size
   const totalAnimated = useCountUp(all.length, 700)
@@ -101,8 +110,9 @@ export function SecurityEventsPage() {
   return (
     <PageContainer>
       <PageHeader
+        icon={Activity}
         eyebrow={`Evidence stream · ${events.data ? `${filtered.length} matching events` : 'loading event context'}`}
-        title="SECURITY EVENTS"
+        title="Security Events"
         description="Investigate the signals behind each situation. Events are evidence; correlation connects them to incidents."
       />
 
@@ -143,6 +153,7 @@ export function SecurityEventsPage() {
             </div>
             <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
               {filtered.length} of {all.length}
+              {unloaded > 0 && ` · most recent ${formatNumber(all.length)} of ${formatNumber(all.length + unloaded)} loaded`}
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -170,6 +181,11 @@ export function SecurityEventsPage() {
               ]}
             />
             {!USE_MOCKS && <span className="text-[11px] text-muted-foreground">Dismissed status is unavailable from the live API.</span>}
+            {batchFilter && (
+              <span className="font-mono text-[11px] text-muted-foreground" title={batchFilter}>
+                Import batch {batchFilter.slice(0, 8)}…
+              </span>
+            )}
             {filtersActive && (
               <Button
                 variant="ghost"
@@ -181,6 +197,11 @@ export function SecurityEventsPage() {
                   setSource('ALL')
                   setStatus('ALL')
                   setPage(1)
+                  if (batchFilter) {
+                    const next = new URLSearchParams(params)
+                    next.delete('batch')
+                    setParams(next, { replace: true })
+                  }
                 }}
               >
                 Clear filters

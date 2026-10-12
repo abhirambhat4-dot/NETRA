@@ -5,8 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import String, case, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_permission
 from app.api.core_serializers import event_response
+from app.core.permissions import Permission
 from app.db.dependencies import get_db
 from app.models.enums import DetectionSource, Severity
 from app.models.event import SecurityEvent
@@ -32,8 +33,9 @@ def list_events(
     page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 25,
     severity: Literal["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] | None = None,
     status_filter: Annotated[Literal["NEW", "CORRELATED"] | None, Query(alias="status")] = None,
-    source: Literal["SURICATA", "ML_ANOMALY", "THREAT_INTEL", "VULNERABILITY_SCAN", "MANUAL"] | None = None,
+    source: Literal["SURICATA", "ML_ANOMALY", "THREAT_INTEL", "VULNERABILITY_SCAN", "MANUAL", "DATASET_IMPORT"] | None = None,
     asset_id: Annotated[UUID | None, Query(alias="assetId")] = None,
+    import_batch_id: Annotated[UUID | None, Query(alias="importBatchId")] = None,
     search: str | None = None,
     sort_by: Annotated[Literal["timestamp", "risk", "severity"], Query(alias="sortBy")] = "timestamp",
     sort_order: Annotated[Literal["asc", "desc"], Query(alias="sortOrder")] = "desc",
@@ -45,6 +47,8 @@ def list_events(
         conditions.append(SecurityEvent.source == DetectionSource[source])
     if asset_id is not None:
         conditions.append(SecurityEvent.asset_id == asset_id)
+    if import_batch_id is not None:
+        conditions.append(SecurityEvent.import_batch_id == import_batch_id)
     if status_filter == "NEW":
         conditions.append(~SecurityEvent.incidents.any())
     elif status_filter == "CORRELATED":
@@ -90,7 +94,7 @@ def list_events(
 def ingest_event(
     request: EventIngestRequest,
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> EventResponse:
     event = create_event(db, request.model_dump(exclude_none=True))
     return event_response(event)

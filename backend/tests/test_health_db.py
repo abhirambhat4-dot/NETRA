@@ -2,6 +2,7 @@ from collections.abc import Iterator
 
 from sqlalchemy.exc import OperationalError
 
+from app.core.config import get_settings
 from app.db.dependencies import get_db
 from app.main import app
 from tests.conftest import AsgiGet
@@ -14,7 +15,7 @@ def test_database_health_check(asgi_get: AsgiGet) -> None:
     assert status == 200
     assert data == {
         "status": "healthy",
-        "service": "NETRA API",
+        "service": get_settings().app_name,
         "version": "1.0.0",
         "database": "connected",
     }

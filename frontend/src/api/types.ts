@@ -155,6 +155,7 @@ export type BackendEventSource =
   | 'THREAT_INTEL'
   | 'VULNERABILITY_SCAN'
   | 'MANUAL'
+  | 'DATASET_IMPORT'
 
 export interface BackendEventAssetReference {
   id: string
@@ -184,6 +185,9 @@ export interface BackendEventResponse {
   incidentIds: string[]
   assetId: string | null
   asset: BackendEventAssetReference | null
+  /** Set for events normalised from a dataset upload: the batch and the file row (header = row 1). */
+  importBatchId?: string | null
+  sourceRow?: number | null
 }
 
 export interface BackendEventsPage {
@@ -496,6 +500,9 @@ export type EventsPageItem = Omit<
   detectionSource: BackendEventSource | DetectionSource
   status: EventStatus
   anomalyScore: number | null
+  /** Set for events normalised from a dataset upload: the batch and the file row (header = row 1). */
+  importBatchId?: string | null
+  sourceRow?: number | null
   incidentIds: string[]
   assetId: string | null
   asset: BackendEventAssetReference | null
@@ -776,6 +783,153 @@ export interface IncidentCreateRequest {
   detectionSource?: BackendEventSource
   assetId?: string
   eventIds?: string[]
+}
+
+// ---------------------------------------------------------------------------
+// Security Assessment (backend: app/schemas/assessment.py)
+// ---------------------------------------------------------------------------
+
+export type AssessmentGrade = 'A' | 'B' | 'C' | 'D' | 'F'
+export type AssessmentFindingResult = 'PASS' | 'WARN' | 'FAIL' | 'INFO'
+
+/** Body for POST /api/assessments. */
+export interface AssessmentCreateRequest {
+  assetId: string
+  /** End of the 7-day event window (ISO 8601 with offset, not in the future); omitted means now. */
+  asOf?: string
+}
+
+/** One methodology check; evidence and referenced IDs are exactly what the backend stored. */
+export interface BackendAssessmentFinding {
+  id: string
+  position: number
+  checkKey: string
+  category: string
+  title: string
+  result: AssessmentFindingResult
+  severity: Severity | null
+  deduction: number
+  evidence: string[]
+  recommendation: string | null
+  /** Referenced IDs are capped server-side (at most 100 each); the totals count every matching record. */
+  vulnerabilityIds: string[]
+  incidentIds: string[]
+  eventIds: string[]
+  vulnerabilityTotal: number
+  incidentTotal: number
+  eventTotal: number
+}
+
+/** GET /api/assessments item. assetId / asset are null once the assessed asset is deleted. */
+export interface BackendAssessmentSummary {
+  id: string
+  assetId: string | null
+  assetKey: string
+  asset: BackendEventAssetReference | null
+  methodologyVersion: string
+  asOf: string
+  score: number
+  grade: AssessmentGrade
+  summary: string
+  passed: number
+  warnings: number
+  failed: number
+  informational: number
+  requestedBy: string
+  createdAt: string
+}
+
+/** POST /api/assessments and GET /api/assessments/{id}. */
+export interface BackendAssessmentDetail extends BackendAssessmentSummary {
+  missingEvidence: string[]
+  inputCounts: Record<string, number>
+  findings: BackendAssessmentFinding[]
+}
+
+export interface BackendAssessmentPage {
+  items: BackendAssessmentSummary[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface AssessmentFilters {
+  page?: number
+  pageSize?: number
+  assetId?: string
+  grade?: AssessmentGrade
+}
+
+// ---------------------------------------------------------------------------
+// Dataset import (backend: app/schemas/imports.py) — validation only, no rows are stored
+// ---------------------------------------------------------------------------
+
+export type ImportBatchStatus = 'VALIDATED' | 'REJECTED'
+
+/** One validation issue. The backend never includes cell contents. */
+export interface ImportIssue {
+  rule: string
+  message: string
+  /** Record number counting the header as row 1. */
+  row: number | null
+  /** Column name defined by the dataset profile, never text read from the file. */
+  column: string | null
+  /** 1-based column position in the uploaded file. */
+  columnIndex: number | null
+}
+
+/** GET /api/imports item. */
+export interface BackendImportBatchSummary {
+  id: string
+  datasetProfile: string
+  profileVersion: string
+  originalFilename: string
+  fileSha256: string
+  fileSizeBytes: number
+  status: ImportBatchStatus
+  totalRows: number
+  acceptedRows: number
+  rejectedRows: number
+  errorTotal: number
+  /** Accepted rows stored as security events (0 for validation-only profiles). */
+  eventsCreated: number
+  /** Accepted rows not stored because an identical row already exists as an event. */
+  duplicateRows: number
+  createdAt: string
+  completedAt: string | null
+}
+
+/** POST /api/imports and GET /api/imports/{id}. */
+export interface BackendImportBatchDetail extends BackendImportBatchSummary {
+  /** At most 100 issues; errorTotal counts all of them. */
+  errorSample: ImportIssue[]
+  errorSampleTruncated: boolean
+}
+
+export interface BackendImportBatchPage {
+  items: BackendImportBatchSummary[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface ImportBatchFilters {
+  page?: number
+  pageSize?: number
+}
+
+/** GET /api/assets/{id}/vulnerabilities item. */
+export interface BackendVulnerabilityResponse {
+  id: string
+  assetId: string
+  cveId: string | null
+  title: string
+  description: string | null
+  cvssScore: number | null
+  severity: Severity
+  status: 'OPEN' | 'MITIGATED' | 'ACCEPTED' | 'FALSE_POSITIVE'
+  createdAt: string
+  updatedAt: string
 }
 
 // ---------------------------------------------------------------------------

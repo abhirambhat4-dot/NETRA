@@ -154,7 +154,7 @@ def test_full_batch_three_workflow_obeys_lifecycle(core_api: CoreApi) -> None:
     authorization_response = request_authorization(core_api, decision_id)
     authorization_id = UUID(authorization_response.json()["id"])
     approval = core_api.client.post(
-        f"/api/authorizations/{authorization_id}/approve", headers=core_api.headers
+        f"/api/authorizations/{authorization_id}/approve", headers=core_api.approver_headers
     )
     execution = contain(core_api, authorization_id)
     containment_verification = verify(core_api, UUID(execution.json()["id"]))

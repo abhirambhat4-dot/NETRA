@@ -57,7 +57,7 @@ function LiveCyberMemoryPage() {
   const animatedCount = useCountUp(data?.length ?? 0, 650)
   return (
     <PageContainer>
-      <PageHeader eyebrow="Learn" title="Cyber Memory" description="Backend records returned by the Cyber Memory API." actions={<ToneBadge tone="low" size="sm">Live API records</ToneBadge>} />
+      <PageHeader icon={BrainCircuit} eyebrow="Learn" title="Cyber Memory" description="Backend records returned by the Cyber Memory API." actions={<ToneBadge tone="low" size="sm">Live API records</ToneBadge>} />
       <MetricStrip metrics={[{ label: 'Memory records', value: data ? Math.round(animatedCount) : '—', hint: 'lessons returned by the API' }]} />
       <Panel title="Knowledge records" description="Lessons and outcomes recorded by NETRA" flush>
         <LiveMemoryFilters
@@ -174,6 +174,7 @@ function MockCyberMemoryPage() {
   return (
     <PageContainer>
       <PageHeader
+        icon={BrainCircuit}
         eyebrow="Learn"
         title="Cyber Memory"
         description="What happened, what NETRA decided, who authorized it, what ran, how it ended — and the lesson carried into the next response."

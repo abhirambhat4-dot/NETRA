@@ -1,16 +1,22 @@
 import type * as React from 'react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, BrainCircuit, Loader2, Radar, ScanSearch, ShieldCheck, ShieldX, Sparkles } from 'lucide-react'
+import { ArrowLeft, BadgeCheck, BrainCircuit, Loader2, Radar, ScanSearch, ShieldCheck, ShieldX, Sparkles } from 'lucide-react'
 import type { LiveIncidentDetailsViewModel } from '@/api/types'
+import { useAuth } from '@/auth/AuthProvider'
 import { ErrorState, LifecycleStepper, LoadingState, PageContainer, Panel, SeverityBadge, SurfaceCard, type LifecycleStep } from '@/components/netra'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useAction } from '@/hooks/useAction'
 import { useQuery } from '@/hooks/useQuery'
+import { forbiddenActionMessage, permissionExplanation, resolutionAccess } from '@/lib/authorizationAccess'
 import { formatDateTime } from '@/lib/format'
+import { canVerifyIncident, shouldRefreshAfterVerifyError } from '@/lib/incidentVerification'
 import { ROUTES } from '@/lib/navigation'
-import { liveIncidentDetailsService, liveIncidentWorkflowService } from '@/services'
+import { DATA_CHANGED_EVENT, liveIncidentDetailsService, liveIncidentWorkflowService } from '@/services'
+import { HttpError } from '@/services/http'
+import { riskToSeverity, severityTone, toneStyles } from '@/lib/tones'
+import { cn } from '@/lib/utils'
 
 const LIFECYCLE = ['DETECTED', 'UNDERSTOOD', 'PRIORITISED', 'VERIFIED', 'AUTHORIZED', 'CONTAINED', 'LEARNED'] as const
 
@@ -50,7 +56,9 @@ export function LiveIncidentDetails({ id }: { id: string }) {
 
 function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsViewModel }) {
   const { busy, run } = useAction()
+  const { user, refreshUser } = useAuth()
   const [rejectionReason, setRejectionReason] = useState('')
+  const [forbidden, setForbidden] = useState<string | null>(null)
   const { incident } = detail
   const latestDecisionId = incident.latestDecision?.id
   const decision = incident.latestDecision ?? detail.decisions[detail.decisions.length - 1] ?? null
@@ -61,6 +69,38 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
     ? detail.containmentActions.find((item) => item.authorizationId === authorization.id)
     : undefined
   const hasMemory = detail.cyberMemories.length > 0
+  // Role checks only decide which controls are offered; the API enforces every permission.
+  const resolution = authorization ? resolutionAccess(user, authorization.requestedBy) : null
+  const requestBlocked = permissionExplanation(user, 'request')
+  const executeBlocked = permissionExplanation(user, 'execute')
+  const workflowBlocked = permissionExplanation(user, 'workflow')
+  // A lifecycle step (enrich, correlate, score, decide, verify, Cyber Memory) is due in this state.
+  const workflowStepDue =
+    incident.state === 'DETECTED' ||
+    incident.state === 'UNDERSTOOD' ||
+    (incident.state === 'PRIORITISED' && detail.decisions.length === 0) ||
+    canVerifyIncident(incident.state, detail.decisions.length) ||
+    (incident.state === 'CONTAINED' && !hasMemory)
+
+  /**
+   * Runs a workflow call; on a 403 keeps an explanation on screen (the toast alone disappears), re-reads
+   * the user's role and reloads the incident so the offered actions match what the API allows.
+   */
+  const guarded = <T,>(action: () => Promise<T>) => () => {
+    setForbidden(null)
+    return action().catch((error: unknown) => {
+      const message = forbiddenActionMessage(
+        error instanceof HttpError ? error.status : null,
+        error instanceof Error ? error.message : null,
+      )
+      if (message) {
+        setForbidden(message)
+        void refreshUser()
+        window.dispatchEvent(new Event(DATA_CHANGED_EVENT))
+      }
+      throw error
+    })
+  }
   const currentStage = LIFECYCLE.indexOf(incident.state)
   const lifecycle: LifecycleStep[] = LIFECYCLE.map((label, index) => ({
     key: label,
@@ -68,6 +108,22 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
     state: index < currentStage ? 'done' : index === currentStage ? 'current' : 'upcoming',
     detail: index === currentStage ? 'Current API state' : undefined,
   }))
+
+  // Errors are reported by run() and never shown as success. A 409 means the incident left
+  // PRIORITISED meanwhile, so reload it to show the backend's current state and actions.
+  const verifyIncident = () =>
+    run(
+      'verify-incident',
+      guarded(() =>
+        liveIncidentWorkflowService.verifyIncident(incident.id).catch((error: unknown) => {
+          if (shouldRefreshAfterVerifyError(error instanceof HttpError ? error.status : null)) {
+            window.dispatchEvent(new Event(DATA_CHANGED_EVENT))
+          }
+          throw error
+        }),
+      ),
+      'Incident verified',
+    )
 
   return (
     <PageContainer className="gap-5 lg:gap-6">
@@ -85,9 +141,18 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
             <h1 className="mt-2 text-2xl font-semibold tracking-tight text-balance">{incident.title}</h1>
             <p className="mt-1.5 text-sm text-muted-foreground">{incident.description ?? 'Description: N/A'}</p>
           </div>
-          <div className="shrink-0 text-center">
-            <div className="metric text-3xl">{incident.riskScore ?? 'N/A'}</div>
-            <div className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">Risk / 100</div>
+          <div
+            className={cn(
+              'shrink-0 rounded-xl border px-6 py-3.5 text-center',
+              incident.riskScore == null
+                ? 'border-border bg-muted/50'
+                : [toneStyles[severityTone[riskToSeverity(incident.riskScore)]].border, toneStyles[severityTone[riskToSeverity(incident.riskScore)]].soft],
+            )}
+          >
+            <div className={cn('metric text-3xl', incident.riskScore == null ? 'text-muted-foreground' : toneStyles[severityTone[riskToSeverity(incident.riskScore)]].text)}>
+              {incident.riskScore ?? 'N/A'}
+            </div>
+            <div className="mt-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">Risk / 100</div>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-px border-t border-border bg-border sm:grid-cols-3 xl:grid-cols-6">
@@ -104,122 +169,148 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
         <LifecycleStepper steps={lifecycle} />
       </Panel>
 
-      <Panel title="Workflow actions" description={`Actions are enabled from the backend-reported ${incident.state} state.`}>
+      <Panel title="Workflow actions" description={`Actions are enabled from the backend-reported ${incident.state} state and your role.`}>
         <div className="flex flex-wrap gap-2">
-          {(incident.state === 'DETECTED' || incident.state === 'UNDERSTOOD') && (
+          {forbidden && (
+            <p role="alert" className="w-full rounded-md border border-critical/30 bg-critical/10 px-3 py-2 text-xs text-critical">
+              {forbidden}
+            </p>
+          )}
+          {workflowBlocked && workflowStepDue && <RoleNote>{workflowBlocked}</RoleNote>}
+          {!workflowBlocked && (incident.state === 'DETECTED' || incident.state === 'UNDERSTOOD') && (
             <Button
               variant="outline"
               disabled={busy !== null}
-              onClick={() => run('enrich', () => liveIncidentWorkflowService.enrich(incident.id), 'Context enrichment completed')}
+              onClick={() => run('enrich', guarded(() => liveIncidentWorkflowService.enrich(incident.id)), 'Context enrichment completed')}
             >
               {busy === 'enrich' ? <Loader2 className="animate-spin" /> : <Sparkles />}
               Enrich context
             </Button>
           )}
-          {(incident.state === 'DETECTED' || incident.state === 'UNDERSTOOD') && incident.eventCount > 0 && (
+          {!workflowBlocked && (incident.state === 'DETECTED' || incident.state === 'UNDERSTOOD') && incident.eventCount > 0 && (
             <Button
               variant="outline"
               disabled={busy !== null}
-              onClick={() => run('correlate', () => liveIncidentWorkflowService.correlate(incident.id), 'Correlation completed')}
+              onClick={() => run('correlate', guarded(() => liveIncidentWorkflowService.correlate(incident.id)), 'Correlation completed')}
             >
               {busy === 'correlate' ? <Loader2 className="animate-spin" /> : <Radar />}
               Correlate events
             </Button>
           )}
-          {incident.state === 'UNDERSTOOD' && (
+          {!workflowBlocked && incident.state === 'UNDERSTOOD' && (
             <Button
               variant="outline"
               disabled={busy !== null}
-              onClick={() => run('risk', () => liveIncidentWorkflowService.calculateRisk(incident.id), 'Risk calculation completed')}
+              onClick={() => run('risk', guarded(() => liveIncidentWorkflowService.calculateRisk(incident.id)), 'Risk calculation completed')}
             >
               {busy === 'risk' ? <Loader2 className="animate-spin" /> : <ScanSearch />}
               Calculate risk
             </Button>
           )}
-          {incident.state === 'PRIORITISED' && detail.decisions.length === 0 && (
+          {!workflowBlocked && incident.state === 'PRIORITISED' && detail.decisions.length === 0 && (
             <Button
               disabled={busy !== null}
-              onClick={() => run('decision', () => liveIncidentWorkflowService.recommendDecision(incident.id), 'Decision recommendation created')}
+              onClick={() => run('decision', guarded(() => liveIncidentWorkflowService.recommendDecision(incident.id)), 'Decision recommendation created')}
             >
               {busy === 'decision' ? <Loader2 className="animate-spin" /> : <Sparkles />}
               Recommend decision
             </Button>
           )}
+          {!workflowBlocked && canVerifyIncident(incident.state, detail.decisions.length) && (
+            <Button variant="outline" disabled={busy !== null} onClick={verifyIncident}>
+              {busy === 'verify-incident' ? <Loader2 className="animate-spin" /> : <BadgeCheck />}
+              Verify incident
+            </Button>
+          )}
           {decision &&
             (incident.state === 'PRIORITISED' || incident.state === 'VERIFIED') &&
-            !authorization && (
+            !authorization &&
+            (requestBlocked ? (
+              <RoleNote>{requestBlocked}</RoleNote>
+            ) : (
               <Button
                 disabled={busy !== null}
-                onClick={() => run('authorization', () => liveIncidentWorkflowService.requestAuthorization(decision.id), 'Authorization requested')}
+                onClick={() => run('authorization', guarded(() => liveIncidentWorkflowService.requestAuthorization(decision.id)), 'Authorization requested')}
               >
                 {busy === 'authorization' ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
                 Request authorization
               </Button>
-            )}
-          {authorization?.status === 'PENDING' && incident.state === 'VERIFIED' && (
+            ))}
+          {authorization?.status === 'PENDING' && incident.state === 'VERIFIED' && resolution?.canApprove && (
             <Button
               disabled={busy !== null}
-              onClick={() => run('approve', () => liveIncidentWorkflowService.approveAuthorization(authorization.id), 'Authorization approved')}
+              onClick={() => run('approve', guarded(() => liveIncidentWorkflowService.approveAuthorization(authorization.id)), 'Authorization approved')}
             >
               {busy === 'approve' ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
               Approve authorization
             </Button>
           )}
-          {authorization?.status === 'PENDING' && (
+          {authorization?.status === 'PENDING' && resolution && (
             <div className="w-full max-w-xl space-y-2 border-t border-border pt-3">
-              {incident.state !== 'VERIFIED' && (
+              {resolution.explanation && <RoleNote>{resolution.explanation}</RoleNote>}
+              {resolution.canApprove && incident.state !== 'VERIFIED' && (
                 <p className="text-xs text-muted-foreground">
-                  Approval requires VERIFIED, but the current API exposes no incident action to reach that state.
+                  Approval requires the incident to be VERIFIED. Verify the incident first.
                 </p>
               )}
-              <label htmlFor="live-rejection-reason" className="text-xs font-medium">Reason for rejection</label>
-              <Textarea
-                id="live-rejection-reason"
-                value={rejectionReason}
-                onChange={(event) => setRejectionReason(event.target.value)}
-                placeholder="Enter the operator's reason"
-                className="min-h-20 text-[13px]"
-              />
-              <Button
-                variant="destructive"
-                disabled={busy !== null || rejectionReason.trim().length === 0}
-                onClick={async () => {
-                  const result = await run(
-                    'reject',
-                    () => liveIncidentWorkflowService.rejectAuthorization(authorization.id, rejectionReason),
-                    'Authorization rejected',
-                  )
-                  if (result) setRejectionReason('')
-                }}
-              >
-                {busy === 'reject' ? <Loader2 className="animate-spin" /> : <ShieldX />}
-                Reject authorization
-              </Button>
+              {resolution.canReject && (
+                <>
+                  <label htmlFor="live-rejection-reason" className="text-xs font-medium">Reason for rejection</label>
+                  <Textarea
+                    id="live-rejection-reason"
+                    value={rejectionReason}
+                    onChange={(event) => setRejectionReason(event.target.value)}
+                    placeholder="Enter the operator's reason"
+                    className="min-h-20 text-[13px]"
+                  />
+                  <Button
+                    variant="destructive"
+                    disabled={busy !== null || rejectionReason.trim().length === 0}
+                    onClick={async () => {
+                      const result = await run(
+                        'reject',
+                        guarded(() => liveIncidentWorkflowService.rejectAuthorization(authorization.id, rejectionReason)),
+                        'Authorization rejected',
+                      )
+                      if (result) setRejectionReason('')
+                    }}
+                  >
+                    {busy === 'reject' ? <Loader2 className="animate-spin" /> : <ShieldX />}
+                    Reject authorization
+                  </Button>
+                </>
+              )}
             </div>
           )}
-          {incident.state === 'AUTHORIZED' && authorization?.status === 'APPROVED' && !containment && (
+          {incident.state === 'AUTHORIZED' && authorization?.status === 'APPROVED' && !containment &&
+            (executeBlocked ? (
+              <RoleNote>{executeBlocked}</RoleNote>
+            ) : (
+              <Button
+                disabled={busy !== null}
+                onClick={() => run('contain', guarded(() => liveIncidentWorkflowService.simulateContainment(authorization.id)), 'Controlled containment simulation recorded')}
+              >
+                {busy === 'contain' ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
+                Run controlled containment simulation
+              </Button>
+            ))}
+          {incident.state === 'AUTHORIZED' && containment?.executedAt && ['SUCCEEDED', 'FAILED'].includes(containment.status) &&
+            (executeBlocked ? (
+              <RoleNote>{executeBlocked}</RoleNote>
+            ) : (
+              <Button
+                variant="outline"
+                disabled={busy !== null}
+                onClick={() => run('verify', guarded(() => liveIncidentWorkflowService.verifyContainment(containment.id)), 'Containment verification recorded')}
+              >
+                {busy === 'verify' ? <Loader2 className="animate-spin" /> : <ScanSearch />}
+                Verify containment result
+              </Button>
+            ))}
+          {!workflowBlocked && incident.state === 'CONTAINED' && !hasMemory && (
             <Button
               disabled={busy !== null}
-              onClick={() => run('contain', () => liveIncidentWorkflowService.simulateContainment(authorization.id), 'Controlled containment simulation recorded')}
-            >
-              {busy === 'contain' ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
-              Run controlled containment simulation
-            </Button>
-          )}
-          {incident.state === 'AUTHORIZED' && containment?.executedAt && ['SUCCEEDED', 'FAILED'].includes(containment.status) && (
-            <Button
-              variant="outline"
-              disabled={busy !== null}
-              onClick={() => run('verify', () => liveIncidentWorkflowService.verifyContainment(containment.id), 'Containment verification recorded')}
-            >
-              {busy === 'verify' ? <Loader2 className="animate-spin" /> : <ScanSearch />}
-              Verify containment result
-            </Button>
-          )}
-          {incident.state === 'CONTAINED' && !hasMemory && (
-            <Button
-              disabled={busy !== null}
-              onClick={() => run('memory', () => liveIncidentWorkflowService.createCyberMemory(incident.id), 'Cyber Memory created')}
+              onClick={() => run('memory', guarded(() => liveIncidentWorkflowService.createCyberMemory(incident.id)), 'Cyber Memory created')}
             >
               {busy === 'memory' ? <Loader2 className="animate-spin" /> : <BrainCircuit />}
               Create Cyber Memory
@@ -230,6 +321,7 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
             incident.state === 'DETECTED' || incident.state === 'UNDERSTOOD',
             incident.state === 'UNDERSTOOD',
             incident.state === 'PRIORITISED' && detail.decisions.length === 0,
+            canVerifyIncident(incident.state, detail.decisions.length),
             Boolean(decision && (incident.state === 'PRIORITISED' || incident.state === 'VERIFIED') && !authorization),
             Boolean(authorization?.status === 'PENDING'),
             Boolean(incident.state === 'AUTHORIZED' && authorization?.status === 'APPROVED' && !containment),
@@ -396,9 +488,9 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
 
 function Fact({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="min-w-0">
-      <div className="text-[10px] text-muted-foreground">{label}</div>
-      <div className={mono ? 'truncate font-mono text-xs text-foreground/90' : 'text-xs text-foreground/90'}>{value}</div>
+    <div className="min-w-0 bg-card px-5 py-3">
+      <div className="text-[10px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">{label}</div>
+      <div className={mono ? 'mt-1 truncate font-mono text-xs text-foreground' : 'mt-1 truncate text-[13px] text-foreground'} title={value}>{value}</div>
     </div>
   )
 }
@@ -428,6 +520,11 @@ function Record({
       <div className="space-y-1.5">{children}</div>
     </article>
   )
+}
+
+/** Why an action is not offered to this user; styled like the panel's other workflow notes. */
+function RoleNote({ children }: { children: React.ReactNode }) {
+  return <p role="note" className="w-full text-xs text-muted-foreground">{children}</p>
 }
 
 function Unavailable({ message }: { message: string }) {

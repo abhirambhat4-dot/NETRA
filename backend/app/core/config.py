@@ -24,7 +24,12 @@ class Settings(BaseSettings):
     jwt_secret_key: SecretStr = Field(min_length=32)
     jwt_algorithm: Literal["HS256"] = "HS256"
     access_token_expire_minutes: int = Field(default=60, gt=0)
-    cors_origins: list[str] = ["http://localhost:5173"]
+    # The Vite dev server is reached as localhost or 127.0.0.1; browsers treat them as different origins.
+    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+    # Self-service sign-up through POST /api/auth/register. Off unless a deployment opts in; otherwise
+    # an administrator creates accounts with backend/scripts/netra_users.py.
+    allow_public_registration: bool = False
 
     # Password reset delivery over SMTP. Reset requests answer 503 until host, sender and
     # frontend URL are configured; port 465 uses implicit TLS, any other port requires STARTTLS.
@@ -35,6 +40,11 @@ class Settings(BaseSettings):
     email_from: str | None = None
     frontend_base_url: str | None = None
     password_reset_token_expire_minutes: int = Field(default=30, gt=0, le=1440)
+
+    # Dataset CSV uploads (validation only). The API enforces both caps; any reverse proxy in front
+    # of it has its own request-size limit, which must be at least this size (docs/DATASET_IMPORTS.md).
+    import_max_upload_bytes: int = Field(default=25 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)
+    import_max_rows: int = Field(default=100_000, gt=0, le=10_000_000)
 
 
 @lru_cache

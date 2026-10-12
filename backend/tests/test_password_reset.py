@@ -23,6 +23,9 @@ from app.services.password_reset import (
     reset_password_client_limiter,
 )
 
+# These tests create their accounts through self-registration, which is off by default.
+pytestmark = pytest.mark.usefixtures("open_registration")
+
 AUTH_URL = "/api/auth"
 FRONTEND_BASE_URL = "https://netra.example.com"
 EMAIL = "operator@example.com"

@@ -5,6 +5,7 @@ import type { EventsPageItem } from '@/api/types'
 import { DetailSection, DetailSheet, ErrorState, KeyValueList, LoadingState, MeterBar, SeverityBadge, StatusBadge } from '@/components/netra'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { eventProvenance } from '@/lib/datasetImport'
 import { formatDateTime } from '@/lib/format'
 import { eventSourceMeta } from '@/lib/sources'
 import { ROUTES } from '@/lib/navigation'
@@ -67,6 +68,7 @@ function anomalyReading(score: number) {
 
 function Body({ event: e, relatedEvents, onOpenRelated }: { event: EventsPageItem; relatedEvents: EventsPageItem[]; onOpenRelated: (id: string | null) => void }) {
   const src = eventSourceMeta(e.detectionSource)
+  const provenance = eventProvenance(e)
   const anomalyTone = e.anomalyScore === null ? 'accent' : e.anomalyScore >= 0.75 ? 'critical' : e.anomalyScore >= 0.5 ? 'high' : 'accent'
 
   const copyRaw = () => {
@@ -147,6 +149,24 @@ function Body({ event: e, relatedEvents, onOpenRelated }: { event: EventsPageIte
               </div>
             </div>
           </DetailSection>
+
+          {provenance && (
+            <DetailSection title="Source record">
+              <div className="surface-inset space-y-1.5 rounded-lg p-3.5">
+                <div className="text-[13px] font-medium">Imported dataset row</div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] text-muted-foreground">
+                  <span>{provenance.label}</span>
+                  <span aria-hidden>·</span>
+                  <Link to={`${ROUTES.imports}?batch=${encodeURIComponent(provenance.batchId)}`} className="inline-flex items-center gap-1 text-primary hover:underline">
+                    <Link2 className="size-3" aria-hidden />Import batch {provenance.batchId}
+                  </Link>
+                </div>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Stored from a validated upload. Any dataset label is kept as ground truth, not as a NETRA detection.
+                </p>
+              </div>
+            </DetailSection>
+          )}
 
           <DetailSection title="Affected asset">
             {e.asset ? (

@@ -19,14 +19,14 @@ function StateFrame({ icon: Icon, iconClassName, title, description, action, cla
     <div className={cn('flex flex-col items-center justify-center px-6 py-14 text-center', className)}>
       <div
         className={cn(
-          'mb-4 grid size-12 place-items-center rounded-xl border border-border bg-muted/40 text-muted-foreground',
+          'mb-4 grid size-12 place-items-center rounded-full border border-border bg-muted text-muted-foreground',
           iconClassName,
         )}
       >
         <Icon className="size-5" />
       </div>
-      <h3 className="text-sm font-semibold">{title}</h3>
-      {description && <p className="mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>}
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      {description && <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-muted-foreground">{description}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
   )

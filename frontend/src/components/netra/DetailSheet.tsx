@@ -15,7 +15,7 @@ export function DetailSheet({ open, onOpenChange, eyebrow, title, description, c
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full gap-0 border-border bg-popover p-0 sm:max-w-lg">
-        <SheetHeader className="border-b border-border px-6 pt-5 pb-4">
+        <SheetHeader className="border-b border-border bg-muted/40 px-6 pt-5 pb-4">
           {eyebrow && <div className="font-mono text-[11px] text-muted-foreground">{eyebrow}</div>}
           <SheetTitle className="pr-6 text-lg leading-snug font-semibold tracking-tight">{title}</SheetTitle>
           {description ? <SheetDescription>{description}</SheetDescription> : <SheetDescription className="sr-only">Details</SheetDescription>}
@@ -31,7 +31,7 @@ export function DetailSection({ title, children, action }: { title: string; chil
   return (
     <section>
       <div className="mb-2.5 flex items-center justify-between gap-3">
-        <h3 className="text-xs font-medium text-foreground/85">{title}</h3>
+        <h3 className="text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">{title}</h3>
         {action}
       </div>
       {children}

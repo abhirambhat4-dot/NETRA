@@ -38,12 +38,12 @@ export function BriefingBackdrop() {
 
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_45%_at_50%_0%,rgb(79_140_255/0.12),transparent_70%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_45%_at_50%_0%,rgb(29_78_216/0.08),transparent_70%)]" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_35%_30%_at_90%_70%,rgb(34_211_238/0.05),transparent_70%)]" />
       <div className="netra-grid absolute inset-0 [mask-image:radial-gradient(ellipse_90%_80%_at_50%_40%,black_20%,transparent_85%)]" />
 
       <svg className="absolute inset-0 size-full opacity-70" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
-        <g stroke="rgb(148 163 184)" strokeOpacity={0.12}>
+        <g stroke="rgb(100 116 139)" strokeOpacity={0.16}>
           {EDGES.map(([a, b]) => (
             <line key={`${a}${b}`} x1={N[a][0]} y1={N[a][1]} x2={N[b][0]} y2={N[b][1]} />
           ))}
@@ -94,7 +94,7 @@ export function BriefingBackdrop() {
       </svg>
 
       {/* Vignette */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_75%_at_50%_45%,transparent_50%,rgb(3_4_7/0.85)_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_75%_at_50%_45%,transparent_55%,var(--background)_100%)]" />
     </div>
   )
 }

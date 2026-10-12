@@ -17,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 # Provide an ephemeral key when a developer has not configured one locally.
 os.environ.setdefault("JWT_SECRET_KEY", secrets.token_urlsafe(32))
 
+from app.api.auth import registration_enabled
 from app.db.dependencies import get_db
 from app.db.base import Base
 from app.db.session import engine as postgres_engine
@@ -92,11 +93,26 @@ def auth_client(auth_db: sessionmaker[Session]) -> Any:
         app.dependency_overrides.pop(get_db, None)
 
 
+@pytest.fixture
+def open_registration() -> Any:
+    """Enable self-registration for one test; ALLOW_PUBLIC_REGISTRATION is off by default."""
+    app.dependency_overrides[registration_enabled] = lambda: True
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(registration_enabled, None)
+
+
+APPROVER_EMAIL = "core-api-approver@example.com"
+
+
 @dataclass
 class CoreApi:
     client: TestClient
+    # The default test user has the operator role, as every registered account does.
     headers: dict[str, str]
     session_factory: sessionmaker[Session]
+    approver_headers: dict[str, str]
 
 
 @pytest.fixture
@@ -120,9 +136,17 @@ def core_api() -> Any:
                     full_name="Core API Test User",
                     password_hash="not-used-by-api-tests",
                 )
-                session.add(user)
+                # A second person: approvals must come from someone other than the requester.
+                approver = User(
+                    email=APPROVER_EMAIL,
+                    full_name="Core API Approver",
+                    password_hash="not-used-by-api-tests",
+                    role="approver",
+                )
+                session.add_all([user, approver])
                 session.flush()
                 token = create_access_token(user)
+                approver_token = create_access_token(approver)
                 session.commit()
 
             def override_db() -> Any:
@@ -137,6 +161,7 @@ def core_api() -> Any:
                         client=client,
                         headers={"Authorization": f"Bearer {token}"},
                         session_factory=factory,
+                        approver_headers={"Authorization": f"Bearer {approver_token}"},
                     )
             finally:
                 if previous_override is None:

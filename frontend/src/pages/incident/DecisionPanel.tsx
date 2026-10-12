@@ -9,7 +9,7 @@ export function DecisionPanel({ detail: d }: { detail: IncidentDetail }) {
   const decision = d.decision
 
   return (
-    <section id="decision" className="relative scroll-mt-20 overflow-hidden rounded-xl border border-primary/25 bg-linear-to-b from-primary/10 via-surface/90 to-surface/90 shadow-[0_12px_32px_-16px_rgb(0_0_0/0.6)]">
+    <section id="decision" className="relative scroll-mt-20 overflow-hidden rounded-xl border border-primary/25 bg-linear-to-b from-primary/6 via-card to-card shadow-[var(--panel-shadow)]">
       <span aria-hidden className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-primary/70 to-transparent" />
       <div className="px-5 pt-4.5 pb-5">
         <div className="flex items-center justify-between gap-3">

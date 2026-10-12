@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import String, case, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_permission
 from app.api.core_serializers import (
     asset_response,
     authorization_response,
@@ -18,6 +18,7 @@ from app.api.core_serializers import (
     event_response,
     incident_response,
 )
+from app.core.permissions import Permission
 from app.db.dependencies import get_db
 from app.models.asset import Asset
 from app.models.authorization import Authorization
@@ -183,7 +184,7 @@ def list_prioritized_incidents(
 def create_incident_endpoint(
     request: IncidentCreateRequest,
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> IncidentResponse:
     incident = create_incident(db, request.model_dump(exclude_none=True))
     return incident_response(incident, event_count=len(incident.events))
@@ -198,7 +199,7 @@ def link_event_to_incident_endpoint(
     incident_id: UUID,
     request: IncidentEventLinkRequest,
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> IncidentEventLinkResponse:
     link = link_event_to_incident(db, incident_id, request.event_id)
     return IncidentEventLinkResponse(
@@ -217,7 +218,7 @@ def link_event_to_incident_endpoint(
 def enrich_incident(
     incident_id: UUID,
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> IncidentContextBundle:
     return enrich_incident_context(db, incident_id, actor=current_user.email)
 
@@ -232,7 +233,7 @@ def enrich_incident(
 def correlate_incident(
     incident_id: UUID,
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> dict[str, object]:
     return correlate_incident_events(db, incident_id, actor=current_user.email)
 
@@ -248,7 +249,7 @@ def correlate_incident(
 def calculate_incident_risk_endpoint(
     incident_id: UUID,
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> RiskScoreResult:
     return calculate_incident_risk(db, incident_id, actor=current_user.email)
 
@@ -264,7 +265,7 @@ def calculate_incident_risk_endpoint(
 def verify_incident_endpoint(
     incident_id: UUID,
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> IncidentResponse:
     incident = verify_incident(db, incident_id, actor=current_user.email)
     return incident_response(incident, event_count=len(incident.events))
@@ -282,7 +283,7 @@ def verify_incident_endpoint(
 def recommend_incident_decision_endpoint(
     incident_id: UUID,
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> DecisionResponse:
     decision = recommend_incident_decision(db, incident_id, actor=current_user.email)
     return decision_response(decision)
@@ -300,7 +301,7 @@ def recommend_incident_decision_endpoint(
 def create_cyber_memory_endpoint(
     incident_id: UUID,
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> CyberMemoryResponse:
     memory = create_incident_cyber_memory(db, incident_id, actor=current_user.email)
     return cyber_memory_response(memory)

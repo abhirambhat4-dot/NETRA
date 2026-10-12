@@ -39,6 +39,19 @@ class AssetResponse(AssetReference):
     updated_at: datetime
 
 
+class VulnerabilityResponse(CoreResponse):
+    id: UUID
+    asset_id: UUID
+    cve_id: str | None
+    title: str
+    description: str | None
+    cvss_score: float | None
+    severity: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class EventResponse(CoreResponse):
     id: UUID
     event_uid: str
@@ -57,6 +70,8 @@ class EventResponse(CoreResponse):
     incident_ids: list[UUID]
     asset_id: UUID | None
     asset: AssetReference | None
+    import_batch_id: UUID | None = Field(default=None, description="Import batch an event was normalised from.")
+    source_row: int | None = Field(default=None, description="Row of the uploaded file (header = row 1).")
 
 
 class EventIngestRequest(CoreResponse):

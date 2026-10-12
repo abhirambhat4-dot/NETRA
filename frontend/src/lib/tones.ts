@@ -33,7 +33,7 @@ interface ToneStyle {
  */
 export const severityRowAccent: Record<Severity, string> = {
   CRITICAL: 'shadow-[inset_2px_0_0_var(--sev-critical)]',
-  HIGH: 'shadow-[inset_2px_0_0_rgb(251_140_60/0.7)]',
+  HIGH: 'shadow-[inset_2px_0_0_color-mix(in_srgb,var(--sev-high)_70%,transparent)]',
   MEDIUM: '',
   LOW: '',
   INFO: '',

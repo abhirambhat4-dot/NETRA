@@ -38,11 +38,11 @@ export function NetraGuideBubble({ content, tone, onDismiss, onShowMe, autoFocus
       role="dialog"
       aria-labelledby={titleId}
       data-tone={tone}
-      className="ng-bubble relative w-[min(20rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgb(21_26_35/0.94),rgb(10_13_19/0.96))] shadow-[0_24px_60px_-20px_rgb(0_0_0/0.95),inset_0_1px_0_rgb(255_255_255/0.05)] backdrop-blur-xl motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-2 motion-safe:zoom-in-95 motion-safe:duration-200 motion-reduce:animate-in motion-reduce:fade-in-0"
+      className="ng-bubble relative w-[min(20rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-[0_2px_6px_rgb(11_27_51/0.06),0_24px_48px_-20px_rgb(11_27_51/0.3)] motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-2 motion-safe:zoom-in-95 motion-safe:duration-200 motion-reduce:animate-in motion-reduce:fade-in-0"
     >
-      <span aria-hidden className="absolute inset-x-6 top-0 h-px bg-linear-to-r from-transparent via-[var(--ng-accent)] to-transparent opacity-70" />
+      <span aria-hidden className="absolute inset-x-0 top-0 h-[3px] bg-[var(--ng-accent)] opacity-80" />
 
-      <div className="flex items-start justify-between gap-3 px-4 pt-3.5">
+      <div className="flex items-start justify-between gap-3 px-4 pt-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 font-mono text-[10px] font-medium tracking-[0.18em] text-[var(--ng-accent)] uppercase">
             NETRA Guide
@@ -64,16 +64,16 @@ export function NetraGuideBubble({ content, tone, onDismiss, onShowMe, autoFocus
         <button
           type="button"
           onClick={onDismiss}
-          className="-mt-0.5 -mr-1.5 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+          className="-mt-0.5 -mr-1.5 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           aria-label="Dismiss guidance"
         >
           <X className="size-3.5" />
         </button>
       </div>
 
-      <p className="px-4 pt-1.5 text-[13px] leading-relaxed text-foreground/85">{content.message}</p>
+      <p className="px-4 pt-1.5 text-[13px] leading-relaxed text-muted-foreground">{content.message}</p>
 
-      <div className="mt-3.5 flex items-center justify-end gap-1.5 border-t border-white/6 bg-black/20 px-3 py-2.5">
+      <div className="mt-3.5 flex items-center justify-end gap-1.5 border-t border-border bg-muted/50 px-3 py-2.5">
         {onShowMe && content.targetLabel && (
           <Button variant="ghost" size="sm" onClick={onShowMe} className="mr-auto text-muted-foreground">
             <Crosshair /> Show {content.targetLabel.toLowerCase()}

@@ -22,3 +22,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Local datasets (CIC-IDS2017 CSVs, ~1.2 GB); never commit
+GeneratedLabelledFlows/

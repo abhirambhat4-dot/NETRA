@@ -376,6 +376,11 @@ def _load_authorization(db: Session, authorization_id: UUID) -> Authorization:
     return authorization
 
 
+def _same_actor(first: str | None, second: str | None) -> bool:
+    """Actors are user emails (stored lowercase at registration); compare them case-insensitively."""
+    return (first or "").strip().casefold() == (second or "").strip().casefold()
+
+
 def approve_decision_authorization(
     db: Session,
     authorization_id: UUID,
@@ -383,6 +388,12 @@ def approve_decision_authorization(
     actor: str,
 ) -> Authorization:
     authorization = _load_authorization(db, authorization_id)
+    # Separation of duties: approval must come from someone other than the requester.
+    if _same_actor(authorization.requested_by, actor):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="An authorization cannot be approved by the user who requested it",
+        )
     incident = authorization.incident
     if incident.state != IncidentState.VERIFIED:
         raise HTTPException(

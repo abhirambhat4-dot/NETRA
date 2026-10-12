@@ -1,9 +1,10 @@
 import type * as React from 'react'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowRight, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { useAuth } from '@/auth/AuthProvider'
 import { NetraGuide } from '@/components/guide'
+import { LANDING_TAGLINE } from '@/components/landing/content'
 import { NetraLogo } from '@/components/netra'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -12,7 +13,16 @@ import { Label } from '@/components/ui/label'
 import { hasCompletedBriefing } from '@/lib/briefing'
 import { ROUTES } from '@/lib/navigation'
 import { HttpError } from '@/services/http'
-import { CyberBackdrop } from './login/CyberBackdrop'
+import { LoginEvidenceTrail } from './login/LoginEvidenceTrail'
+import { loginFailureMessage } from './login/loginError'
+
+const INVALID_CREDENTIALS = 'Email or password is incorrect.'
+const ERROR_ID = 'login-error'
+
+const delay = (ms: number) => ({ '--na-delay': `${ms}ms` }) as React.CSSProperties
+
+const INPUT =
+  'h-11 rounded-xl border-(--nl-line-strong) bg-white px-3.5 text-[15px] text-foreground shadow-[0_1px_2px_rgba(11,27,51,0.04)] placeholder:text-[#64748B] dark:bg-white md:text-[15px]'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -36,53 +46,110 @@ export function LoginPage() {
       navigate(hasCompletedBriefing() ? ROUTES.dashboard : ROUTES.briefing, { replace: true })
     } catch (cause) {
       setError(cause instanceof HttpError && cause.status === 401
-        ? 'Email or password is incorrect.'
-        : 'Unable to sign in right now. Please try again.')
+        ? INVALID_CREDENTIALS
+        : loginFailureMessage(cause, { showApiAddress: import.meta.env.DEV }) ?? 'Unable to sign in right now. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
+  // Only a credential rejection marks the fields invalid; other failures are not about the input.
+  const fieldError = error === INVALID_CREDENTIALS
+  const fieldProps = {
+    'aria-invalid': fieldError || undefined,
+    'aria-describedby': fieldError ? ERROR_ID : undefined,
+  }
+
   return (
-    <div className="relative isolate flex min-h-svh flex-col overflow-hidden bg-background">
-      <CyberBackdrop />
-
-      <header className="relative z-10 mx-auto w-full max-w-[1440px] px-4 pt-5 sm:px-6 lg:px-8">
-        <Link to={ROUTES.home} className="inline-flex items-center gap-3 text-foreground transition-opacity hover:opacity-90">
-          <NetraLogo className="h-8 w-auto" />
-        </Link>
-      </header>
-
-      <main className="relative z-10 flex flex-1 items-center justify-center px-4 py-10 sm:px-6">
-        <div className="w-full max-w-[430px]">
-          <section
-            aria-labelledby="login-title"
-            className="relative overflow-hidden rounded-[28px] border border-border/80 bg-[linear-gradient(180deg,rgba(16,23,32,0.9),rgba(9,13,18,0.92))] shadow-[0_30px_90px_-40px_rgba(56,217,255,0.3)] backdrop-blur-sm"
+    <>
+      <div className="netra-auth relative isolate flex min-h-svh lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+        {/* Visual panel — desktop only */}
+        <aside
+          aria-label="About NETRA"
+          className="relative hidden flex-col overflow-hidden border-r border-(--nl-line) bg-(--nl-band) px-12 py-10 lg:flex xl:px-16"
+        >
+          <div aria-hidden className="nl-hero-grid absolute inset-0" />
+          <Link
+            to={ROUTES.home}
+            className="relative self-start rounded-lg text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring"
           >
-            <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(56,217,255,0.9),transparent)]" />
-            <div className="px-5 py-5 sm:px-6 sm:py-6">
-              <div className="flex items-center justify-between gap-3">
-                <NetraLogo className="h-8 w-auto" />
-                <div className="inline-flex items-center gap-2 rounded-full border border-success/20 bg-success/10 px-2.5 py-1 text-[10px] font-medium tracking-[0.16em] text-success uppercase">
-                  <ShieldCheck className="size-3" />
-                  Secure access
-                </div>
-              </div>
+            <NetraLogo />
+          </Link>
 
-              <h1 id="login-title" className="mt-6 text-[2rem] leading-tight font-semibold tracking-[-0.06em] text-foreground">
+          <div className="relative mt-14 max-w-md">
+            <p className="na-rise text-sm font-semibold text-primary" style={delay(80)}>
+              {LANDING_TAGLINE}
+            </p>
+            <p
+              className="na-rise mt-3 text-3xl leading-tight font-semibold tracking-tight text-balance text-foreground xl:text-4xl"
+              style={delay(160)}
+            >
+              Know what to investigate first — and why.
+            </p>
+            <p className="na-rise mt-4 text-base leading-relaxed text-muted-foreground" style={delay(240)}>
+              Sign in to review prioritised incidents, the evidence and reasons behind each priority, and the decisions
+              that follow.
+            </p>
+          </div>
+
+          <div className="relative mt-auto pt-10">
+            <LoginEvidenceTrail className="mx-auto h-auto w-full max-w-[520px]" />
+            <p className="na-fade mt-4 text-center text-sm text-muted-foreground" style={delay(2400)}>
+              Containment is simulated in the current scope.
+            </p>
+          </div>
+        </aside>
+
+        {/* Form column */}
+        <div className="flex min-h-svh flex-1 flex-col bg-white">
+          <header className="flex items-center justify-between gap-4 px-4 pt-5 sm:px-8">
+            <Link
+              to={ROUTES.home}
+              className="rounded-lg text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring lg:invisible"
+            >
+              <NetraLogo />
+            </Link>
+            <Link
+              to={ROUTES.home}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium text-muted-foreground transition-colors outline-none hover:bg-(--nl-accent-soft) hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring"
+            >
+              <ArrowLeft className="size-4" aria-hidden />
+              Back to home
+            </Link>
+          </header>
+
+          <main className="flex flex-1 items-center justify-center px-4 py-10 sm:px-8">
+            <section
+              aria-labelledby="login-title"
+              className="na-rise nl-surface w-full max-w-[420px] rounded-3xl p-6 sm:p-8"
+              style={delay(120)}
+            >
+              <h1 id="login-title" className="text-[1.75rem] leading-tight font-semibold tracking-tight text-foreground">
                 Sign in
               </h1>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Access the NETRA cyber decision workspace and continue your operational review.
+              <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
+                Access your NETRA workspace and continue your review.
               </p>
 
-              <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-                {registered && <p role="status" className="rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">Account created. Sign in with your new credentials.</p>}
-                {passwordReset && <p role="status" className="rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">Password reset. Sign in with your new password.</p>}
-                {error && <p role="alert" className="rounded-xl border border-critical/30 bg-critical/10 px-3 py-2 text-xs text-critical">{error}</p>}
+              <form onSubmit={handleSubmit} aria-busy={loading} className="mt-7 space-y-5">
+                {registered && (
+                  <p role="status" className="rounded-xl border border-[#A7F3D0] bg-[#ECFDF5] px-3.5 py-2.5 text-sm text-[#065F46]">
+                    Account created. Sign in with your new credentials.
+                  </p>
+                )}
+                {passwordReset && (
+                  <p role="status" className="rounded-xl border border-[#A7F3D0] bg-[#ECFDF5] px-3.5 py-2.5 text-sm text-[#065F46]">
+                    Password reset. Sign in with your new password.
+                  </p>
+                )}
+                {error && (
+                  <p id={ERROR_ID} role="alert" className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3.5 py-2.5 text-sm text-[#991B1B]">
+                    {error}
+                  </p>
+                )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="email" className="text-[11px] font-medium tracking-[0.12em] text-foreground/85 uppercase">
+                  <Label htmlFor="email" className="text-sm font-medium text-foreground">
                     Email
                   </Label>
                   <Input
@@ -91,14 +158,15 @@ export function LoginPage() {
                     autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="h-11 bg-background/45 text-sm text-foreground placeholder:text-muted-foreground/80"
+                    className={INPUT}
                     placeholder="name@organization.com"
                     required
+                    {...fieldProps}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="password" className="text-[11px] font-medium tracking-[0.12em] text-foreground/85 uppercase">
+                  <Label htmlFor="password" className="text-sm font-medium text-foreground">
                     Password
                   </Label>
                   <div className="relative">
@@ -109,56 +177,75 @@ export function LoginPage() {
                       placeholder="Enter your password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="h-11 bg-background/45 pr-10 text-sm text-foreground placeholder:text-muted-foreground/80"
+                      className={`${INPUT} pr-12`}
                       required
+                      {...fieldProps}
                     />
                     <button
                       type="button"
                       onClick={() => setShow((s) => !s)}
-                      className="absolute top-1/2 right-2 grid size-7 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
+                      className="absolute top-1/2 right-1.5 grid size-9 -translate-y-1/2 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-(--nl-accent-soft) hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring"
                       aria-label={show ? 'Hide password' : 'Show password'}
                     >
-                      {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      {show ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
                     </button>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between gap-3">
-                  <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground select-none">
-                    <Checkbox checked={remember} onCheckedChange={(v) => setRemember(v === true)} aria-label="Remember this session" />
-                    Remember this session
-                  </label>
-                  <Link to={ROUTES.forgotPassword} className="text-xs font-medium text-primary hover:underline">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox
+                      id="remember-session"
+                      checked={remember}
+                      onCheckedChange={(v) => setRemember(v === true)}
+                      className="size-4.5 border-(--nl-line-strong) dark:bg-white"
+                    />
+                    <Label htmlFor="remember-session" className="cursor-pointer text-sm font-normal text-muted-foreground select-none">
+                      Remember this session
+                    </Label>
+                  </div>
+                  <Link
+                    to={ROUTES.forgotPassword}
+                    className="rounded-md text-sm font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring"
+                  >
                     Forgot password?
                   </Link>
                 </div>
 
-                <Button type="submit" size="lg" disabled={loading} className="mt-1 h-11 w-full rounded-full text-[11px] font-semibold tracking-[0.16em] uppercase">
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  aria-busy={loading}
+                  className="h-11 w-full rounded-full text-[15px] font-semibold shadow-sm hover:bg-[#1E40AF]"
+                >
                   {loading ? (
                     <>
-                      <Loader2 className="size-4 animate-spin" /> Signing in
+                      <Loader2 className="size-4 animate-spin" aria-hidden /> Signing in…
                     </>
                   ) : (
                     <>
-                      Sign in <ArrowRight className="size-4" />
+                      Sign in <ArrowRight className="nl-arrow size-4" aria-hidden />
                     </>
                   )}
                 </Button>
               </form>
 
-              <div className="mt-5 text-center text-xs text-muted-foreground">
-                Need an account? <Link to={ROUTES.register} className="font-medium text-primary hover:underline">Create account</Link>
-              </div>
-            </div>
-          </section>
-
-          <p className="mt-5 text-center text-[10px] font-medium tracking-[0.22em] text-muted-foreground/80 uppercase">
-            NETRA · Cyber Decision Intelligence
-          </p>
+              <p className="mt-6 text-center text-sm text-muted-foreground">
+                Need an account?{' '}
+                <Link
+                  to={ROUTES.register}
+                  className="rounded-md font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring"
+                >
+                  Create account
+                </Link>
+              </p>
+            </section>
+          </main>
         </div>
-      </main>
+      </div>
 
+      {/* Rendered outside .netra-auth: the guide bubble is dark-styled and needs the app's dark tokens. */}
       <NetraGuide page="login" />
-    </div>
+    </>
   )
 }

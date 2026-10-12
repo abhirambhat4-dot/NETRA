@@ -8,21 +8,21 @@ export interface Metric {
   valueClassName?: string
 }
 
-/** Compact horizontal summary used at the top of list pages. Hairline dividers via gap-px. */
+/** Summary cards used at the top of list pages. */
 export function MetricStrip({ metrics, className }: { metrics: Metric[]; className?: string }) {
   return (
     <div
       className={cn(
-        'grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3',
+        'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:gap-4',
         metrics.length >= 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-4',
         className,
       )}
     >
       {metrics.map((m) => (
-        <div key={m.label} className="bg-surface/95 px-5 py-4 max-lg:odd:last:col-span-2">
-          <div className="text-xs text-muted-foreground">{m.label}</div>
-          <div className={cn('metric mt-2 text-2xl', m.valueClassName)}>{m.value}</div>
-          {m.hint && <div className="mt-1.5 truncate text-[11px] text-muted-foreground">{m.hint}</div>}
+        <div key={m.label} className="surface-panel min-w-0 rounded-xl px-5 py-4 max-lg:odd:last:col-span-2">
+          <div className="text-[12px] font-medium text-muted-foreground">{m.label}</div>
+          <div className={cn('metric mt-2.5 text-[1.625rem] text-foreground', m.valueClassName)}>{m.value}</div>
+          {m.hint && <div className="mt-2 truncate text-[12px] text-muted-foreground" title={typeof m.hint === 'string' ? m.hint : undefined}>{m.hint}</div>}
         </div>
       ))}
     </div>

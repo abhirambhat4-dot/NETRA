@@ -25,7 +25,7 @@ export function NetraGuideTrigger({ open, tone, state, unread, nudging, context,
       title="NETRA Guide"
       data-tone={tone}
       className={cn(
-        'ng-trigger group relative grid size-12 place-items-center rounded-2xl border border-white/10 bg-[rgb(9_12_17/0.82)] shadow-[0_10px_30px_-10px_rgb(0_0_0/0.9),inset_0_1px_0_rgb(255_255_255/0.05)] backdrop-blur-xl transition-[border-color,transform,box-shadow] duration-200 outline-none hover:-translate-y-0.5 hover:border-[color:var(--ng-accent)]/40 focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0 sm:size-14',
+        'ng-trigger group relative grid size-12 place-items-center rounded-2xl border border-[#1B2D4A] bg-[#0B1B33] shadow-[0_2px_6px_rgb(11_27_51/0.12),0_14px_30px_-12px_rgb(11_27_51/0.45),inset_0_1px_0_rgb(255_255_255/0.06)] transition-[border-color,transform,box-shadow] duration-200 outline-none hover:-translate-y-0.5 hover:border-[color:var(--ng-accent)]/40 focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0 sm:size-14',
         open && 'border-[color:var(--ng-accent)]/40',
         nudging && 'ng-nudge',
         className,

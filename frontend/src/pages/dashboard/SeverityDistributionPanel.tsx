@@ -22,7 +22,7 @@ const LIVE_PIPELINE: { state: IncidentLifecycleState; tone: Tone }[] = [
   { state: 'AUTHORIZED', tone: 'medium' },
 ]
 const MOCK_SOURCES: DetectionSource[] = ['HYBRID', 'SURICATA', 'ML_ANOMALY', 'THREAT_INTEL']
-const LIVE_SOURCES: BackendEventSource[] = ['SURICATA', 'ML_ANOMALY', 'THREAT_INTEL', 'VULNERABILITY_SCAN', 'MANUAL']
+const LIVE_SOURCES: BackendEventSource[] = ['SURICATA', 'ML_ANOMALY', 'THREAT_INTEL', 'VULNERABILITY_SCAN', 'MANUAL', 'DATASET_IMPORT']
 
 export function SeverityDistributionPanel({ incidents, live }: { incidents?: IncidentQueueItem[]; live: boolean }) {
   return (

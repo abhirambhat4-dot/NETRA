@@ -52,6 +52,8 @@ class DetectionSource(StrEnum):
     THREAT_INTEL = "threat_intel"
     VULNERABILITY_SCAN = "vulnerability_scan"
     MANUAL = "manual"
+    # Normalised from a validated dataset upload; the event's import_batch_id and source_row name its origin.
+    DATASET_IMPORT = "dataset_import"
 
 
 class IncidentState(StrEnum):
@@ -113,3 +115,25 @@ class Effectiveness(StrEnum):
     PARTIALLY_EFFECTIVE = "partially_effective"
     INEFFECTIVE = "ineffective"
     UNKNOWN = "unknown"
+
+
+class AssessmentGrade(StrEnum):
+    A = "a"
+    B = "b"
+    C = "c"
+    D = "d"
+    F = "f"
+
+
+class FindingResult(StrEnum):
+    PASS = "pass"
+    WARN = "warn"
+    FAIL = "fail"
+    INFO = "info"
+
+
+class ImportBatchStatus(StrEnum):
+    """Outcome of a validation-only dataset upload. Only VALIDATED batches reserve their file hash."""
+
+    VALIDATED = "validated"
+    REJECTED = "rejected"

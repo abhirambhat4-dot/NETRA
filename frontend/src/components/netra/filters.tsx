@@ -21,7 +21,7 @@ export function SearchInput({ value, onChange, placeholder = 'Search…', classN
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="h-8 pr-8 pl-8 text-[13px]"
+        className="h-9 bg-card pr-8 pl-8 text-[13px]"
         aria-label={placeholder}
       />
       {value && (
@@ -64,14 +64,14 @@ export function FilterChips<T extends string>({ value, options, onChange, classN
             className={cn(
               'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors',
               active
-                ? 'border-primary/30 bg-primary/12 text-foreground'
-                : 'border-border bg-foreground/2 text-muted-foreground hover:border-foreground/15 hover:text-foreground',
+                ? 'border-primary/30 bg-primary/8 text-primary'
+                : 'border-border bg-card text-muted-foreground hover:border-input hover:text-foreground',
             )}
           >
             {o.dot && <span className={cn('size-1.5 rounded-full', o.dot)} />}
             {o.label}
             {o.count !== undefined && (
-              <span className={cn('font-mono text-[10px] tabular-nums', active ? 'text-foreground/70' : 'text-muted-foreground/70')}>
+              <span className={cn('font-mono text-[10px] tabular-nums', active ? 'text-primary/75' : 'text-muted-foreground/80')}>
                 {o.count}
               </span>
             )}
@@ -96,7 +96,7 @@ interface SelectFilterProps<T extends string> {
 export function SelectFilter<T extends string>({ value, onChange, options, label, className }: SelectFilterProps<T>) {
   return (
     <Select value={value} onValueChange={(v) => onChange(v as T)}>
-      <SelectTrigger size="sm" className={cn('h-8 min-w-36 gap-2 text-[13px]', className)} aria-label={label}>
+      <SelectTrigger size="sm" className={cn('h-9 min-w-36 gap-2 bg-card text-[13px]', className)} aria-label={label}>
         <span className="text-muted-foreground">{label}</span>
         <SelectValue />
       </SelectTrigger>
@@ -120,29 +120,42 @@ interface PaginationProps {
   onChange: (page: number) => void
 }
 
+/** Page numbers to show: all of them for a few pages, otherwise first, last and the current page's neighbours. */
+function pageWindow(page: number, pages: number): (number | 'gap')[] {
+  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1)
+  const shown = [...new Set([1, page - 1, page, page + 1, pages])].filter((p) => p >= 1 && p <= pages).sort((a, b) => a - b)
+  return shown.flatMap((p, i) => (i > 0 && p - shown[i - 1] > 1 ? ['gap' as const, p] : [p]))
+}
+
 export function Pagination({ page, pageSize, total, onChange }: PaginationProps) {
   const pages = Math.max(1, Math.ceil(total / pageSize))
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1
   const to = Math.min(total, page * pageSize)
   return (
-    <div className="flex items-center justify-between gap-4 px-5 py-3 text-xs text-muted-foreground">
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-3 text-xs text-muted-foreground">
       <span>
         Showing <span className="font-mono text-foreground/85">{from}–{to}</span> of{' '}
         <span className="font-mono text-foreground/85">{total}</span>
       </span>
-      <div className="flex items-center gap-1">
+      <nav aria-label="Pagination" className="flex flex-wrap items-center gap-1">
         <PageButton disabled={page <= 1} onClick={() => onChange(page - 1)}>
           Prev
         </PageButton>
-        {Array.from({ length: pages }, (_, i) => i + 1).map((p) => (
-          <PageButton key={p} active={p === page} onClick={() => onChange(p)}>
-            {p}
-          </PageButton>
-        ))}
+        {pageWindow(page, pages).map((p, i) =>
+          p === 'gap' ? (
+            <span key={`gap-${i}`} aria-hidden className="px-1 font-mono text-[11px] text-muted-foreground/60">
+              …
+            </span>
+          ) : (
+            <PageButton key={p} active={p === page} onClick={() => onChange(p)}>
+              {p}
+            </PageButton>
+          ),
+        )}
         <PageButton disabled={page >= pages} onClick={() => onChange(page + 1)}>
           Next
         </PageButton>
-      </div>
+      </nav>
     </div>
   )
 }
@@ -156,7 +169,7 @@ function PageButton({ active, disabled, onClick, children }: { active?: boolean;
       aria-current={active ? 'page' : undefined}
       className={cn(
         'h-7 min-w-7 rounded-md px-2 font-mono text-[11px] transition-colors disabled:pointer-events-none disabled:opacity-40',
-        active ? 'bg-primary/15 text-foreground ring-1 ring-primary/25' : 'hover:bg-foreground/5 hover:text-foreground',
+        active ? 'bg-primary font-semibold text-primary-foreground' : 'hover:bg-muted hover:text-foreground',
       )}
     >
       {children}

@@ -2,7 +2,9 @@ import type { LucideIcon } from 'lucide-react'
 import {
   Activity,
   BrainCircuit,
+  ClipboardCheck,
   Crosshair,
+  FileUp,
   LayoutDashboard,
   RadioTower,
   Server,
@@ -23,10 +25,12 @@ export const ROUTES = {
   incidents: '/incidents',
   incident: (id: string) => `/incidents/${id}`,
   assets: '/assets',
+  assessments: '/assessments',
   threatIntelligence: '/threat-intelligence',
   cyberMemory: '/cyber-memory',
   settings: '/settings',
   collector: '/collector',
+  imports: '/imports',
 } as const
 
 export interface NavItem {
@@ -45,7 +49,10 @@ export interface NavGroup {
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Intake',
-    items: [{ label: 'Live Event Collector', to: ROUTES.collector, icon: RadioTower }],
+    items: [
+      { label: 'Live Event Collector', to: ROUTES.collector, icon: RadioTower },
+      { label: 'Dataset Import', to: ROUTES.imports, icon: FileUp },
+    ],
   },
   {
     label: 'Operations',
@@ -59,6 +66,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Intelligence',
     items: [
       { label: 'Assets', to: ROUTES.assets, icon: Server },
+      { label: 'Security Assessment', to: ROUTES.assessments, icon: ClipboardCheck },
       { label: 'Threat Intelligence', to: ROUTES.threatIntelligence, icon: Crosshair },
     ],
   },

@@ -24,7 +24,7 @@ import { USE_MOCKS } from '@/services/http'
 
 const ACTIVE_STATES = new Set(['DETECTED', 'UNDERSTOOD', 'PRIORITISED', 'VERIFIED', 'AUTHORIZED'])
 
-const Divider = () => <span aria-hidden className="hidden h-5 w-px bg-border sm:block" />
+const Divider = () => <span aria-hidden className="hidden h-6 w-px bg-border md:block" />
 
 export function Header({ onOpenNav }: { onOpenNav: () => void }) {
   const navigate = useNavigate()
@@ -49,22 +49,22 @@ export function Header({ onOpenNav }: { onOpenNav: () => void }) {
     })
 
   return (
-    <header className="surface-glass sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border/80 px-4 shadow-[0_12px_30px_-20px_rgba(56,217,255,0.3)] md:px-6 lg:px-8">
+    <header className="surface-glass sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border px-4 md:px-6 lg:px-8">
       <Button variant="ghost" size="icon" className="-ml-1 md:hidden" onClick={onOpenNav} aria-label="Open navigation">
         <Menu />
       </Button>
 
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <span className={cn(
-          'inline-flex items-center gap-2 rounded-full border px-2 py-1 text-[10px] font-semibold tracking-[0.18em] uppercase',
-          USE_MOCKS ? 'border-border bg-surface text-muted-foreground' : 'border-primary/20 bg-primary/8 text-primary',
+          'inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold',
+          USE_MOCKS ? 'border-medium/25 bg-medium/10 text-medium' : 'border-low/20 bg-low/8 text-low',
         )}>
-          {!USE_MOCKS && <span className="h-1.5 w-1.5 rounded-full bg-primary animate-status-pulse" />}
+          {!USE_MOCKS && <span className="size-1.5 rounded-full bg-low" />}
           {USE_MOCKS ? 'Demo data' : 'Live'}
         </span>
 
         <nav aria-label="Breadcrumb" className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px]">
-          <span className="hidden text-muted-foreground/80 sm:inline">NETRA</span>
+          <span className="hidden font-medium text-muted-foreground sm:inline">NETRA</span>
           {crumbs.map((c, i) => (
             <Fragment key={c.path}>
               <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground/50', i === 0 && 'hidden sm:block')} />
@@ -73,7 +73,7 @@ export function Header({ onOpenNav }: { onOpenNav: () => void }) {
                   {c.label}
                 </Link>
               ) : (
-                <span className="truncate font-medium text-foreground">{c.label}</span>
+                <span className="truncate font-semibold text-foreground">{c.label}</span>
               )}
             </Fragment>
           ))}
@@ -81,17 +81,17 @@ export function Header({ onOpenNav }: { onOpenNav: () => void }) {
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2" title={health === null ? 'System health is not available from the current API' : USE_MOCKS ? 'Demo health data' : 'Health reported by the API'}>
-          <StatusDot tone={health === null ? 'info' : health ? 'low' : 'medium'} pulse={health !== null && !USE_MOCKS} />
-          <span className="hidden text-xs font-medium text-muted-foreground lg:inline">
+        <div className="hidden items-center gap-2 rounded-full border border-border bg-card px-2.5 py-1 sm:flex" title={health === null ? 'System health is not available from the current API' : USE_MOCKS ? 'Demo health data' : 'Health reported by the API'}>
+          <StatusDot tone={health === null ? 'neutral' : health ? 'low' : 'medium'} pulse={health === false} size="sm" />
+          <span className="text-xs font-medium text-muted-foreground max-lg:sr-only">
             {health === null ? 'Health unavailable' : USE_MOCKS ? `Demo health ${health ? 'operational' : 'degraded'}` : health ? 'Operational' : 'Degraded'}
           </span>
         </div>
 
         <Divider />
 
-        <div className="hidden items-center gap-2 font-mono text-xs text-muted-foreground tabular-nums sm:flex">
-          <span className="text-foreground/85">{now.toISOString().slice(11, 19)}</span>
+        <div className="hidden items-center gap-1.5 font-mono text-xs text-muted-foreground tabular-nums md:flex" title="Current time (UTC)">
+          <span className="text-foreground">{now.toISOString().slice(11, 19)}</span>
           <span className="text-[10px] tracking-wider">UTC</span>
         </div>
 
@@ -99,7 +99,7 @@ export function Header({ onOpenNav }: { onOpenNav: () => void }) {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground" aria-label={`Notifications (${alertsQuery.error ? 'unavailable' : incidents ? alerts.length : 'loading'})`}>
+            <Button variant="ghost" size="icon" className="relative size-9 rounded-lg text-muted-foreground hover:text-foreground" aria-label={`Notifications (${alertsQuery.error ? 'unavailable' : incidents ? alerts.length : 'loading'})`}>
               <Bell className="size-4.5" />
               {incidents && alerts.length > 0 && (
                 <span className="absolute top-1 right-1 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-critical px-0.5 font-mono text-[9px] leading-none font-semibold text-white ring-2 ring-background">
@@ -137,9 +137,9 @@ export function Header({ onOpenNav }: { onOpenNav: () => void }) {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button aria-label={`Account menu for ${displayName}`} className="flex items-center gap-2.5 rounded-lg p-1 transition-colors outline-none hover:bg-foreground/4 focus-visible:ring-2 focus-visible:ring-ring lg:pr-2">
-              <Avatar className="size-7 rounded-md">
-                <AvatarFallback className="rounded-md bg-linear-to-br from-primary/30 to-violet/30 text-[11px] font-semibold text-foreground">
+            <button aria-label={`Account menu for ${displayName}`} className="flex items-center gap-2.5 rounded-lg p-1 transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring lg:pr-2.5">
+              <Avatar className="size-8 rounded-full">
+                <AvatarFallback className="rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
                   {initials || 'U'}
                 </AvatarFallback>
               </Avatar>

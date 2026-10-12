@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, String
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,6 +20,16 @@ class SecurityEvent(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         CheckConstraint("src_port BETWEEN 0 AND 65535", name="src_port_range"),
         CheckConstraint("dest_port BETWEEN 0 AND 65535", name="dest_port_range"),
         CheckConstraint("anomaly_score BETWEEN 0 AND 1", name="anomaly_score_range"),
+        # Dataset provenance: an imported event names both its batch and its row, any other event neither.
+        CheckConstraint("(import_batch_id IS NULL) = (source_row IS NULL)", name="import_provenance"),
+        CheckConstraint("source_row >= 2", name="source_row_range"),
+        Index(
+            "uq_security_events_import_batch_id_source_row",
+            "import_batch_id",
+            "source_row",
+            unique=True,
+            postgresql_where=text("import_batch_id IS NOT NULL"),
+        ),
     )
 
     event_uid: Mapped[str] = mapped_column(String(128), unique=True)
@@ -39,6 +49,10 @@ class SecurityEvent(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     asset_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("assets.id", ondelete="SET NULL"), index=True
     )
+
+    # Set only for events normalised from a dataset upload: the batch and the file row (header = row 1).
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("import_batches.id"), index=True)
+    source_row: Mapped[int | None] = mapped_column(Integer)
 
     asset: Mapped["Asset | None"] = relationship(back_populates="events")
     incidents: Mapped[list["Incident"]] = relationship(

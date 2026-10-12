@@ -4,8 +4,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_permission
 from app.api.core_serializers import event_response
+from app.core.permissions import Permission
 from app.db.dependencies import get_db
 from app.models.user import User
 from app.schemas.collector import CollectorStatusResponse, CollectorSubmitResponse
@@ -47,7 +48,7 @@ async def read_collector_body(request: Request) -> Any:
 @router.post("/events", response_model=CollectorSubmitResponse)
 def submit_collector_events(
     # Authentication resolves first, so unauthenticated bodies are never read.
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
     db: Annotated[Session, Depends(get_db)],
     body: Annotated[Any, Depends(read_collector_body)],
 ) -> CollectorSubmitResponse:

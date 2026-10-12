@@ -11,6 +11,7 @@ import { useAuth } from '@/auth/AuthProvider'
 import { ROUTES } from '@/lib/navigation'
 import { HttpError } from '@/services/http'
 import { CyberBackdrop } from './login/CyberBackdrop'
+import { registerFailureMessage } from './login/registerError'
 
 export function RegisterPage() {
   const navigate = useNavigate()
@@ -43,9 +44,7 @@ export function RegisterPage() {
       await register({ email: email.trim(), full_name: fullName.trim(), password })
       navigate(ROUTES.login, { replace: true, state: { registered: true } })
     } catch (cause) {
-      setError(cause instanceof HttpError && cause.status === 409
-        ? 'An account with this email already exists.'
-        : 'Unable to create your account right now. Please check your details and try again.')
+      setError(registerFailureMessage(cause instanceof HttpError ? cause.status : null))
     } finally {
       setLoading(false)
     }

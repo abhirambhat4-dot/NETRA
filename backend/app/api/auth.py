@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from typing import Annotated
 from uuid import UUID
 
@@ -10,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.core.permissions import Permission, Role, has_permission
 from app.db.dependencies import get_db
 from app.models.user import User
 from app.schemas.auth import (
@@ -74,11 +76,42 @@ def get_current_user(
     return user
 
 
+def require_permission(permission: Permission) -> Callable[..., User]:
+    """Dependency that returns the current user, or 403 when their stored role lacks ``permission``."""
+
+    def dependency(current_user: Annotated[User, Depends(get_current_user)]) -> User:
+        # The role is read from the database row, not the token, so a role change applies immediately.
+        if not has_permission(current_user.role, permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your role does not permit this action",
+            )
+        return current_user
+
+    # Lets tests confirm which routes are gated, and by which permission.
+    dependency.required_permission = permission  # type: ignore[attr-defined]
+    return dependency
+
+
+# Identical for every request, so a closed registration never reveals whether an email is registered.
+REGISTRATION_DISABLED = "Self-registration is not available. Ask a NETRA administrator to create your account."
+
+
+def registration_enabled() -> bool:
+    """Whether POST /register may create accounts (ALLOW_PUBLIC_REGISTRATION); a dependency so tests can switch it."""
+    return get_settings().allow_public_registration
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(
     request: RegisterRequest,
+    enabled: Annotated[bool, Depends(registration_enabled)],
     db: Annotated[Session, Depends(get_db)],
 ) -> User:
+    # Checked before any lookup: nothing is read or written while registration is closed.
+    if not enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=REGISTRATION_DISABLED)
+
     existing = db.scalar(select(User).where(User.email == request.email))
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered")
@@ -87,6 +120,8 @@ def register(
         email=str(request.email),
         full_name=request.full_name,
         password_hash=hash_password(request.password),
+        # Always the least-privileged role; a role sent by the client is ignored.
+        role=Role.OPERATOR,
     )
     db.add(user)
     try:

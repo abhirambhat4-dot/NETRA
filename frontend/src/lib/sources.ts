@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { Brain, Bug, Globe, Layers, Radar, UserRound } from 'lucide-react'
+import { Brain, Bug, Database, Globe, Layers, Radar, UserRound } from 'lucide-react'
 import type { BackendEventSource, DetectionSource } from '@/api/types'
 
 interface SourceMeta {
@@ -27,11 +27,15 @@ export const BACKEND_EVENT_SOURCES: readonly BackendEventSource[] = [
   'THREAT_INTEL',
   'VULNERABILITY_SCAN',
   'MANUAL',
+  'DATASET_IMPORT',
 ]
 
 export function eventSourceMeta(source: BackendEventSource | DetectionSource): SourceMeta {
   if (source === 'VULNERABILITY_SCAN') {
     return { label: 'Vulnerability Scan', short: 'Vulnerability', icon: Bug, color: 'var(--chart-5)', dot: 'bg-chart-5' }
+  }
+  if (source === 'DATASET_IMPORT') {
+    return { label: 'Dataset import', short: 'Dataset', icon: Database, color: 'var(--muted-foreground)', dot: 'bg-muted-foreground' }
   }
   if (source === 'MANUAL') {
     return { label: 'Manual', short: 'Manual', icon: UserRound, color: 'var(--muted-foreground)', dot: 'bg-muted-foreground' }
