@@ -1,8 +1,8 @@
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import { NetraLogo, NetraMark, StatusDot } from '@/components/netra'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useQuery } from '@/hooks/useQuery'
-import { NAV_GROUPS, type NavItem } from '@/lib/navigation'
+import { NAV_GROUPS, ROUTES, type NavItem } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 import { dashboardService } from '@/services'
 
@@ -26,8 +26,16 @@ export function Sidebar({ mode = 'responsive', onNavigate }: SidebarProps) {
   return (
     <div className="flex h-full flex-col bg-sidebar">
       <div className={cn('flex h-16 shrink-0 items-center', expanded ? 'px-5' : 'justify-center lg:justify-start lg:px-5')}>
-        <NetraLogo className={expanded ? '' : 'hidden lg:flex'} />
-        <NetraMark className={expanded ? 'hidden' : 'lg:hidden'} />
+        <Link
+          to={ROUTES.commandHome}
+          onClick={onNavigate}
+          aria-label="NETRA Command Home"
+          title="Command Home"
+          className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <NetraLogo className={expanded ? '' : 'hidden lg:flex'} />
+          <NetraMark className={expanded ? 'hidden' : 'lg:hidden'} />
+        </Link>
       </div>
 
       <nav className="flex-1 space-y-6 overflow-y-auto px-2.5 pt-3 pb-4" aria-label="Main">
