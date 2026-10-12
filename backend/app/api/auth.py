@@ -88,6 +88,8 @@ def require_permission(permission: Permission) -> Callable[..., User]:
             )
         return current_user
 
+    # Lets tests confirm which routes are gated, and by which permission.
+    dependency.required_permission = permission  # type: ignore[attr-defined]
     return dependency
 
 

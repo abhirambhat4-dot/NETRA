@@ -5,8 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_permission
 from app.api.core_serializers import asset_reference, enum_text
+from app.core.permissions import Permission
 from app.db.dependencies import get_db
 from app.models.assessment import AssessmentFinding, SecurityAssessment
 from app.models.enums import AssessmentGrade
@@ -85,7 +86,7 @@ def assessment_detail_response(assessment: SecurityAssessment) -> AssessmentDeta
 def create_assessment(
     request: AssessmentCreateRequest,
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> AssessmentDetailResponse:
     consume_rate_limit(current_user)
     return assessment_detail_response(run_assessment(db, current_user, request.asset_id))

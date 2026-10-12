@@ -15,21 +15,23 @@ const operator = { email: 'operator@example.com', role: 'operator' }
 const approver = { email: 'approver@example.com', role: 'approver' }
 const admin = { email: 'admin@example.com', role: 'admin' }
 
-// Same matrix as backend/app/core/permissions.py.
+// Same matrix as backend/app/core/permissions.py (workflow = OPERATE_WORKFLOW).
 test('role permissions mirror the backend matrix', () => {
   assert.deepEqual(
-    [operator, approver, admin].map((user) => (['request', 'resolve', 'execute'] as const).map((p) => rolePermits(user, p))),
+    [operator, approver, admin].map((user) =>
+      (['workflow', 'request', 'resolve', 'execute'] as const).map((p) => rolePermits(user, p)),
+    ),
     [
-      [true, false, true],
-      [true, true, true],
-      [true, true, true],
+      [true, true, false, true],
+      [true, true, true, true],
+      [true, true, true, true],
     ],
   )
 })
 
 test('unknown, mis-cased, inherited and missing roles grant nothing', () => {
   for (const role of ['viewer', 'Admin', 'APPROVER', '', 'constructor', '__proto__', 'toString']) {
-    for (const permission of ['request', 'resolve', 'execute'] as const) {
+    for (const permission of ['workflow', 'request', 'resolve', 'execute'] as const) {
       assert.equal(rolePermits({ email: 'x@example.com', role }, permission), false, `${role} ${permission}`)
     }
   }
@@ -79,11 +81,41 @@ test('signed-out or unknown-role users are offered no resolution and get an expl
   assert.ok(viewer.explanation?.startsWith('Your account role (viewer) is not recognised.'))
 })
 
-test('request and containment actions stay available to operators, approvers and admins', () => {
+test('workflow, request and containment actions stay available to operators, approvers and admins', () => {
   for (const user of [operator, approver, admin]) {
+    assert.equal(permissionExplanation(user, 'workflow'), null)
     assert.equal(permissionExplanation(user, 'request'), null)
     assert.equal(permissionExplanation(user, 'execute'), null)
   }
+})
+
+test('incident workflow steps (including verification) are explained, not offered, for an unknown role', () => {
+  const viewer = { email: 'v@example.com', role: 'viewer' }
+
+  assert.equal(
+    permissionExplanation(viewer, 'workflow'),
+    'Your account role (viewer) is not recognised. Advancing the incident workflow needs the operator, approver or admin role.',
+  )
+  assert.match(permissionExplanation(null, 'workflow') ?? '', /^Your account has no role\. Advancing the incident workflow/)
+})
+
+test('intake pages name their own action, and stay available to every recognised role', () => {
+  const viewer = { email: 'v@example.com', role: 'viewer' }
+  const actions = ['Validating dataset files', 'Running assessments', 'Submitting events', 'Creating incidents']
+
+  for (const action of actions) {
+    assert.equal(
+      permissionExplanation(viewer, 'workflow', action),
+      `Your account role (viewer) is not recognised. ${action} needs the operator, approver or admin role.`,
+    )
+    for (const user of [operator, approver, admin]) assert.equal(permissionExplanation(user, 'workflow', action), null)
+  }
+})
+
+test('a 403 from a workflow step, such as verification, is shown with the backend reason', () => {
+  const message = forbiddenActionMessage(403, 'Your role does not permit this action')
+
+  assert.ok(message?.startsWith('NETRA refused this action: Your role does not permit this action.'))
 })
 
 test('request and containment actions are explained, not offered, for an unknown role', () => {

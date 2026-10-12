@@ -15,6 +15,9 @@ class Role(StrEnum):
 
 
 class Permission(StrEnum):
+    # Intake and incident-lifecycle writes: create/link incidents, ingest or submit events, upload datasets,
+    # run assessments, and enrich, correlate, score, decide, verify and record Cyber Memory.
+    OPERATE_WORKFLOW = "operate_workflow"
     REQUEST_AUTHORIZATION = "request_authorization"
     # Approve or reject a pending authorization request.
     RESOLVE_AUTHORIZATION = "resolve_authorization"
@@ -23,7 +26,9 @@ class Permission(StrEnum):
 
 
 ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
-    Role.OPERATOR: frozenset({Permission.REQUEST_AUTHORIZATION, Permission.EXECUTE_CONTAINMENT}),
+    Role.OPERATOR: frozenset(
+        {Permission.OPERATE_WORKFLOW, Permission.REQUEST_AUTHORIZATION, Permission.EXECUTE_CONTAINMENT}
+    ),
     Role.APPROVER: frozenset(Permission),
     Role.ADMIN: frozenset(Permission),
 }

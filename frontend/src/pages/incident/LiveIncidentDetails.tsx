@@ -73,6 +73,14 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
   const resolution = authorization ? resolutionAccess(user, authorization.requestedBy) : null
   const requestBlocked = permissionExplanation(user, 'request')
   const executeBlocked = permissionExplanation(user, 'execute')
+  const workflowBlocked = permissionExplanation(user, 'workflow')
+  // A lifecycle step (enrich, correlate, score, decide, verify, Cyber Memory) is due in this state.
+  const workflowStepDue =
+    incident.state === 'DETECTED' ||
+    incident.state === 'UNDERSTOOD' ||
+    (incident.state === 'PRIORITISED' && detail.decisions.length === 0) ||
+    canVerifyIncident(incident.state, detail.decisions.length) ||
+    (incident.state === 'CONTAINED' && !hasMemory)
 
   /**
    * Runs a workflow call; on a 403 keeps an explanation on screen (the toast alone disappears), re-reads
@@ -106,13 +114,14 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
   const verifyIncident = () =>
     run(
       'verify-incident',
-      () =>
+      guarded(() =>
         liveIncidentWorkflowService.verifyIncident(incident.id).catch((error: unknown) => {
           if (shouldRefreshAfterVerifyError(error instanceof HttpError ? error.status : null)) {
             window.dispatchEvent(new Event(DATA_CHANGED_EVENT))
           }
           throw error
         }),
+      ),
       'Incident verified',
     )
 
@@ -167,46 +176,47 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
               {forbidden}
             </p>
           )}
-          {(incident.state === 'DETECTED' || incident.state === 'UNDERSTOOD') && (
+          {workflowBlocked && workflowStepDue && <RoleNote>{workflowBlocked}</RoleNote>}
+          {!workflowBlocked && (incident.state === 'DETECTED' || incident.state === 'UNDERSTOOD') && (
             <Button
               variant="outline"
               disabled={busy !== null}
-              onClick={() => run('enrich', () => liveIncidentWorkflowService.enrich(incident.id), 'Context enrichment completed')}
+              onClick={() => run('enrich', guarded(() => liveIncidentWorkflowService.enrich(incident.id)), 'Context enrichment completed')}
             >
               {busy === 'enrich' ? <Loader2 className="animate-spin" /> : <Sparkles />}
               Enrich context
             </Button>
           )}
-          {(incident.state === 'DETECTED' || incident.state === 'UNDERSTOOD') && incident.eventCount > 0 && (
+          {!workflowBlocked && (incident.state === 'DETECTED' || incident.state === 'UNDERSTOOD') && incident.eventCount > 0 && (
             <Button
               variant="outline"
               disabled={busy !== null}
-              onClick={() => run('correlate', () => liveIncidentWorkflowService.correlate(incident.id), 'Correlation completed')}
+              onClick={() => run('correlate', guarded(() => liveIncidentWorkflowService.correlate(incident.id)), 'Correlation completed')}
             >
               {busy === 'correlate' ? <Loader2 className="animate-spin" /> : <Radar />}
               Correlate events
             </Button>
           )}
-          {incident.state === 'UNDERSTOOD' && (
+          {!workflowBlocked && incident.state === 'UNDERSTOOD' && (
             <Button
               variant="outline"
               disabled={busy !== null}
-              onClick={() => run('risk', () => liveIncidentWorkflowService.calculateRisk(incident.id), 'Risk calculation completed')}
+              onClick={() => run('risk', guarded(() => liveIncidentWorkflowService.calculateRisk(incident.id)), 'Risk calculation completed')}
             >
               {busy === 'risk' ? <Loader2 className="animate-spin" /> : <ScanSearch />}
               Calculate risk
             </Button>
           )}
-          {incident.state === 'PRIORITISED' && detail.decisions.length === 0 && (
+          {!workflowBlocked && incident.state === 'PRIORITISED' && detail.decisions.length === 0 && (
             <Button
               disabled={busy !== null}
-              onClick={() => run('decision', () => liveIncidentWorkflowService.recommendDecision(incident.id), 'Decision recommendation created')}
+              onClick={() => run('decision', guarded(() => liveIncidentWorkflowService.recommendDecision(incident.id)), 'Decision recommendation created')}
             >
               {busy === 'decision' ? <Loader2 className="animate-spin" /> : <Sparkles />}
               Recommend decision
             </Button>
           )}
-          {canVerifyIncident(incident.state, detail.decisions.length) && (
+          {!workflowBlocked && canVerifyIncident(incident.state, detail.decisions.length) && (
             <Button variant="outline" disabled={busy !== null} onClick={verifyIncident}>
               {busy === 'verify-incident' ? <Loader2 className="animate-spin" /> : <BadgeCheck />}
               Verify incident
@@ -297,10 +307,10 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
                 Verify containment result
               </Button>
             ))}
-          {incident.state === 'CONTAINED' && !hasMemory && (
+          {!workflowBlocked && incident.state === 'CONTAINED' && !hasMemory && (
             <Button
               disabled={busy !== null}
-              onClick={() => run('memory', () => liveIncidentWorkflowService.createCyberMemory(incident.id), 'Cyber Memory created')}
+              onClick={() => run('memory', guarded(() => liveIncidentWorkflowService.createCyberMemory(incident.id)), 'Cyber Memory created')}
             >
               {busy === 'memory' ? <Loader2 className="animate-spin" /> : <BrainCircuit />}
               Create Cyber Memory

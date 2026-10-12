@@ -10,8 +10,9 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import FormData, UploadFile
 from starlette.formparsers import MultiPartException, MultiPartParser
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_permission
 from app.api.core_serializers import enum_text
+from app.core.permissions import Permission
 from app.db.dependencies import get_db
 from app.models.import_batch import ImportBatch
 from app.models.user import User
@@ -98,7 +99,7 @@ def _upload_from_form(form: FormData) -> ImportUpload:
 async def read_import_upload(
     request: Request,
     # Authentication and the rate limit resolve first, so no body is read for rejected callers.
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
     db: Annotated[Session, Depends(get_db)],
 ) -> AsyncIterator[ImportUpload]:
     """Parse the multipart body through a byte cap; the file spools to a temporary file, never fully to memory."""
@@ -179,7 +180,7 @@ def _duplicate(existing: ImportBatch | None, user: User) -> HTTPException:
 def create_import(
     upload: Annotated[ImportUpload, Depends(read_import_upload)],
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> ImportBatchDetailResponse:
     """Validate a CSV against a dataset profile and record the batch. Validation only: no rows are stored."""
     limits = import_limits()

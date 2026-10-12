@@ -17,6 +17,7 @@ from app.services.decision_workflow import approve_decision_authorization
 from tests.conftest import APPROVER_EMAIL, CoreApi
 from tests.test_authorization import create_decision, request_authorization
 from tests.test_containment import contain, create_pending_authorization
+from tests.test_decision import seed_prioritised_incident
 from tests.test_incident_verification import request_incident_verification
 from tests.test_verification import verify
 
@@ -228,6 +229,32 @@ def test_role_change_applies_to_existing_tokens(core_api: CoreApi) -> None:
         session.commit()
 
     assert approve(core_api, authorization_id, demoted).status_code == 403
+
+
+def test_unrecognised_role_cannot_verify_and_incident_is_unchanged(core_api: CoreApi) -> None:
+    incident_id = seed_prioritised_incident(core_api)
+
+    response = core_api.client.post(f"/api/incidents/{incident_id}/verify", headers=headers_for(core_api, role="viewer"))
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == ROLE_FORBIDDEN
+    with core_api.session_factory() as session:
+        assert session.get(Incident, incident_id).state == IncidentState.PRIORITISED
+        assert session.scalars(
+            select(IncidentHistory).where(
+                IncidentHistory.incident_id == incident_id, IncidentHistory.action == "incident_verified"
+            )
+        ).all() == []
+
+
+@pytest.mark.parametrize("role", ["approver", "admin"])
+def test_elevated_roles_can_still_verify(core_api: CoreApi, role: str) -> None:
+    incident_id = seed_prioritised_incident(core_api)
+
+    response = core_api.client.post(f"/api/incidents/{incident_id}/verify", headers=headers_for(core_api, role=role))
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "VERIFIED"
 
 
 # Registration

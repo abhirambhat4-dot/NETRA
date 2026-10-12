@@ -2,6 +2,7 @@ import type * as React from 'react'
 import { useState } from 'react'
 import { CircleAlert, CircleCheck, Copy, Loader2, Plus, Send, Trash2 } from 'lucide-react'
 import type { AssetInventoryItem, CollectorSubmitResponse, Severity } from '@/api/types'
+import { useAuth } from '@/auth/AuthProvider'
 import { Disclosure, Panel, ToneBadge } from '@/components/netra'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useQuery } from '@/hooks/useQuery'
+import { permissionExplanation } from '@/lib/authorizationAccess'
 import { SEVERITY_ORDER } from '@/lib/tones'
 import { cn } from '@/lib/utils'
 import { assetInventoryService, collectorService } from '@/services'
@@ -50,6 +52,8 @@ export function SubmitEventsPanel() {
   const [requestError, setRequestError] = useState<string | null>(null)
   const [outcome, setOutcome] = useState<{ response: CollectorSubmitResponse; events: SubmittedEvent[] } | null>(null)
   const assets = useQuery('collector-assets', () => assetInventoryService.list())
+  // Presentation only: the API enforces the role, and answers 403 for a role that is not recognised.
+  const roleBlocked = permissionExplanation(useAuth().user, 'workflow', 'Submitting events')
 
   const update = (key: string, patch: Partial<EventDraft>) => {
     setDrafts((current) => current.map((draft) => (draft.key === key ? { ...draft, ...patch, rejection: undefined } : draft)))
@@ -62,7 +66,7 @@ export function SubmitEventsPanel() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
-    if (submitting) return
+    if (submitting || roleBlocked) return
     setRequestError(null)
     const now = Date.now()
     const found = Object.fromEntries(drafts.map((draft) => [draft.key, validateDraft(draft, now)]))
@@ -144,13 +148,14 @@ export function SubmitEventsPanel() {
           >
             <Plus /> Add event
           </Button>
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" disabled={submitting || !!roleBlocked}>
             {submitting ? <Loader2 className="animate-spin" /> : <Send />}
             {submitting
               ? `Submitting ${drafts.length} event${drafts.length === 1 ? '' : 's'}…`
               : `${requestError ? 'Retry submission' : 'Submit'} ${drafts.length} event${drafts.length === 1 ? '' : 's'}`}
           </Button>
         </div>
+        {roleBlocked && <p role="note" className="text-xs text-muted-foreground">{roleBlocked}</p>}
       </form>
 
       {outcome && <SubmissionOutcome {...outcome} />}

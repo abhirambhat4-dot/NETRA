@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { CircleAlert, Loader2, ShieldPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import type { EventsPageItem, IncidentCreateRequest } from '@/api/types'
+import { useAuth } from '@/auth/AuthProvider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { permissionExplanation } from '@/lib/authorizationAccess'
 import { ROUTES } from '@/lib/navigation'
 import { SEVERITY_ORDER } from '@/lib/tones'
 import { collectorService } from '@/services'
@@ -41,9 +43,11 @@ export function CreateIncidentBar({ selected, onClearSelection }: {
   const earliest = ordered[0]
   const assetIds = new Set(ordered.map((event) => event.assetId).filter(Boolean))
   const effectiveTitle = (title ?? (selected.length ? defaultTitle(ordered) : '')).trim()
+  // Presentation only: the API enforces the role, and answers 403 for a role that is not recognised.
+  const roleBlocked = permissionExplanation(useAuth().user, 'workflow', 'Creating incidents')
 
   async function create() {
-    if (!earliest || creating || !effectiveTitle) return
+    if (!earliest || creating || !effectiveTitle || roleBlocked) return
     setCreating(true)
     setError(null)
     const severity = SEVERITY_ORDER.find((level) => ordered.some((event) => event.severity === level))
@@ -89,11 +93,13 @@ export function CreateIncidentBar({ selected, onClearSelection }: {
           />
         </div>
         <span className="pb-2 text-xs text-muted-foreground" aria-live="polite">Selected: {selected.length}</span>
-        <Button onClick={create} disabled={!selected.length || creating || !effectiveTitle}>
+        <Button onClick={create} disabled={!selected.length || creating || !effectiveTitle || !!roleBlocked}>
           {creating ? <Loader2 className="animate-spin" /> : <ShieldPlus />}
           {creating ? 'Creating incident…' : 'Create incident from selected events'}
         </Button>
       </div>
+
+      {roleBlocked && <p role="note" className="text-xs text-muted-foreground">{roleBlocked}</p>}
 
       {selected.length > 0 && (
         <p className="text-[11px] leading-relaxed text-muted-foreground">

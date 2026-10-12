@@ -3,11 +3,13 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CircleAlert, FileSpreadsheet, Loader2, Upload } from 'lucide-react'
 import type { BackendImportBatchDetail } from '@/api/types'
+import { useAuth } from '@/auth/AuthProvider'
 import { Panel, ToneBadge } from '@/components/netra'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { permissionExplanation } from '@/lib/authorizationAccess'
 import {
   IMPORT_PROFILES,
   MAX_ROWS,
@@ -36,6 +38,8 @@ export function UploadPanel({ onOpenBatch }: { onOpenBatch: (id: string) => void
   const [failure, setFailure] = useState<ImportFailure | null>(null)
   const fileProblem = file ? checkSelectedFile(file) : null
   const profileMeta = IMPORT_PROFILES.find((option) => option.id === profile)
+  // Presentation only: the API enforces the role, and answers 403 for a role that is not recognised.
+  const roleBlocked = permissionExplanation(useAuth().user, 'workflow', 'Validating dataset files')
 
   function chooseFile(event: React.ChangeEvent<HTMLInputElement>) {
     setFile(event.target.files?.[0] ?? null)
@@ -44,7 +48,7 @@ export function UploadPanel({ onOpenBatch }: { onOpenBatch: (id: string) => void
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
-    if (!file || fileProblem || uploading) return
+    if (!file || fileProblem || uploading || roleBlocked) return
     setUploading(true)
     setFailure(null)
     setResult(null)
@@ -125,11 +129,12 @@ export function UploadPanel({ onOpenBatch }: { onOpenBatch: (id: string) => void
             Rows are checked, not stored: nothing enters Security Events, Incidents or Assessments. Full CIC-IDS2017
             files exceed the upload limit; check them with the local profiler, or upload smaller CSV extracts.
           </p>
-          <Button type="submit" disabled={!file || !!fileProblem || uploading}>
+          <Button type="submit" disabled={!file || !!fileProblem || uploading || !!roleBlocked}>
             {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
             {uploading ? 'Uploading and validating…' : failure ? 'Retry validation' : 'Validate file'}
           </Button>
         </div>
+        {roleBlocked && <p role="note" className="text-xs text-muted-foreground">{roleBlocked}</p>}
       </form>
 
       <section aria-live="polite" aria-label="Validation result">

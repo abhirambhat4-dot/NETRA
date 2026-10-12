@@ -2,13 +2,16 @@
 // (backend/app/core/permissions.py). Presentation only: the API enforces every rule and stays
 // authoritative. Dependency-free so it runs under `node --test`.
 
-export type WorkflowPermission = 'request' | 'resolve' | 'execute'
+export type WorkflowPermission = 'workflow' | 'request' | 'resolve' | 'execute'
 
-/** request = request authorization; resolve = approve or reject; execute = run and verify containment. */
+/**
+ * workflow = incident lifecycle and intake writes (enrich, correlate, score, decide, verify, Cyber Memory);
+ * request = request authorization; resolve = approve or reject; execute = run and verify containment.
+ */
 const ROLE_PERMISSIONS: Record<string, readonly WorkflowPermission[]> = {
-  operator: ['request', 'execute'],
-  approver: ['request', 'resolve', 'execute'],
-  admin: ['request', 'resolve', 'execute'],
+  operator: ['workflow', 'request', 'execute'],
+  approver: ['workflow', 'request', 'resolve', 'execute'],
+  admin: ['workflow', 'request', 'resolve', 'execute'],
 }
 
 export interface SignedInUser {
@@ -63,10 +66,22 @@ export function resolutionAccess(user: SignedInUser | null, requestedBy: string)
   return { canApprove: true, canReject: true, explanation: null }
 }
 
-/** Explanation when a request or containment action is withheld for the user's role; null when offered. */
-export function permissionExplanation(user: SignedInUser | null, permission: Exclude<WorkflowPermission, 'resolve'>): string | null {
+const ACTION_LABEL: Record<Exclude<WorkflowPermission, 'resolve'>, string> = {
+  workflow: 'Advancing the incident workflow',
+  request: 'Requesting authorization',
+  execute: 'Running and verifying containment',
+}
+
+/**
+ * Explanation when a workflow, request or containment action is withheld for the user's role; null when offered.
+ * `action` names the specific action (for example "Running assessments") in place of the permission's default label.
+ */
+export function permissionExplanation(
+  user: SignedInUser | null,
+  permission: Exclude<WorkflowPermission, 'resolve'>,
+  action: string = ACTION_LABEL[permission],
+): string | null {
   if (rolePermits(user, permission)) return null
-  const action = permission === 'request' ? 'Requesting authorization' : 'Running and verifying containment'
   return `${roleLabel(user)}. ${action} needs the operator, approver or admin role.`
 }
 

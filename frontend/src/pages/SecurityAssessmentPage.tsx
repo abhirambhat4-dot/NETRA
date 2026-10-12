@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AssessmentGrade, AssetInventoryItem, BackendAssessmentPage, BackendAssessmentSummary } from '@/api/types'
+import { useAuth } from '@/auth/AuthProvider'
 import {
   EmptyState,
   ErrorState,
@@ -35,6 +36,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { useQuery } from '@/hooks/useQuery'
 import { GRADE_TONE } from '@/lib/assessment'
+import { permissionExplanation } from '@/lib/authorizationAccess'
 import { formatDateTime, timeAgo } from '@/lib/format'
 import { ROUTES } from '@/lib/navigation'
 import { toneStyles } from '@/lib/tones'
@@ -341,9 +343,11 @@ function RunAssessmentPanel({ assets, assetsError, onRetryAssets, onAssessed, me
   const [running, setRunning] = useState(false)
   const [rateLimited, setRateLimited] = useState(false)
   const selected = assets?.find((asset) => asset.id === assetId)
+  // Presentation only: the API enforces the role, and answers 403 for a role that is not recognised.
+  const roleBlocked = permissionExplanation(useAuth().user, 'workflow', 'Running assessments')
 
   async function run() {
-    if (!assetId) return
+    if (!assetId || roleBlocked) return
     setRunning(true)
     setRateLimited(false)
     try {
@@ -395,7 +399,7 @@ function RunAssessmentPanel({ assets, assetsError, onRetryAssets, onAssessed, me
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button onClick={run} disabled={!assetId || running} className="h-10 px-4 sm:w-auto">
+                  <Button onClick={run} disabled={!assetId || running || !!roleBlocked} className="h-10 px-4 sm:w-auto">
                     {running ? <Loader2 className="animate-spin" /> : <Play />}
                     {running ? 'Assessing…' : 'Run assessment'}
                   </Button>
@@ -414,6 +418,8 @@ function RunAssessmentPanel({ assets, assetsError, onRetryAssets, onAssessed, me
                     'Runs are limited to 10 per minute.'
                   )}
                 </p>
+
+                {roleBlocked && <p role="note" className="text-xs text-muted-foreground">{roleBlocked}</p>}
 
                 {rateLimited && (
                   <p role="status" className="flex items-center gap-2 rounded-lg border border-medium/25 bg-medium/10 px-3 py-2 text-xs text-medium">

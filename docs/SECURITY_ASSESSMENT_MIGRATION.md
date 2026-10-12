@@ -4,8 +4,17 @@ Migration `0003_add_security_assessments` adds the two tables behind Security As
 `security_assessments` (one append-only snapshot per run) and `assessment_findings` (nine findings
 per snapshot). It creates nothing else and alters no existing table.
 
-Status: rendered offline and tested only in throwaway local schemas. It has **not** been applied to
-Neon or any persistent database.
+Status: last reported states, recorded 2026-10-12. These are not fresh observations: no production
+database was queried when this was written. Re-run the read-only checks below before acting on them.
+
+| Database | Last reported Alembic revision | Notes |
+|---|---|---|
+| Neon test branch | `0004_add_import_batches` (head) | 0003 and 0004 applied to the test branch. |
+| Neon production | `0002_add_password_reset_tokens` | 0003 **not** applied. |
+| Local `netra_e2e` | Not recorded here | Set up by `backend/scripts/netra_e2e.py`: `init-schema` (`app.db.init_db`), then `stamp` (`alembic stamp head`). |
+
+No production backup or production Neon branch is recorded in this repository. Take one, and record
+it, before the upgrade below.
 
 ## What the migration needs
 
