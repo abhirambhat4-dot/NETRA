@@ -1,10 +1,20 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { BackendImportBatchSummary } from '../src/api/types.ts'
+import type { BackendImportBatchSummary, BackendImportPreview } from '../src/api/types.ts'
 import {
+  CONFIDENCE_META,
   IMPORT_PROFILES,
   MAX_UPLOAD_BYTES,
+  buildImportFormData,
+  buildPreviewFormData,
   checkSelectedFile,
+  delimiterLabel,
+  describeCoverage,
+  draftProblems,
+  draftToMapping,
+  initialDraft,
+  mappableColumns,
+  requiredFields,
   describeImportFailure,
   describeImportOutcome,
   describeStoredRows,
@@ -36,8 +46,8 @@ function batch(overrides: Partial<BackendImportBatchSummary> = {}): BackendImpor
   }
 }
 
-test('only implemented profiles are offered', () => {
-  assert.deepEqual(IMPORT_PROFILES.map((profile) => profile.id), ['generic-csv', 'cic-ids2017'])
+test('only implemented profiles are offered, field-mapped Security CSV first', () => {
+  assert.deepEqual(IMPORT_PROFILES.map((profile) => profile.id), ['security-csv', 'generic-csv', 'cic-ids2017'])
 })
 
 test('file precheck accepts .csv within the limit and explains anything else', () => {
@@ -128,4 +138,138 @@ test('event provenance is shown only for events that name both their import batc
   assert.equal(eventProvenance({ importBatchId: null, sourceRow: null }), null)
   assert.equal(eventProvenance({}), null)
   assert.equal(eventProvenance({ importBatchId: BATCH_ID, sourceRow: null }), null)
+})
+
+// --- Security CSV field mapping -----------------------------------------------------------------
+
+function preview(overrides: Partial<BackendImportPreview> = {}): BackendImportPreview {
+  return {
+    originalFilename: 'auth.csv',
+    fileSizeBytes: 100,
+    fileSha256: 'b'.repeat(64),
+    encoding: 'utf-8',
+    encodingConfident: true,
+    delimiter: ';',
+    delimiterConfident: true,
+    columns: [
+      { index: 1, name: 'Event Time', mappable: true, inferredKind: 'timestamp', nonEmpty: 3 },
+      { index: 2, name: 'Source', mappable: true, inferredKind: 'text', nonEmpty: 3 },
+      { index: 3, name: 'Kind', mappable: true, inferredKind: 'text', nonEmpty: 3 },
+      { index: 4, name: '', mappable: false, inferredKind: 'text', nonEmpty: 1 },
+    ],
+    rows: [["2024-05-01T10:00:00Z", 'web-01', 'login', "'=1+1"]],
+    sampledRows: 1,
+    moreRows: false,
+    suggestedRecordType: 'security_event',
+    suggestions: [
+      { field: 'occurred_at', column: 'Event Time', columnIndex: 1, confidence: 'high', reason: 'agree', candidates: [] },
+      { field: 'src_ip', column: 'Source', columnIndex: 2, confidence: 'low', reason: 'values do not fit', candidates: [] },
+      { field: 'event_type', column: null, columnIndex: null, confidence: 'ambiguous', reason: 'several', candidates: ['Kind', 'Type'] },
+    ],
+    suggestedTimestampFormat: 'iso8601',
+    timestampFormatCandidates: ['iso8601'],
+    timestampHasZone: true,
+    recognizedProfile: null,
+    warnings: [],
+    needsReview: true,
+    alreadyImported: false,
+    alreadyImportedBatchId: null,
+    fields: [
+      { name: 'occurred_at', label: 'Timestamp', kind: 'timestamp', description: '' },
+      { name: 'event_type', label: 'Event type', kind: 'text', description: '' },
+      { name: 'src_ip', label: 'Source IP', kind: 'ip', description: '' },
+      { name: 'dest_ip', label: 'Destination IP', kind: 'ip', description: '' },
+    ],
+    recordTypes: [
+      { name: 'security_event', title: 'Security event', description: '', required: ['occurred_at', 'event_type'] },
+      { name: 'network_flow', title: 'Network flow', description: '', required: ['occurred_at', 'src_ip', 'dest_ip'] },
+    ],
+    timestampFormats: [{ name: 'iso8601', label: 'ISO 8601' }],
+    encodings: ['utf-8', 'utf-16', 'cp1252', 'iso-8859-1'],
+    delimiters: [{ value: ',', label: 'Comma' }, { value: ';', label: 'Semicolon' }],
+    ...overrides,
+  }
+}
+
+test('only high-confidence suggestions are preselected; low and ambiguous ones wait for the user', () => {
+  const draft = initialDraft(preview())
+  assert.deepEqual(draft.fields, { occurred_at: 'Event Time' })
+  assert.equal(draft.recordType, 'security_event')
+  assert.equal(draft.timestampFormat, 'iso8601')
+  assert.equal(draft.delimiter, ';')
+  assert.equal(draft.utcOffset, '+00:00')
+  assert.equal(initialDraft(preview({ suggestedTimestampFormat: null })).timestampFormat, '')
+})
+
+test('blank and repeated header names are not offered for mapping', () => {
+  assert.deepEqual(mappableColumns(preview()), ['Event Time', 'Source', 'Kind'])
+})
+
+test('missing required fields explain what to choose for the selected record type', () => {
+  const p = preview()
+  const draft = initialDraft(p)
+  assert.deepEqual(draftProblems(draft, p), [
+    'Event type is required for Security event records: choose its column or enter a default event type.',
+  ])
+  assert.deepEqual(draftProblems({ ...draft, defaultEventType: 'authentication' }, p), [])
+  assert.deepEqual(draftProblems({ ...draft, recordType: 'network_flow' }, p), [
+    'Source IP is required for Network flow records: choose its column.',
+    'Destination IP is required for Network flow records: choose its column.',
+  ])
+  assert.deepEqual(requiredFields(p, 'network_flow'), ['occurred_at', 'src_ip', 'dest_ip'])
+})
+
+test('format, offset, default type and duplicate columns are checked before import', () => {
+  const p = preview()
+  const draft = { ...initialDraft(p), fields: { occurred_at: 'Event Time', event_type: 'Kind' } }
+  assert.deepEqual(draftProblems({ ...draft, timestampFormat: '' }, p), ['Choose the timestamp format.'])
+  assert.deepEqual(draftProblems({ ...draft, utcOffset: '5:30' }, p), ['The UTC offset must look like +00:00 or -05:30.'])
+  assert.deepEqual(draftProblems({ ...draft, fields: { ...draft.fields, src_ip: 'kind' } }, p), [
+    'Column "kind" is mapped to both Event type and Source IP.',
+  ])
+  const noType = { ...draft, fields: { occurred_at: 'Event Time' }, defaultEventType: '=cmd' }
+  assert.match(draftProblems(noType, p)[0], /default event type may use/)
+})
+
+test('the confirmed draft becomes the API mapping without empty fields', () => {
+  const p = preview()
+  const draft = { ...initialDraft(p), fields: { occurred_at: 'Event Time', src_ip: '', event_type: '' }, defaultEventType: ' auth ' }
+  assert.deepEqual(draftToMapping(draft), {
+    recordType: 'security_event',
+    fields: { occurred_at: 'Event Time' },
+    timestampFormat: 'iso8601',
+    utcOffset: '+00:00',
+    encoding: 'utf-8',
+    delimiter: ';',
+    defaultEventType: 'auth',
+  })
+  // A default event type is sent only when no column is mapped to event_type.
+  assert.equal(draftToMapping({ ...draft, fields: { occurred_at: 'Event Time', event_type: 'Kind' } }).defaultEventType, undefined)
+})
+
+test('the mapping travels as one JSON form field next to the profile and file', () => {
+  const mapping = draftToMapping({ ...initialDraft(preview()), defaultEventType: 'auth' })
+  const form = buildImportFormData(new Blob(['a']), 'auth.csv', 'security-csv', mapping)
+  assert.equal(form.get('profile'), 'security-csv')
+  assert.deepEqual(JSON.parse(String(form.get('mapping'))), mapping)
+  assert.equal(buildImportFormData(new Blob(['a']), 'f.csv', 'cic-ids2017').get('mapping'), null)
+  const previewForm = buildPreviewFormData(new Blob(['a']), 'auth.csv', { delimiter: '\t' })
+  assert.equal(previewForm.get('delimiter'), '\t')
+  assert.equal(previewForm.get('encoding'), null)
+  assert.ok(previewForm.get('file') instanceof Blob)
+})
+
+test('coverage notes say which events Security Assessment can and cannot use', () => {
+  assert.deepEqual(describeCoverage({ events: 3, linkedToAsset: 1, addressWithoutAsset: 0, withoutAddress: 2 }), [
+    "1 event matched a registered asset by IP address and can inform that asset's Security Assessment.",
+    '2 events have no IP address. They are listed as events but cannot be linked to an asset, so Security Assessment cannot use them.',
+  ])
+  assert.deepEqual(describeCoverage({ events: 0, linkedToAsset: 0, addressWithoutAsset: 0, withoutAddress: 0 }), [])
+})
+
+test('confidence labels never present a guess as detected', () => {
+  assert.equal(CONFIDENCE_META.high.label, 'Detected')
+  assert.notEqual(CONFIDENCE_META.low.label, 'Detected')
+  assert.notEqual(CONFIDENCE_META.ambiguous.label, 'Detected')
+  assert.equal(delimiterLabel('\t'), 'Tab')
 })

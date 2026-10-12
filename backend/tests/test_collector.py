@@ -309,6 +309,8 @@ def test_status_idle_with_no_events(core_api: CoreApi) -> None:
         "eventsLast24h": 0,
         "lastReceivedAt": None,
         "recentEvents": [],
+        "importedEventsTotal": 0,
+        "recentImportedEvents": [],
     }
 
 

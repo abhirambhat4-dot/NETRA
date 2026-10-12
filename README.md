@@ -29,8 +29,9 @@ connect evidence, expose uncertainty, explain priorities and keep a record of wh
 
 ## 2. Objectives and scope
 
-- Ingest a supported public dataset (**CIC-IDS2017**) through authenticated upload, with schema and
-  row validation, duplicate handling and import-batch provenance.
+- Ingest security CSV files through authenticated upload: any structurally valid security CSV via a
+  previewed, user-confirmed field mapping, plus the public **CIC-IDS2017** dataset via its own
+  profile, with schema and row validation, duplicate handling and import-batch provenance.
 - Store accepted rows as normalised security events that keep a link to their source batch and row.
 - Correlate and enrich incidents only where implemented rules and available evidence support it.
 - Produce explainable risk scores and security assessments with evidence references and stated gaps.
@@ -38,7 +39,7 @@ connect evidence, expose uncertainty, explain priorities and keep a record of wh
   and verification, and lessons recorded in Cyber Memory.
 
 **Out of scope or not claimed:** real host isolation or firewall changes, live SIEM/EDR or live-feed
-adapters, AI/LLM analysis or autonomous learning, universal support for arbitrary datasets, and
+adapters, AI/LLM analysis or autonomous learning, non-CSV formats or automatic import without a confirmed mapping, and
 NETRA's own detection rules over imported dataset flows. See [Known limitations](#13-demo-instructions-and-known-limitations).
 
 ## 3. Architecture and technology stack
@@ -68,7 +69,7 @@ A diagram and the full data flow are in [docs/PROJECT_DOCUMENTATION.md](docs/PRO
 | Module | Backend | Frontend page | Responsibility |
 |---|---|---|---|
 | Authentication | `api/auth.py`, `services/auth.py`, `services/password_reset.py` | Login, Register, Forgot/Reset password | JWT login, current user, optional self-registration, emailed password reset |
-| Dataset import | `api/imports.py`, `services/dataset_import.py`, `dataset_profiles.py`, `dataset_normalization.py` | Dataset Import | Validate CSV uploads against a profile; record batches; normalise CIC-IDS2017 rows into events |
+| Dataset import | `api/imports.py`, `services/dataset_import.py`, `dataset_profiles.py`, `security_csv.py`, `csv_preview.py`, `dataset_normalization.py` | Dataset Import | Preview and map security CSVs; validate uploads against a profile; record batches; normalise accepted rows into events |
 | Event intake | `api/events.py`, `api/collector.py`, `services/intake.py`, `services/collector.py` | Security Events, Live Event Collector | List/inspect events; authenticated manual event submission |
 | Incidents | `api/incidents.py`, `services/event_correlation.py`, `context_enrichment.py`, `risk_engine.py`, `prioritization.py` | Incidents, Incident details | Create incidents, link and correlate events, enrich context, calculate explainable risk, prioritise |
 | Decision and response | `api/decisions.py`, `api/authorizations.py`, `api/containments.py`, `services/decision_workflow.py`, `controlled_response.py` | Incident details | Recommend an action, request/approve/reject authorisation, **simulate** containment, verify outcome |
@@ -81,18 +82,26 @@ A diagram and the full data flow are in [docs/PROJECT_DOCUMENTATION.md](docs/PRO
 
 Full reference: [docs/DATASET_IMPORTS.md](docs/DATASET_IMPORTS.md).
 
-- **Upload:** `POST /api/imports` (multipart: one `.csv` file part `file` and one field `profile`).
+- **Preview:** `POST /api/imports/preview` detects encoding, delimiter and suggested field mappings
+  and records nothing.
+- **Upload:** `POST /api/imports` (multipart: one `.csv` file part `file`, one field `profile` and,
+  for `security-csv`, one JSON field `mapping`).
   It requires authentication and the `operate_workflow` permission, and is limited to 10 uploads per
   user per minute. The default caps are 25 MiB and 100,000 rows (`IMPORT_MAX_UPLOAD_BYTES`,
   `IMPORT_MAX_ROWS`).
 - **Profiles:**
+  - `security-csv` (v1) maps any column names and order to NETRA's event fields (timestamp, event
+    type, IPs, ports, protocol, severity, message, outcome, label) as `security_event` or
+    `network_flow` records. It supports comma/semicolon/tab/pipe delimiters, UTF-8/UTF-16/Windows-1252
+    and ISO 8601, day/month, month/day, RFC 2822 and Unix timestamps. Accepted rows are stored as
+    `info` events; the file's severity and labels are kept for reference only.
   - `generic-csv` checks structure only and stores no rows.
   - `cic-ids2017` (v1) requires the exact 85-column CIC-IDS2017 header in order; `Fwd Header Length`
     appears at both columns 41 and 62. It validates addresses, ports, protocol, timestamp, label and
     numeric features.
 - **Validation report:** row, column and rule for each issue, never cell contents. A sample of up
   to 100 issues is stored with the true total.
-- **Normalisation (CIC-IDS2017 only):** rows that passed validation in a validated batch become
+- **Normalisation (CIC-IDS2017; `security-csv` is analogous, see the reference):** rows that passed validation in a validated batch become
   `security_events` with:
   - `source = dataset_import`, `event_type = network_flow` and **severity `info`**;
   - `import_batch_id` and `source_row`, both set;

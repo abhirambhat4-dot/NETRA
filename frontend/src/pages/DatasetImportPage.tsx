@@ -24,7 +24,8 @@ import { HttpError, USE_MOCKS } from '@/services/http'
 import { ImportBatchDetailSheet } from './imports/ImportBatchDetailSheet'
 import { UploadPanel } from './imports/UploadPanel'
 
-const DESCRIPTION = 'Validate security dataset CSV files before they enter NETRA. Each upload is recorded as an import batch.'
+const DESCRIPTION =
+  'Bring security CSV files into NETRA: preview them, map their columns and validate every row. Each upload is recorded as an import batch.'
 const PAGE_SIZE = 10
 
 // File · Result · Rows · Uploaded
@@ -197,7 +198,7 @@ function ImportUnavailable() {
   return (
     <PageContainer>
       <PageHeader icon={FileUp} eyebrow="Intake" title="Dataset Import" description={DESCRIPTION} />
-      <Panel title="Dataset Import" description="Validation-only CSV uploads">
+      <Panel title="Dataset Import" description="Validated CSV uploads">
         <EmptyState
           icon={ServerOff}
           title="Dataset import requires the NETRA API."

@@ -53,7 +53,12 @@ class DatasetProfile:
     identifier: ClassVar[str]
     version: ClassVar[str]
     title: ClassVar[str]
-    encoding: ClassVar[str] = "utf-8-sig"
+    encoding: str = "utf-8-sig"
+    delimiter: str = ","
+    # Reject the file when its bytes contain NUL (binary data); off only for UTF-16 text.
+    rejects_nul_bytes: bool = True
+    # Treat a record whose cells are all empty like a blank line: skipped and not counted as data.
+    skip_blank_records: ClassVar[bool] = False
     required_columns: ClassVar[tuple[str, ...]] = ()
     # True when normalize_row maps accepted rows to events; otherwise uploads are validation-only.
     normalizes: ClassVar[bool] = False

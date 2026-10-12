@@ -23,12 +23,13 @@ from typing import Any, BinaryIO
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.enums import ImportBatchStatus
+from app.models.event import SecurityEvent
 from app.models.import_batch import ImportBatch
 from app.models.user import User
 from app.services.dataset_profiles import DatasetProfile, ValidationIssue
@@ -43,6 +44,8 @@ VALIDATED_FILE_INDEX = "uq_import_batches_validated_file"
 
 # Each upload is parsed and hashed in full, so uploads are limited per user.
 import_user_limiter = SlidingWindowRateLimiter(limit=10, window_seconds=60)
+# Previews hash the file and read only its start; a mapping is often previewed a few times before importing.
+preview_user_limiter = SlidingWindowRateLimiter(limit=30, window_seconds=60)
 
 
 @dataclass(frozen=True)
@@ -108,6 +111,14 @@ def consume_rate_limit(user: User) -> None:
         )
 
 
+def consume_preview_rate_limit(user: User) -> None:
+    if not preview_user_limiter.allow(str(user.id)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Preview rate limit exceeded. Try again in a minute.",
+        )
+
+
 def safe_filename(raw: str | None) -> str:
     """Base name only, without control or format characters, truncated to the column length.
 
@@ -169,9 +180,14 @@ def open_csv(file: BinaryIO, profile: DatasetProfile) -> Iterator[Iterator[list[
     file.seek(0)
     text = io.TextIOWrapper(file, encoding=profile.encoding, errors="strict", newline="")
     try:
-        yield csv.reader(_bounded_lines(text), strict=True)
+        yield csv.reader(_bounded_lines(text), delimiter=profile.delimiter, strict=True)
     finally:
         text.detach()
+
+
+def is_blank(profile: DatasetProfile, record: list[str]) -> bool:
+    """A record that is not data: an empty line, or (if the profile says so) one whose cells are all empty."""
+    return not record or (profile.skip_blank_records and not any(cell.strip() for cell in record))
 
 
 def check_record(
@@ -187,7 +203,7 @@ def check_record(
 def validate_upload(file: BinaryIO, profile: DatasetProfile, digest: FileDigest, max_rows: int) -> ValidationReport:
     """Stream the file through the profile. Raises RowLimitExceeded past ``max_rows`` data rows."""
     report = ValidationReport()
-    if digest.contains_nul:
+    if digest.contains_nul and profile.rejects_nul_bytes:
         report.reject_file(ValidationIssue("file.not_text", "file contains binary data, not CSV text"))
         return report
 
@@ -218,7 +234,7 @@ def validate_upload(file: BinaryIO, profile: DatasetProfile, digest: FileDigest,
             if record is None:
                 break
             row_number += 1
-            if not record:
+            if is_blank(profile, record):
                 continue  # blank line: keeps its row number, is not counted as data
             if report.total_rows >= max_rows:
                 raise RowLimitExceeded
@@ -238,10 +254,14 @@ def validate_upload(file: BinaryIO, profile: DatasetProfile, digest: FileDigest,
 
 
 def find_validated_batch(db: Session, profile: DatasetProfile, sha256: str) -> ImportBatch | None:
+    return find_validated_file(db, profile.identifier, profile.version, sha256)
+
+
+def find_validated_file(db: Session, identifier: str, version: str, sha256: str) -> ImportBatch | None:
     return db.scalar(
         select(ImportBatch).where(
-            ImportBatch.dataset_profile == profile.identifier,
-            ImportBatch.profile_version == profile.version,
+            ImportBatch.dataset_profile == identifier,
+            ImportBatch.profile_version == version,
             ImportBatch.file_sha256 == sha256,
             ImportBatch.status == ImportBatchStatus.VALIDATED,
         )
@@ -322,3 +342,33 @@ def list_batches(db: Session, user: User, page: int, page_size: int) -> tuple[in
 
 def get_batch(db: Session, user: User, batch_id: UUID) -> ImportBatch | None:
     return db.scalar(select(ImportBatch).where(ImportBatch.id == batch_id, ImportBatch.uploaded_by_id == user.id))
+
+
+def batch_normalization(db: Session, batch: ImportBatch) -> dict[str, Any] | None:
+    """How the batch's rows were interpreted, as recorded on its first stored event (no batch column holds it)."""
+    value = db.scalar(
+        select(SecurityEvent.raw_data["dataset"])
+        .where(SecurityEvent.import_batch_id == batch.id)
+        .order_by(SecurityEvent.source_row)
+        .limit(1)
+    )
+    return value if isinstance(value, dict) else None
+
+
+def event_coverage(db: Session, batch: ImportBatch) -> dict[str, int]:
+    """Counts of the batch's stored events by what asset-based assessment can use."""
+    linked = SecurityEvent.asset_id.is_not(None)
+    has_address = or_(SecurityEvent.src_ip.is_not(None), SecurityEvent.dest_ip.is_not(None))
+    events, linked_count, unlinked_with_address = db.execute(
+        select(
+            func.count(),
+            func.count().filter(linked),
+            func.count().filter(~linked, has_address),
+        ).where(SecurityEvent.import_batch_id == batch.id)
+    ).one()
+    return {
+        "events": events,
+        "linked_to_asset": linked_count,
+        "address_without_asset": unlinked_with_address,
+        "without_address": events - linked_count - unlinked_with_address,
+    }

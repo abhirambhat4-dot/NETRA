@@ -1,12 +1,14 @@
-# Dataset imports: validated upload, CIC-IDS2017 profile and event normalisation
+# Dataset imports: validated upload, Security CSV mapping, CIC-IDS2017 profile and event normalisation
 
 `POST /api/imports` accepts one CSV file, validates it against a named dataset profile and records
 the outcome as an **import batch**.
 
-- Two profiles are registered: `generic-csv` (structure only, **validation only**: no row is stored)
-  and `cic-ids2017` v1 (see [CIC-IDS2017 profile](#cic-ids2017-profile-cic-ids2017-v1)).
-- For `cic-ids2017`, the rows of a `VALIDATED` batch that passed every check are stored as
-  **security events** in the same transaction as the batch (see
+- Three profiles are available: `security-csv` v1, which imports any security CSV through a
+  user-confirmed field mapping (see [Security CSV profile](#security-csv-profile-security-csv-v1));
+  `generic-csv`, which checks structure only and is **validation only** (no row is stored); and
+  `cic-ids2017` v1 (see [CIC-IDS2017 profile](#cic-ids2017-profile-cic-ids2017-v1)).
+- For `security-csv` and `cic-ids2017`, the rows of a `VALIDATED` batch that passed every check are
+  stored as **security events** in the same transaction as the batch (see
   [Normalisation to security events](#normalisation-to-security-events-cic-ids2017)). Rejected rows
   are reported in the batch and never stored. A `REJECTED` file stores nothing.
 - Nothing is written to `incidents`, `assets`, `security_assessments` or `assessment_findings`.
@@ -17,15 +19,16 @@ the outcome as an **import batch**.
 
 ## Endpoints
 
-All three require a bearer token for an active account. Uploading (`POST`) also requires the
-`operate_workflow` permission, which the `operator`, `approver` and `admin` roles all hold; any other
-role gets `403`. The two `GET` endpoints need only a valid token. Each user sees only the batches they
-uploaded. Roles are defined in `backend/app/core/permissions.py` (see `DEMO_DATA.md` for creating
-accounts).
+All four require a bearer token for an active account. Uploading and previewing (`POST`) also require
+the `operate_workflow` permission, which the `operator`, `approver` and `admin` roles all hold; any
+other role gets `403`. The two `GET` endpoints need only a valid token. Each user sees only the
+batches they uploaded. Roles are defined in `backend/app/core/permissions.py` (see `DEMO_DATA.md` for
+creating accounts).
 
 | Method | Path | Result |
 |---|---|---|
-| `POST` | `/api/imports` | `multipart/form-data` with exactly one file part `file` (`.csv`) and one field `profile`. `201` with the batch and its validation report. |
+| `POST` | `/api/imports/preview` | `multipart/form-data` with one file part `file` (`.csv`) and optional `encoding` / `delimiter` overrides. `200` with the detected format, sample rows and suggested field mappings. **Records nothing.** 30 previews per user per minute. |
+| `POST` | `/api/imports` | `multipart/form-data` with exactly one file part `file` (`.csv`), one field `profile` and, for `security-csv` only, one field `mapping` (JSON, at most 16 KiB). `201` with the batch, its validation report and, when events were stored, `normalization` and `eventCoverage`. |
 | `GET` | `/api/imports?page=&pageSize=` | The caller's batches, newest first (`pageSize` 1–100, default 25). No error sample. |
 | `GET` | `/api/imports/{id}` | One of the caller's batches with its capped error sample; `404` otherwise. |
 
@@ -38,7 +41,7 @@ accounts).
 | `409` | The same bytes were already **validated** with the same profile and profile version. | No |
 | `413` | Over the byte limit or the row limit. | No |
 | `415` | Not `multipart/form-data`, or the file part is not a `.csv` file. | No |
-| `422` | Wrong form shape (extra fields, more than one file, missing file) or a missing or unknown profile. | No |
+| `422` | Wrong form shape (extra or repeated fields, more than one file, missing file), a missing or unknown profile, a missing or invalid `mapping` for `security-csv`, or a `mapping` sent with another profile. Mapping errors name the field and rule, never the submitted value. | No |
 | `429` | More than 10 uploads per user per minute (in-process limiter). | No |
 | `401` | Missing or invalid token. The body is not read. | No |
 
@@ -127,6 +130,136 @@ at 0004; Neon production was last recorded at `0002_add_password_reset_tokens`, 
 production, take and record a backup or Neon branch, apply 0003 by its documented path
 (`SECURITY_ASSESSMENT_MIGRATION.md`), then `alembic upgrade head` applies 0004. `alembic downgrade 0003_add_security_assessments` drops
 `import_batches` and every recorded batch. The CIC-IDS2017 profile added no schema change.
+
+## Security CSV profile (`security-csv` v1)
+
+Implemented in `backend/app/services/security_csv.py` (mapping, rules and normalisation) and
+`backend/app/services/csv_preview.py` (detection). It needs **no schema change**: it reuses
+`import_batches`, the provenance columns from migration 0005 and the same storage path as
+`cic-ids2017`.
+
+**Flow.** The UI (Dataset Import → *Security CSV (map your columns)*) first calls
+`POST /api/imports/preview`. The preview suggests a mapping, which the user confirms or corrects, and
+the UI then sends that mapping with `POST /api/imports`. **The server never imports with a guessed
+mapping:** `security-csv` without a `mapping` field is refused with `422`.
+
+### Supported formats
+
+| Aspect | Supported |
+|---|---|
+| Delimiters | comma, semicolon, tab, pipe (detected; overridable) |
+| Quoting | standard CSV double quotes, including delimiters and newlines inside quoted cells |
+| Encodings | `utf-8` (BOM optional), `utf-16` (BOM required to detect), `cp1252`, `iso-8859-1`. The preview reports a non-UTF-8 guess as not confident. |
+| Timestamps | `iso8601` (`2024-05-01T13:45:00Z`, `2024-05-01 13:45`, `2024/05/01 13:45:07.250+02:00`, date only), `dmy` / `mdy` (`01/05/2024 13:45[:SS]`, 12-hour with AM/PM allowed, `/` `.` `-` separators), `rfc2822`, `epoch_seconds`, `epoch_millis` |
+| Time zones | A zone in the value (`Z`, `UTC`, `±HH:MM`) is used. A value without one is read in the mapping's `utcOffset` (default `+00:00`), and that reading is recorded on every event. |
+| Columns, order | Any names and any order. Mapped names are matched ignoring case and surrounding spaces. |
+
+### Canonical fields and record types
+
+| Field | Kind | Notes |
+|---|---|---|
+| `occurred_at` | timestamp | Required for every record type. |
+| `event_type` | text ≤ 100 | Required for `security_event`: map a column, or give `defaultEventType` for every row. For `network_flow` it is optional and defaults to `network_flow`. |
+| `src_ip`, `dest_ip` | IPv4/IPv6 | Both required for `network_flow`. Zone indices (`fe80::1%eth0`) are rejected. |
+| `src_port`, `dest_port` | 0–65535 | `443.0` (pandas export style) is read as 443. |
+| `protocol` | number 0–255 or short name | 1/6/17/58/132 become `icmp`/`tcp`/`udp`/`ipv6-icmp`/`sctp`; names are lower-cased. |
+| `severity` | text ≤ 64 | **Reference only.** Kept as `raw_data.reportedSeverity` (as written plus a normalised word). The event's severity stays `INFO`. |
+| `message` | text ≤ 4,096 | Kept as `raw_data.message`. Never stored as `signature`, so free text never feeds correlation keyword matching. |
+| `outcome` | text ≤ 256 | Kept as `raw_data.outcome`. |
+| `label` | text ≤ 256 | Ground truth of a labelled dataset: `raw_data.groundTruthLabel`, **never a detection**. |
+
+`security_event` covers any timestamped security record (authentication, alert, audit, endpoint or
+application rows). `network_flow` covers connection and flow records. Every field that is not
+required is optional. The preview lists the fields and requirements, and the UI marks them.
+
+### Suggestions and confidence
+
+A column is suggested for a field from its header name (a synonym list per field, e.g. `src`,
+`id.orig_h`, `Source Address` for `src_ip`) **and** from its sampled values (the first 200 rows within
+1 MiB).
+
+- `high`: the name and at least 90 % of the sampled values agree. This is the only level the UI
+  preselects.
+- `low`: the name matches but the values do not, or (for timestamps and IPs only) the values match
+  but the name does not. It is shown as a "possible match" for the user to accept.
+- `ambiguous`: several columns match equally well; the candidates are listed and none is chosen.
+- Epoch numbers count as timestamps only in a column whose name says it is a time, because any small
+  integer is a valid Unix time.
+- Dates that every sample allows as either day/month or month/day leave the format unchosen.
+- `needsReview` is true when a required field, the timestamp format, the encoding or the delimiter is
+  not confidently detected.
+- A header identical to CIC-IDS2017 is recognised, and the UI offers the `cic-ids2017` profile instead.
+
+### Validation rules (per row unless stated)
+
+| Rule | Meaning |
+|---|---|
+| `header.missing_column` / `header.ambiguous_column` | File-level: a mapped column is absent, or its name appears twice. The file is `REJECTED`. |
+| `row.column_count` | The row has a different number of fields than the header. |
+| `row.missing_value` | A required field is empty. |
+| `row.invalid_timestamp`, `row.timestamp_out_of_range` | Does not parse under the chosen format, or falls outside 1970-01-01 to one day from now. |
+| `row.invalid_ip`, `row.invalid_port`, `row.invalid_protocol` | A **present** value is malformed. Optional fields are validated too, so a bad optional IP rejects the row instead of being silently dropped. Unmap the column to import without it. |
+| `row.value_too_long`, `row.invalid_text` | Over the field's length, or contains control characters (`message` may contain tabs and line breaks). |
+| `row.binary_content` | A decoded NUL character (UTF-16 files; other encodings reject NUL bytes at file level as `file.not_text`). |
+
+A record whose cells are **all empty** (`,,,,` from spreadsheet exports) is skipped like a blank
+line and not counted as data. Issues name the canonical field (`column`) and its 1-based position
+(`columnIndex`), never cell contents.
+
+**Statistics.** `acceptedRows`, `rejectedRows` (with the capped issue sample) and `duplicateRows`.
+`duplicateRows` counts rows that were accepted but skipped because an identical event already
+exists. `eventsCreated + duplicateRows = acceptedRows`.
+
+### What is stored
+
+Each accepted row becomes one `security_events` row with `source = dataset_import`,
+`severity = INFO`, `signature = NULL`, the batch and file row (`import_batch_id`, `source_row`),
+and `raw_data` containing:
+`dataset` (profile, version, record type, the full `fieldMapping`, timestamp format, UTC offset,
+encoding, delimiter, default event type), `timestampAsWritten`, `occurredAtInterpretation`,
+`eventTypeSource`, `sourceFields` (**every column as written, keyed by its original header name**;
+blank names become `column N` and repeats get ` (2)`), `unmappedColumns`, the optional `message`,
+`outcome`, `groundTruthLabel` and `reportedSeverity`, `protocolAsWritten`, `formulaNeutralized`, and
+the same `importBatchId`, `sourceRow`, `fileSha256` and `assetLink` as CIC-IDS2017 events.
+
+**Duplicates.** The event uid is `dataset:security-csv:<sha256>`, where the hash covers the row's
+(column name, value) pairs **sorted by name**. The same data with its columns in another order, or
+with another delimiter, is therefore recognised as a duplicate and counted, not stored again. The
+file-level rule is unchanged: identical bytes validated once per profile version (`409`).
+
+**Formula injection.** Cells starting with `=`, `+`, `-`, `@`, tab or carriage return are formulas
+to a spreadsheet unless they are plain numbers. The preview returns such cells with a leading
+apostrophe, and a formula-like `event_type` (a displayed column) is stored with one too. The
+original stays unchanged in `sourceFields`. Nothing uploaded is executed: markup such as `<script>` is
+stored as text and rendered as text.
+
+### Integration and readiness
+
+- **Live Event Collector.** `GET /api/collector/status` adds `importedEventsTotal` and
+  `recentImportedEvents` (newest import first). The Collector page shows them under its *Imports*
+  toggle. They are never counted as collector submissions.
+- **Events.** `GET /api/events?importBatchId=<id>` and `?source=DATASET_IMPORT` list them, as for
+  CIC-IDS2017.
+- **Assessment readiness.** Batch responses with stored events include `eventCoverage`:
+  `linkedToAsset`, `addressWithoutAsset` (an IP that no single asset matches) and `withoutAddress`.
+  Security Assessment reads only asset-linked events (rule `exact-ip-match-v1`). Events without an
+  IP address are recorded with the reason `event has no IP address to match`, and the UI says they
+  cannot inform an assessment, instead of producing one.
+- **Correlation.** Imported events can be selected into an incident like any event. Because severity
+  stays `INFO` and `signature` stays empty, no file content raises risk or matches techniques on its
+  own; the event type is used as written.
+
+### Limitations
+
+- No per-batch deletion (as for CIC-IDS2017). A wrong mapping cannot be "re-imported": identical
+  bytes are refused with `409`, and a corrected copy's rows are content-duplicates of the first
+  import. Review the preview carefully before importing.
+- Separate date and time columns are not combined; the timestamp must be one column.
+- Syslog-style timestamps without a year, Excel serial dates and other formats are not supported.
+- UTF-16 is detected only with a byte order mark; other encodings must be chosen explicitly.
+- No username or hostname canonical field: such columns are kept in `sourceFields` only.
+- Processing is synchronous within the upload limits (25 MiB / 100,000 rows); there is no background
+  processing and no SIEM/EDR connector.
 
 ## CIC-IDS2017 profile (`cic-ids2017` v1)
 
@@ -273,8 +406,9 @@ an identical file is still refused with `409` (see [Duplicate policy](#duplicate
 
 **Asset linking (rule `exact-ip-match-v1`).** An event is linked to an asset only when exactly one
 asset's `ip_address` equals the row's source or destination address. With no match, or with more
-than one matching asset, `asset_id` stays empty. The outcome, including candidates when ambiguous,
-is recorded in `raw_data.assetLink`. No asset is created or changed by an import.
+than one matching asset, `asset_id` stays empty. An event with no address at all (possible with
+`security-csv`) records `event has no IP address to match`. The outcome, including candidates when
+ambiguous, is recorded in `raw_data.assetLink`. No asset is created or changed by an import.
 
 **API.** Batch responses add `eventsCreated` and `duplicateRows`. Event responses add `importBatchId`
 and `sourceRow`. `GET /api/events?importBatchId=<id>` lists a batch's events, and

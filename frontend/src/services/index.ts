@@ -12,11 +12,14 @@ import type {
   BackendAssetResponse,
   BackendImportBatchDetail,
   BackendImportBatchPage,
+  BackendImportPreview,
   CollectorEventSubmission,
   CollectorStatus,
   CollectorSubmitResponse,
   IncidentCreateRequest,
+  FieldMappingRequest,
   ImportBatchFilters,
+  ImportPreviewOverrides,
   BackendEventAssetReference,
   BackendEventResponse,
   BackendEventsPage,
@@ -703,7 +706,12 @@ export const collectorService = {
   getStatus: async (): Promise<CollectorStatus> => {
     if (USE_MOCKS) throw new Error('The Live Event Collector requires the NETRA API.')
     const status = await liveCollectorService.getStatus()
-    return { ...status, recentEvents: status.recentEvents.map(adaptBackendEvent) }
+    return {
+      ...status,
+      recentEvents: status.recentEvents.map(adaptBackendEvent),
+      importedEventsTotal: status.importedEventsTotal ?? 0,
+      recentImportedEvents: (status.recentImportedEvents ?? []).map(adaptBackendEvent),
+    }
   },
   /** Mutations refresh every mounted query, so collector status updates immediately. */
   submit: (events: CollectorEventSubmission[]): Promise<CollectorSubmitResponse> =>
@@ -740,9 +748,14 @@ export const importService = {
     USE_MOCKS ? Promise.reject(new Error(IMPORT_REQUIRES_API)) : liveImportService.list(filters),
   get: (id: string): Promise<BackendImportBatchDetail> =>
     USE_MOCKS ? Promise.reject(new Error(IMPORT_REQUIRES_API)) : liveImportService.get(id),
-  /** Validation only; the batch is recorded by the API. Mutations refresh every mounted query. */
-  upload: (file: File, profile: string): Promise<BackendImportBatchDetail> =>
-    USE_MOCKS ? Promise.reject(new Error(IMPORT_REQUIRES_API)) : mutate(liveImportService.upload(file, profile)),
+  /** Read-only: detects encoding, delimiter and suggested field mappings. Nothing is recorded. */
+  preview: (file: File, overrides?: ImportPreviewOverrides): Promise<BackendImportPreview> =>
+    USE_MOCKS ? Promise.reject(new Error(IMPORT_REQUIRES_API)) : liveImportService.preview(file, overrides),
+  /** The batch is recorded by the API; security-csv also needs the confirmed mapping. Mutations refresh every mounted query. */
+  upload: (file: File, profile: string, mapping?: FieldMappingRequest): Promise<BackendImportBatchDetail> =>
+    USE_MOCKS
+      ? Promise.reject(new Error(IMPORT_REQUIRES_API))
+      : mutate(liveImportService.upload(file, profile, mapping)),
 }
 
 /** Live vulnerability details for one asset (mock assets already embed theirs). */

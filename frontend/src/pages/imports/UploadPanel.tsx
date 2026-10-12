@@ -1,8 +1,8 @@
 import type * as React from 'react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CircleAlert, FileSpreadsheet, Loader2, Upload } from 'lucide-react'
-import type { BackendImportBatchDetail } from '@/api/types'
+import { CircleAlert, FileSearch, FileSpreadsheet, Loader2, Upload } from 'lucide-react'
+import type { BackendImportBatchDetail, BackendImportPreview } from '@/api/types'
 import { useAuth } from '@/auth/AuthProvider'
 import { Panel, ToneBadge } from '@/components/netra'
 import { Button } from '@/components/ui/button'
@@ -14,73 +14,127 @@ import {
   IMPORT_PROFILES,
   MAX_ROWS,
   MAX_UPLOAD_BYTES,
+  SECURITY_CSV_PROFILE,
   checkSelectedFile,
+  describeCoverage,
   describeImportFailure,
   describeImportOutcome,
+  draftToMapping,
   formatBytes,
+  initialDraft,
   type ImportFailure,
+  type MappingDraft,
 } from '@/lib/datasetImport'
 import { ROUTES } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 import { importService } from '@/services'
 import { HttpError } from '@/services/http'
 import { IssueList, RowCounts } from './ImportBatchDetailSheet'
+import { MappingReview } from './MappingReview'
 
 const PREVIEW_ISSUES = 5
 
 export function UploadPanel({ onOpenBatch }: { onOpenBatch: (id: string) => void }) {
   const [profile, setProfile] = useState(IMPORT_PROFILES[0].id)
-  // The File stays in component state only; its contents are never read or stored by the page.
+  // The File stays in component state only; the page never reads its contents (the API previews it).
   const [file, setFile] = useState<File | null>(null)
   const [inputKey, setInputKey] = useState(0)
-  const [uploading, setUploading] = useState(false)
+  const [busy, setBusy] = useState<'preview' | 'import' | null>(null)
+  const [preview, setPreview] = useState<BackendImportPreview | null>(null)
+  const [draft, setDraft] = useState<MappingDraft | null>(null)
   const [result, setResult] = useState<BackendImportBatchDetail | null>(null)
   const [failure, setFailure] = useState<ImportFailure | null>(null)
   const fileProblem = file ? checkSelectedFile(file) : null
   const profileMeta = IMPORT_PROFILES.find((option) => option.id === profile)
+  const mapped = profile === SECURITY_CSV_PROFILE
   // Presentation only: the API enforces the role, and answers 403 for a role that is not recognised.
-  const roleBlocked = permissionExplanation(useAuth().user, 'workflow', 'Validating dataset files')
+  const roleBlocked = permissionExplanation(useAuth().user, 'workflow', 'Importing dataset files')
+
+  const resetReview = () => {
+    setPreview(null)
+    setDraft(null)
+  }
 
   function chooseFile(event: React.ChangeEvent<HTMLInputElement>) {
     setFile(event.target.files?.[0] ?? null)
     setFailure(null)
+    resetReview()
   }
 
-  async function submit(event: React.FormEvent) {
-    event.preventDefault()
-    if (!file || fileProblem || uploading || roleBlocked) return
-    setUploading(true)
+  function chooseProfile(value: string) {
+    setProfile(value)
+    setFailure(null)
+    resetReview()
+  }
+
+  function fail(cause: unknown) {
+    setFailure(
+      describeImportFailure(
+        cause instanceof HttpError ? cause.status : null,
+        cause instanceof Error ? cause.message : String(cause),
+      ),
+    )
+  }
+
+  async function runPreview(overrides?: { encoding: string; delimiter: string }) {
+    if (!file || fileProblem || busy || roleBlocked) return
+    setBusy('preview')
     setFailure(null)
     setResult(null)
     try {
-      const batch = await importService.upload(file, profile)
-      // Shown only once the API has recorded the batch.
-      setResult(batch)
-      setFile(null)
-      setInputKey((key) => key + 1)
+      const next = await importService.preview(file, overrides)
+      setPreview(next)
+      setDraft(initialDraft(next))
     } catch (cause) {
-      setFailure(
-        describeImportFailure(
-          cause instanceof HttpError ? cause.status : null,
-          cause instanceof Error ? cause.message : String(cause),
-        ),
-      )
+      fail(cause)
     } finally {
-      setUploading(false)
+      setBusy(null)
     }
   }
 
+  async function runImport() {
+    if (!file || fileProblem || busy || roleBlocked) return
+    if (mapped && !draft) return
+    setBusy('import')
+    setFailure(null)
+    setResult(null)
+    try {
+      const batch = await importService.upload(file, profile, mapped && draft ? draftToMapping(draft) : undefined)
+      // Shown only once the API has recorded the batch.
+      setResult(batch)
+      setFile(null)
+      resetReview()
+      setInputKey((key) => key + 1)
+    } catch (cause) {
+      fail(cause)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  function submit(event: React.FormEvent) {
+    event.preventDefault()
+    if (mapped) void runPreview()
+    else void runImport()
+  }
+
+  const idleLabel = mapped ? (preview ? 'Preview again' : 'Preview and map columns') : failure ? 'Retry validation' : 'Validate file'
+  const busyLabel = busy === 'preview' ? 'Reading the file…' : 'Uploading and validating…'
+  const alreadyImported = preview?.alreadyImported
+    ? 'These exact bytes were already imported with Security CSV; importing them again would be refused.'
+    : null
+
   return (
     <Panel
-      title="Validate a dataset file"
-      description="Upload a CSV to check it against a dataset profile. The outcome is recorded as an import batch."
+      title="Import a security data file"
+      description="Upload a CSV, review how NETRA reads it, then import. Each import is recorded as a batch with its validation report."
       actions={<ToneBadge tone="neutral" size="sm">Validated rows only</ToneBadge>}
     >
-      <form onSubmit={submit} className="space-y-4" noValidate aria-busy={uploading}>
+      <form onSubmit={submit} className="space-y-4" noValidate aria-busy={busy !== null}>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="min-w-0 space-y-1.5">
-            <Label htmlFor="import-profile" className="text-[11px] text-foreground/80">Dataset profile</Label>
-            <Select value={profile} onValueChange={setProfile} disabled={uploading}>
+            <Label htmlFor="import-profile" className="text-[11px] text-foreground/80">Import type</Label>
+            <Select value={profile} onValueChange={chooseProfile} disabled={busy !== null}>
               <SelectTrigger id="import-profile" className="h-9 w-full bg-card">
                 <SelectValue />
               </SelectTrigger>
@@ -100,7 +154,7 @@ export function UploadPanel({ onOpenBatch }: { onOpenBatch: (id: string) => void
               id="import-file"
               type="file"
               accept=".csv,text/csv"
-              disabled={uploading}
+              disabled={busy !== null}
               aria-invalid={!!fileProblem}
               aria-describedby="import-file-hint"
               onChange={chooseFile}
@@ -126,23 +180,69 @@ export function UploadPanel({ onOpenBatch }: { onOpenBatch: (id: string) => void
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
-            Every row is checked. With the CIC-IDS2017 profile, rows that pass are stored as Security Events tagged with
-            this batch and their file row; the dataset label is kept as ground truth, not as a detection. Generic CSV is
-            checked only. Full CIC-IDS2017 files exceed the upload limit; upload smaller CSV extracts.
+            {mapped
+              ? 'Comma, semicolon, tab or pipe delimited; UTF-8, UTF-16 or Windows-1252. The preview reads only the start of the file and stores nothing. Accepted rows are stored as Security Events; labels and severities from the file are kept for reference, never as detections.'
+              : 'Every row is checked. With the CIC-IDS2017 profile, rows that pass are stored as Security Events tagged with this batch and their file row; the dataset label is kept as ground truth, not as a detection. Generic CSV is checked only. Full CIC-IDS2017 files exceed the upload limit; upload smaller CSV extracts.'}
           </p>
-          <Button type="submit" disabled={!file || !!fileProblem || uploading || !!roleBlocked}>
-            {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
-            {uploading ? 'Uploading and validating…' : failure ? 'Retry validation' : 'Validate file'}
+          <Button type="submit" variant={mapped && preview ? 'outline' : 'default'} disabled={!file || !!fileProblem || busy !== null || !!roleBlocked}>
+            {busy !== null ? <Loader2 className="animate-spin" /> : mapped ? <FileSearch /> : <Upload />}
+            {busy !== null ? busyLabel : idleLabel}
           </Button>
         </div>
         {roleBlocked && <p role="note" className="text-xs text-muted-foreground">{roleBlocked}</p>}
       </form>
 
-      <section aria-live="polite" aria-label="Validation result">
+      {mapped && preview?.recognizedProfile === 'cic-ids2017' && (
+        <Notice tone="accent" title="Recognised CIC-IDS2017 file">
+          <p className="text-foreground/80">
+            The CIC-IDS2017 profile checks every one of the 85 columns and the dataset's timestamp conventions.
+          </p>
+          <Button size="sm" variant="outline" onClick={() => chooseProfile('cic-ids2017')}>Use the CIC-IDS2017 profile</Button>
+        </Notice>
+      )}
+      {mapped && preview?.alreadyImported && (
+        <Notice tone="medium" title="Already imported">
+          <p className="text-foreground/80">{alreadyImported}</p>
+          {preview.alreadyImportedBatchId && (
+            <Button size="sm" variant="outline" onClick={() => onOpenBatch(preview.alreadyImportedBatchId!)}>Open existing batch</Button>
+          )}
+        </Notice>
+      )}
+      {mapped && preview && draft && (
+        <MappingReview
+          preview={preview}
+          draft={draft}
+          onChange={setDraft}
+          onReread={(overrides) => void runPreview(overrides)}
+          onImport={() => void runImport()}
+          busy={busy}
+          importBlocked={alreadyImported}
+        />
+      )}
+
+      <section aria-live="polite" aria-label="Import result">
         {failure && <FailureNotice failure={failure} onOpenBatch={onOpenBatch} />}
         {result && <ResultSummary batch={result} onOpenBatch={onOpenBatch} />}
       </section>
     </Panel>
+  )
+}
+
+function Notice({ tone, title, children }: { tone: 'accent' | 'medium'; title: string; children: React.ReactNode }) {
+  return (
+    <div
+      role="note"
+      className={cn(
+        'mt-4 flex gap-2.5 rounded-md border px-3.5 py-2.5 text-xs',
+        tone === 'medium' ? 'border-medium/25 bg-medium/10' : 'border-primary/25 bg-primary/8',
+      )}
+    >
+      <CircleAlert className={cn('mt-0.5 size-3.5 shrink-0', tone === 'medium' ? 'text-medium' : 'text-primary')} />
+      <div className="min-w-0 space-y-1.5">
+        <p className={cn('font-medium', tone === 'medium' ? 'text-medium' : 'text-primary')}>{title}</p>
+        {children}
+      </div>
+    </div>
   )
 }
 
@@ -176,6 +276,7 @@ function FailureNotice({ failure, onOpenBatch }: { failure: ImportFailure; onOpe
 function ResultSummary({ batch, onOpenBatch }: { batch: BackendImportBatchDetail; onOpenBatch: (id: string) => void }) {
   const outcome = describeImportOutcome(batch)
   const preview = batch.errorSample.slice(0, PREVIEW_ISSUES)
+  const coverage = batch.eventCoverage ? describeCoverage(batch.eventCoverage) : []
   return (
     <div className="mt-4 space-y-3 border-t border-border pt-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -184,13 +285,25 @@ function ResultSummary({ batch, onOpenBatch }: { batch: BackendImportBatchDetail
         <span className="text-xs text-muted-foreground">· {outcome.summary}</span>
       </div>
       <RowCounts batch={batch} />
+      {coverage.length > 0 && (
+        <ul className="space-y-0.5 text-[11px] leading-relaxed text-muted-foreground" aria-label="What the stored events support">
+          {coverage.map((note) => <li key={note}>{note}</li>)}
+        </ul>
+      )}
       {preview.length > 0 && <IssueList issues={preview} />}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11px] text-muted-foreground">
           Recorded as import batch <span className="font-mono">{batch.id.slice(0, 8)}</span>
           {batch.errorTotal > preview.length && ` · ${batch.errorTotal - preview.length} more issue${batch.errorTotal - preview.length === 1 ? '' : 's'} in the full report`}
         </p>
-        <Button size="sm" variant="outline" onClick={() => onOpenBatch(batch.id)}>View full report</Button>
+        <div className="flex flex-wrap gap-2">
+          {(batch.eventsCreated ?? 0) > 0 && (
+            <Button asChild size="sm" variant="outline">
+              <Link to={`${ROUTES.events}?batch=${encodeURIComponent(batch.id)}`}>View imported events</Link>
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={() => onOpenBatch(batch.id)}>View full report</Button>
+        </div>
       </div>
     </div>
   )
