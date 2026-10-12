@@ -92,6 +92,13 @@ const INCIDENT_LIFECYCLE_STATES: readonly IncidentLifecycleState[] = [
 type EventsPageFilters = Pick<SecurityEventFilters, 'search' | 'severity' | 'status'> & {
   status?: EventStatus
   detectionSource?: BackendEventSource | DetectionSource
+  /** Live API only: events stored by one dataset import batch. */
+  importBatchId?: string
+}
+
+interface EventsPageOptions {
+  /** Stop after this many events (rounded up to whole API pages); `total` still reports the full count. */
+  maxEvents?: number
 }
 
 const MOCK_EVENT_SOURCES: readonly DetectionSource[] = ['SURICATA', 'ML_ANOMALY', 'THREAT_INTEL', 'HYBRID']
@@ -137,6 +144,8 @@ function adaptBackendEvent(event: BackendEventResponse): EventsPageItem {
     assetId: event.assetId,
     asset: event.asset,
     mitreTechniqueId: null,
+    importBatchId: event.importBatchId ?? null,
+    sourceRow: event.sourceRow ?? null,
   }
 }
 
@@ -186,9 +195,13 @@ function adaptBackendIncident(incident: BackendIncidentResponse): IncidentQueueI
   }
 }
 
-async function listEventsForPage(filters: EventsPageFilters = {}): Promise<PaginatedResponse<EventsPageItem>> {
+async function listEventsForPage(
+  filters: EventsPageFilters = {},
+  options: EventsPageOptions = {},
+): Promise<PaginatedResponse<EventsPageItem>> {
   if (USE_MOCKS) {
-    const { detectionSource, ...mockFilters } = filters
+    // Mock events never come from dataset imports.
+    const { detectionSource, importBatchId: _importBatchId, ...mockFilters } = filters
     const [page, assets] = await Promise.all([
       mockApi.listEvents({
         ...mockFilters,
@@ -216,7 +229,9 @@ async function listEventsForPage(filters: EventsPageFilters = {}): Promise<Pagin
     pageSize: EVENT_API_PAGE_SIZE,
   }
   const firstPage = await http.get<BackendEventsPage>('/events', { ...query, page: 1 })
-  const additionalPageCount = Math.ceil(firstPage.total / EVENT_API_PAGE_SIZE) - 1
+  const pageCount = Math.ceil(firstPage.total / EVENT_API_PAGE_SIZE)
+  const pageLimit = options.maxEvents ? Math.ceil(options.maxEvents / EVENT_API_PAGE_SIZE) : pageCount
+  const additionalPageCount = Math.max(0, Math.min(pageCount, pageLimit) - 1)
   const additionalPages = await Promise.all(
     Array.from({ length: additionalPageCount }, (_, index) =>
       http.get<BackendEventsPage>('/events', { ...query, page: index + 2 }),
@@ -536,8 +551,8 @@ export const incidentQueueService = {
 export const eventService = {
   list: (filters?: SecurityEventFilters): Promise<PaginatedResponse<SecurityEvent>> =>
     USE_MOCKS ? mockApi.listEvents(filters) : http.get('/events', filters),
-  listForEventsPage: (filters?: EventsPageFilters): Promise<PaginatedResponse<EventsPageItem>> =>
-    listEventsForPage(filters),
+  listForEventsPage: (filters?: EventsPageFilters, options?: EventsPageOptions): Promise<PaginatedResponse<EventsPageItem>> =>
+    listEventsForPage(filters, options),
   getForEventsPage: async (id: string): Promise<EventsPageItem> => {
     if (USE_MOCKS) {
       const page = await listEventsForPage()
@@ -711,8 +726,10 @@ export const assessmentService = {
   get: (id: string): Promise<BackendAssessmentDetail> =>
     USE_MOCKS ? Promise.reject(new Error(ASSESSMENT_REQUIRES_API)) : liveAssessmentService.get(id),
   /** Each run stores a new snapshot; mutations refresh every mounted query. */
-  run: (assetId: string): Promise<BackendAssessmentDetail> =>
-    USE_MOCKS ? Promise.reject(new Error(ASSESSMENT_REQUIRES_API)) : mutate(liveAssessmentService.run({ assetId })),
+  run: (assetId: string, asOf?: string): Promise<BackendAssessmentDetail> =>
+    USE_MOCKS
+      ? Promise.reject(new Error(ASSESSMENT_REQUIRES_API))
+      : mutate(liveAssessmentService.run(asOf ? { assetId, asOf } : { assetId })),
 }
 
 const IMPORT_REQUIRES_API = 'Dataset import requires the NETRA API.'

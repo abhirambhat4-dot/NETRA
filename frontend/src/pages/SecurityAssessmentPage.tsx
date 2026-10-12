@@ -31,11 +31,12 @@ import {
   ToneBadge,
 } from '@/components/netra'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useQuery } from '@/hooks/useQuery'
-import { GRADE_TONE } from '@/lib/assessment'
+import { GRADE_TONE, assessmentAsOf } from '@/lib/assessment'
 import { permissionExplanation } from '@/lib/authorizationAccess'
 import { formatDateTime, timeAgo } from '@/lib/format'
 import { ROUTES } from '@/lib/navigation'
@@ -340,6 +341,9 @@ function RunAssessmentPanel({ assets, assetsError, onRetryAssets, onAssessed, me
   methodology: string | undefined
 }) {
   const [assetId, setAssetId] = useState<string>('')
+  // Optional: assess historical evidence (e.g. a dataset from 2017) in a window ending on this UTC date.
+  const [windowEnd, setWindowEnd] = useState('')
+  const asOfInput = assessmentAsOf(windowEnd)
   const [running, setRunning] = useState(false)
   const [rateLimited, setRateLimited] = useState(false)
   const selected = assets?.find((asset) => asset.id === assetId)
@@ -347,11 +351,11 @@ function RunAssessmentPanel({ assets, assetsError, onRetryAssets, onAssessed, me
   const roleBlocked = permissionExplanation(useAuth().user, 'workflow', 'Running assessments')
 
   async function run() {
-    if (!assetId || roleBlocked) return
+    if (!assetId || roleBlocked || asOfInput.error) return
     setRunning(true)
     setRateLimited(false)
     try {
-      const result = await assessmentService.run(assetId)
+      const result = await assessmentService.run(assetId, asOfInput.asOf)
       toast.success(`Assessment stored · grade ${result.grade} (${result.score}/100)`)
       onAssessed(result.id)
     } catch (e) {
@@ -399,11 +403,33 @@ function RunAssessmentPanel({ assets, assetsError, onRetryAssets, onAssessed, me
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button onClick={run} disabled={!assetId || running || !!roleBlocked} className="h-10 px-4 sm:w-auto">
+                  <Button onClick={run} disabled={!assetId || running || !!roleBlocked || !!asOfInput.error} className="h-10 px-4 sm:w-auto">
                     {running ? <Loader2 className="animate-spin" /> : <Play />}
                     {running ? 'Assessing…' : 'Run assessment'}
                   </Button>
                 </div>
+
+                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2.5">
+                  <Label htmlFor="assessment-window-end" className="text-[13px] font-medium text-foreground">
+                    Event window ends (UTC, optional)
+                  </Label>
+                  <Input
+                    id="assessment-window-end"
+                    type="date"
+                    value={windowEnd}
+                    onChange={(event) => setWindowEnd(event.target.value)}
+                    disabled={running}
+                    aria-invalid={!!asOfInput.error}
+                    aria-describedby="assessment-window-hint"
+                    className="h-9 w-full bg-card sm:w-44"
+                  />
+                </div>
+                <p id="assessment-window-hint" className={cn('text-xs', asOfInput.error ? 'text-critical' : 'text-muted-foreground')}>
+                  {asOfInput.error ??
+                    (asOfInput.asOf
+                      ? `Events from the 7 days up to ${asOfInput.asOf} are assessed. Vulnerabilities, incidents and indicators are their current state.`
+                      : 'Empty: events from the last 7 days. Set a date to assess historical evidence, such as an imported dataset.')}
+                </p>
 
                 <p className="text-xs text-muted-foreground">
                   {selected ? (

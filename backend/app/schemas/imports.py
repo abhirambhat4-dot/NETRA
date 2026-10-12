@@ -23,11 +23,13 @@ class ImportBatchSummaryResponse(CoreResponse):
     original_filename: str
     file_sha256: str
     file_size_bytes: int
-    status: str = Field(description="VALIDATED or REJECTED. Uploads are validation-only: no rows are stored.")
+    status: str = Field(description="VALIDATED or REJECTED. Only a VALIDATED batch of a normalising profile stores rows.")
     total_rows: int
     accepted_rows: int
     rejected_rows: int
     error_total: int
+    events_created: int = Field(description="Accepted rows stored as security events (0 for validation-only profiles).")
+    duplicate_rows: int = Field(description="Accepted rows not stored because an identical row already exists as an event.")
     created_at: datetime
     completed_at: datetime | None
 

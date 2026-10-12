@@ -52,6 +52,8 @@ class DetectionSource(StrEnum):
     THREAT_INTEL = "threat_intel"
     VULNERABILITY_SCAN = "vulnerability_scan"
     MANUAL = "manual"
+    # Normalised from a validated dataset upload; the event's import_batch_id and source_row name its origin.
+    DATASET_IMPORT = "dataset_import"
 
 
 class IncidentState(StrEnum):

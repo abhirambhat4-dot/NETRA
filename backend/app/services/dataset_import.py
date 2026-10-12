@@ -1,8 +1,10 @@
-"""Validation-only dataset imports: hash an uploaded CSV, validate it against a profile and record
-the outcome as an import batch.
+"""Dataset imports: hash an uploaded CSV, validate it against a profile and record the outcome as an
+import batch.
 
-Dataset rows are never stored. Nothing here writes to security_events, incidents, assets or the
-Security Assessment tables, and issues never carry cell contents.
+For a profile that normalises (``DatasetProfile.normalizes``), the accepted rows of a VALIDATED
+batch are stored as security events in the same transaction (see dataset_normalization). Other
+profiles are validation-only. Nothing here writes to incidents, assets or the Security Assessment
+tables, and issues never carry cell contents.
 
 Duplicate policy: a file (by SHA-256) is recorded as VALIDATED at most once per profile identifier
 and version. A pre-check answers quickly; the partial unique index uq_import_batches_validated_file
@@ -22,7 +24,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -259,7 +261,11 @@ def record_batch(
     filename: str,
     digest: FileDigest,
     report: ValidationReport,
+    file: BinaryIO | None = None,
 ) -> ImportBatch:
+    """Record the batch and, given the uploaded ``file`` and a normalising profile, its events, in one commit."""
+    from app.services.dataset_normalization import store_batch_events
+
     batch = ImportBatch(
         dataset_profile=profile.identifier,
         profile_version=profile.version,
@@ -277,12 +283,23 @@ def record_batch(
     )
     db.add(batch)
     try:
+        if file is not None and profile.normalizes and batch.status == ImportBatchStatus.VALIDATED:
+            # The batch row must exist before its events reference it; the flush also applies the
+            # validated-file index, so a racing duplicate fails before any event is written.
+            db.flush()
+            outcome = store_batch_events(db, batch, file, profile)
+            batch.events_created = outcome.events_created
+            batch.duplicate_rows = outcome.duplicate_rows
         db.commit()
     except IntegrityError as error:
         db.rollback()
         if _violates_validated_file_index(error):
             # A concurrent upload of the same file was recorded first.
             raise DuplicateImport(find_validated_batch(db, profile, digest.sha256)) from None
+        raise
+    except SQLAlchemyError:
+        # Neither the batch nor any of its events is kept.
+        db.rollback()
         raise
     db.refresh(batch)
     return batch

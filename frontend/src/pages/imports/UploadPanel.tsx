@@ -74,7 +74,7 @@ export function UploadPanel({ onOpenBatch }: { onOpenBatch: (id: string) => void
     <Panel
       title="Validate a dataset file"
       description="Upload a CSV to check it against a dataset profile. The outcome is recorded as an import batch."
-      actions={<ToneBadge tone="neutral" size="sm">Validation only</ToneBadge>}
+      actions={<ToneBadge tone="neutral" size="sm">Validated rows only</ToneBadge>}
     >
       <form onSubmit={submit} className="space-y-4" noValidate aria-busy={uploading}>
         <div className="grid gap-4 md:grid-cols-2">
@@ -126,8 +126,9 @@ export function UploadPanel({ onOpenBatch }: { onOpenBatch: (id: string) => void
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
-            Rows are checked, not stored: nothing enters Security Events, Incidents or Assessments. Full CIC-IDS2017
-            files exceed the upload limit; check them with the local profiler, or upload smaller CSV extracts.
+            Every row is checked. With the CIC-IDS2017 profile, rows that pass are stored as Security Events tagged with
+            this batch and their file row; the dataset label is kept as ground truth, not as a detection. Generic CSV is
+            checked only. Full CIC-IDS2017 files exceed the upload limit; upload smaller CSV extracts.
           </p>
           <Button type="submit" disabled={!file || !!fileProblem || uploading || !!roleBlocked}>
             {uploading ? <Loader2 className="animate-spin" /> : <Upload />}

@@ -185,6 +185,24 @@ class AssessmentCreateRequest(CoreResponse):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
     asset_id: UUID
+    as_of: datetime | None = Field(
+        default=None,
+        description=(
+            "End of the event window (default: now), e.g. to assess a historical dataset in its own time. "
+            "Only events are bounded by it; vulnerabilities, incidents and indicators are their current state."
+        ),
+    )
+
+    @field_validator("as_of")
+    @classmethod
+    def as_of_must_be_aware_and_past(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("asOf must include a time zone offset")
+        if value > datetime.now(value.tzinfo):
+            raise ValueError("asOf must not be in the future")
+        return value
 
 
 class AssessmentFindingResponse(CoreResponse):

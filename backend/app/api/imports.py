@@ -145,6 +145,8 @@ def _summary_fields(batch: ImportBatch) -> dict[str, object]:
         "accepted_rows": batch.accepted_rows,
         "rejected_rows": batch.rejected_rows,
         "error_total": batch.error_total,
+        "events_created": batch.events_created,
+        "duplicate_rows": batch.duplicate_rows,
         "created_at": batch.created_at,
         "completed_at": batch.completed_at,
     }
@@ -182,7 +184,11 @@ def create_import(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> ImportBatchDetailResponse:
-    """Validate a CSV against a dataset profile and record the batch. Validation only: no rows are stored."""
+    """Validate a CSV against a dataset profile and record the batch.
+
+    For a normalising profile, the accepted rows of a validated batch are stored as security events in
+    the same transaction; other profiles store no rows.
+    """
     limits = import_limits()
     try:
         digest = digest_upload(upload.file.file, limits.max_upload_bytes)
@@ -200,7 +206,13 @@ def create_import(
         ) from None
     try:
         batch = record_batch(
-            db, current_user, profile=upload.profile, filename=upload.filename, digest=digest, report=report
+            db,
+            current_user,
+            profile=upload.profile,
+            filename=upload.filename,
+            digest=digest,
+            report=report,
+            file=upload.file.file,
         )
     except DuplicateImport as duplicate:
         raise _duplicate(duplicate.existing, current_user) from None

@@ -322,7 +322,7 @@ def clear_import_rate_limit() -> Any:
     import_user_limiter.clear()
 
 
-def test_upload_validates_synthetic_cic_file_without_storing_rows(core_api: CoreApi) -> None:
+def test_upload_validates_synthetic_cic_file_and_stores_only_accepted_rows(core_api: CoreApi) -> None:
     content = csv_bytes(row(), row(fwd_header_length_2="99"), [""] * 85, row(flow_bytes_s="Infinity"))
     response = core_api.client.post(
         "/api/imports",
@@ -336,8 +336,11 @@ def test_upload_validates_synthetic_cic_file_without_storing_rows(core_api: Core
     assert (body["status"], body["datasetProfile"], body["profileVersion"]) == ("VALIDATED", "cic-ids2017", "1")
     assert (body["totalRows"], body["acceptedRows"], body["rejectedRows"]) == (4, 2, 2)
     assert [issue["rule"] for issue in body["errorSample"]] == ["row.duplicate_column_mismatch", "row.empty_record"]
+    # Rows 2 and 5 passed; rows 3 and 4 were rejected and are reported, not stored.
+    assert (body["eventsCreated"], body["duplicateRows"]) == (2, 0)
     with core_api.session_factory() as session:
-        assert session.scalar(select(func.count()).select_from(SecurityEvent)) == 0
+        stored = session.scalars(select(SecurityEvent).order_by(SecurityEvent.source_row)).all()
+        assert [(str(event.import_batch_id), event.source_row) for event in stored] == [(body["id"], 2), (body["id"], 5)]
         assert session.scalar(select(func.count()).select_from(ImportBatch)) == 1
 
 

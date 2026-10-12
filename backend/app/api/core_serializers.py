@@ -99,6 +99,8 @@ def event_response(event: SecurityEvent) -> EventResponse:
         incident_ids=[incident.id for incident in incidents],
         asset_id=event.asset_id,
         asset=asset_reference(event.asset),
+        import_batch_id=event.import_batch_id,
+        source_row=event.source_row,
     )
 
 

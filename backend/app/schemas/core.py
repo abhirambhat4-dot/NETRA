@@ -70,6 +70,8 @@ class EventResponse(CoreResponse):
     incident_ids: list[UUID]
     asset_id: UUID | None
     asset: AssetReference | None
+    import_batch_id: UUID | None = Field(default=None, description="Import batch an event was normalised from.")
+    source_row: int | None = Field(default=None, description="Row of the uploaded file (header = row 1).")
 
 
 class EventIngestRequest(CoreResponse):

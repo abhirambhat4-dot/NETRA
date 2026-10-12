@@ -1,5 +1,15 @@
 # NETRA Architecture
 
+> **Status note (2026-10-12):** this is the original design document, kept for reference. Parts of
+> it describe planned behaviour that differs from the implementation:
+> - the implemented API is served under **`/api`**, not `/api/v1`, and its routes differ from §4;
+> - containment is **simulated**;
+> - the frontend runs against the live API unless `VITE_USE_MOCKS=true`.
+>
+> For the current architecture, routes, data model and limitations, see
+> [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) and the generated OpenAPI docs at `/docs` on
+> a running backend.
+
 ## 1. Workflow
 
 ```

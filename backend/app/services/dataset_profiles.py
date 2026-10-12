@@ -9,11 +9,12 @@ Positional profiles (``PositionalProfile``) require an exact header, column by c
 every position its own key, so a repeated name is kept twice rather than merged or dropped.
 """
 
+import hashlib
 import re
 from collections import Counter
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from ipaddress import ip_address
 from typing import Any, ClassVar
 
@@ -54,6 +55,8 @@ class DatasetProfile:
     title: ClassVar[str]
     encoding: ClassVar[str] = "utf-8-sig"
     required_columns: ClassVar[tuple[str, ...]] = ()
+    # True when normalize_row maps accepted rows to events; otherwise uploads are validation-only.
+    normalizes: ClassVar[bool] = False
 
     @staticmethod
     def normalize_column(name: str) -> str:
@@ -99,6 +102,28 @@ class DatasetProfile:
     def describe_record(self, values: Mapping[str, str]) -> Iterator[tuple[str, str]]:
         """(fact, value) pairs the local profiler tallies, for checking a profile's assumptions."""
         return iter(())
+
+    def normalize_row(self, values: Mapping[str, str]) -> "NormalizedEvent | None":
+        """Event fields for one row that passed ``check_row``; None keeps the profile validation-only."""
+        return None
+
+
+@dataclass(frozen=True)
+class NormalizedEvent:
+    """A dataset row mapped to NETRA's canonical event fields. Severity is not derived from the row."""
+
+    occurred_at: datetime
+    event_type: str
+    src_ip: str | None
+    dest_ip: str | None
+    src_port: int | None
+    dest_port: int | None
+    protocol: str | None
+    # Hash of the row's cells as written: identical rows (in one file or across uploads) share it.
+    content_sha256: str
+    # Source fields as written, the dataset's own label (ground truth, not a NETRA finding) and how
+    # each derived field was interpreted.
+    raw_data: dict[str, Any]
 
 
 class GenericCsvProfile(DatasetProfile):
@@ -206,6 +231,18 @@ CAPTURE_LAST_DAY = date(2017, 7, 7)
 # Any other hour would contradict that reading, so it is rejected rather than interpreted.
 # Validation never converts timestamps; the time zone is not recorded in the files.
 CIC_IDS2017_ACCEPTED_HOURS = frozenset({1, 2, 3, 4, 5, 8, 9, 10, 11, 12})
+# Normalisation only: occurred_at needs a 24-hour, zoned instant, which the files do not state.
+# Both readings below are ASSUMPTIONS (see docs/DATASET_IMPORTS.md), recorded on every imported
+# event so a later correction can find and re-derive them:
+# - 12-hour clock without AM/PM: hours 8-11 are morning, 12 is noon, 1-5 are afternoon (13-17).
+# - Capture-local time is UTC-03:00 (Atlantic Daylight Time; the capture is publicly described as
+#   taking place in New Brunswick, Canada). Not verified against the files.
+CIC_IDS2017_ASSUMED_UTC_OFFSET = timezone(timedelta(hours=-3))
+CIC_IDS2017_TIME_INTERPRETATION = (
+    "cic-ids2017 timestamp read as day/month/year on a 12-hour clock without AM/PM (8-11 morning, 12 noon, "
+    "1-5 afternoon) in assumed capture-local time UTC-03:00; both readings are unverified assumptions"
+)
+CIC_IDS2017_PROTOCOLS = {"6": "tcp", "17": "udp"}
 _NUMBER = re.compile(r"-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?")
 # Recorded by the dataset's flow meter; kept as written, never converted to zero or dropped.
 NON_FINITE_VALUES = frozenset({"Infinity", "-Infinity", "NaN"})
@@ -213,7 +250,8 @@ _DIGITS = re.compile(r"\d{1,5}")
 
 
 class CicIds2017Profile(PositionalProfile):
-    """CIC-IDS2017 labelled flow CSVs (85 columns). Validation only: nothing is converted or stored.
+    """CIC-IDS2017 labelled flow CSVs (85 columns). Accepted rows of a validated upload are normalised
+    to ``network_flow`` events (``normalize_row``); the Label is kept as ground truth, never as a finding.
 
     Flow ID and the Source/Destination columns are checked for consistency only. Flow ID lists the
     endpoints in either order, so neither it nor the column names establish connection direction,
@@ -227,6 +265,7 @@ class CicIds2017Profile(PositionalProfile):
     # still fail decoding, so the file is rejected rather than guessed at.
     encoding = "cp1252"
     columns = CIC_IDS2017_COLUMNS
+    normalizes = True
 
     def _issue(self, position: int, rule: str, message: str) -> ValidationIssue:
         return ValidationIssue(rule, message, column=self.columns[position], column_index=position + 1)
@@ -301,6 +340,44 @@ class CicIds2017Profile(PositionalProfile):
                 yield ("non-finite values", f"{self.columns[position]} = {cell}")
             elif cell.startswith("-") and _NUMBER.fullmatch(cell) and float(cell) != 0:
                 yield ("negative values", self.columns[position])
+
+    def normalize_row(self, values: Mapping[str, str]) -> NormalizedEvent:
+        """One flow as a ``network_flow`` event. The Label is kept as ground truth and never sets severity."""
+        cells = self._cells(values)
+        protocol = cells[PROTOCOL]
+        return NormalizedEvent(
+            occurred_at=cic_ids2017_occurred_at(cells[TIMESTAMP]),
+            event_type="network_flow",
+            src_ip=cells[SOURCE_IP],
+            dest_ip=cells[DESTINATION_IP],
+            src_port=int(cells[SOURCE_PORT]),
+            dest_port=int(cells[DESTINATION_PORT]),
+            protocol=CIC_IDS2017_PROTOCOLS.get(protocol, protocol),
+            content_sha256=hashlib.sha256("\x1f".join(cells).encode("utf-8")).hexdigest(),
+            raw_data={
+                "dataset": {"profile": self.identifier, "profileVersion": self.version},
+                # The dataset's own label: evaluation ground truth, not a detection made by NETRA.
+                "groundTruthLabel": cells[LABEL],
+                "timestampAsWritten": cells[TIMESTAMP],
+                "occurredAtInterpretation": CIC_IDS2017_TIME_INTERPRETATION,
+                "protocolAsWritten": protocol,
+                # Every column as written, keyed by profile key (the repeated column is fwd_header_length_2).
+                "sourceFields": dict(zip(self.keys, cells, strict=True)),
+            },
+        )
+
+
+def cic_ids2017_occurred_at(value: str) -> datetime:
+    """A validated CIC-IDS2017 timestamp as an aware datetime under the assumptions documented above."""
+    match = _TIMESTAMP.fullmatch(value)
+    if match is None:
+        raise ValueError("timestamp was not validated")
+    day, month, year, hour, minute = (int(part) for part in match.group(1, 2, 3, 4, 5))
+    second = int(match.group(6) or 0)
+    if hour not in CIC_IDS2017_ACCEPTED_HOURS:
+        raise ValueError("timestamp was not validated")
+    hour_24 = hour + 12 if hour <= 5 else hour
+    return datetime(year, month, day, hour_24, minute, second, tzinfo=CIC_IDS2017_ASSUMED_UTC_OFFSET)
 
 
 def _is_ip(value: str) -> bool:

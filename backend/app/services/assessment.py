@@ -299,14 +299,17 @@ def get_assessment(db: Session, assessment_id: UUID) -> SecurityAssessment | Non
     ).one_or_none()
 
 
-def run_assessment(db: Session, user: User, asset_id: UUID) -> SecurityAssessment:
-    """Assess one asset and store a new snapshot; earlier snapshots are never modified."""
+def run_assessment(db: Session, user: User, asset_id: UUID, as_of: datetime | None = None) -> SecurityAssessment:
+    """Assess one asset and store a new snapshot; earlier snapshots are never modified.
+
+    ``as_of`` (default now) ends the event window, so a historical dataset can be assessed in its own time.
+    """
     asset = db.get(Asset, asset_id)
     if asset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
     # One timestamp bounds both the evidence query and the engine, so the snapshot is reproducible.
-    as_of = datetime.now(UTC)
+    as_of = as_of.astimezone(UTC) if as_of is not None else datetime.now(UTC)
     data = load_assessment_input(db, asset, as_of)
     # New snapshots always use the current methodology; stored snapshots keep theirs.
     result = assess_asset(data, methodology=METHODOLOGY_VERSION)

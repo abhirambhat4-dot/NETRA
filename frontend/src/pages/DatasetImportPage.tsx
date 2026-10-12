@@ -166,6 +166,7 @@ function BatchRow({ batch: b, entryIndex, active, onOpen }: {
           <span className="font-mono text-foreground/85">{b.acceptedRows.toLocaleString('en-US')}</span> of{' '}
           <span className="font-mono text-foreground/85">{b.totalRows.toLocaleString('en-US')}</span> accepted
           {b.errorTotal > 0 && <> · {b.errorTotal.toLocaleString('en-US')} issue{b.errorTotal === 1 ? '' : 's'}</>}
+          {(b.eventsCreated ?? 0) > 0 && <> · {b.eventsCreated.toLocaleString('en-US')} stored as events</>}
         </div>
         <time dateTime={b.createdAt} title={`${formatDateTime(b.createdAt)} UTC`} className="text-[11px] text-muted-foreground max-lg:col-span-2">
           {formatDateTime(b.createdAt)} UTC · {timeAgo(b.createdAt)}

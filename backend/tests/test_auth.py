@@ -186,3 +186,10 @@ def test_cors_allows_local_frontend_origin(auth_client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_default_cors_origins_cover_both_local_dev_server_addresses() -> None:
+    from app.core.config import Settings
+
+    # The default applies when neither the environment nor .env sets CORS_ORIGINS.
+    assert Settings.model_fields["cors_origins"].default == ["http://localhost:5173", "http://127.0.0.1:5173"]

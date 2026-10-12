@@ -155,6 +155,7 @@ export type BackendEventSource =
   | 'THREAT_INTEL'
   | 'VULNERABILITY_SCAN'
   | 'MANUAL'
+  | 'DATASET_IMPORT'
 
 export interface BackendEventAssetReference {
   id: string
@@ -184,6 +185,9 @@ export interface BackendEventResponse {
   incidentIds: string[]
   assetId: string | null
   asset: BackendEventAssetReference | null
+  /** Set for events normalised from a dataset upload: the batch and the file row (header = row 1). */
+  importBatchId?: string | null
+  sourceRow?: number | null
 }
 
 export interface BackendEventsPage {
@@ -496,6 +500,9 @@ export type EventsPageItem = Omit<
   detectionSource: BackendEventSource | DetectionSource
   status: EventStatus
   anomalyScore: number | null
+  /** Set for events normalised from a dataset upload: the batch and the file row (header = row 1). */
+  importBatchId?: string | null
+  sourceRow?: number | null
   incidentIds: string[]
   assetId: string | null
   asset: BackendEventAssetReference | null
@@ -788,6 +795,8 @@ export type AssessmentFindingResult = 'PASS' | 'WARN' | 'FAIL' | 'INFO'
 /** Body for POST /api/assessments. */
 export interface AssessmentCreateRequest {
   assetId: string
+  /** End of the 7-day event window (ISO 8601 with offset, not in the future); omitted means now. */
+  asOf?: string
 }
 
 /** One methodology check; evidence and referenced IDs are exactly what the backend stored. */
@@ -882,6 +891,10 @@ export interface BackendImportBatchSummary {
   acceptedRows: number
   rejectedRows: number
   errorTotal: number
+  /** Accepted rows stored as security events (0 for validation-only profiles). */
+  eventsCreated: number
+  /** Accepted rows not stored because an identical row already exists as an event. */
+  duplicateRows: number
   createdAt: string
   completedAt: string | null
 }

@@ -33,6 +33,9 @@ from app.models.enums import ImportBatchStatus
 BACKEND = Path(__file__).resolve().parents[1]
 MIGRATION = BACKEND / "migrations" / "versions" / "0004_add_import_batches.py"
 NEW_TABLES = {"import_batches"}
+# Added to import_batches later by 0005 (tested in test_dataset_normalization.py), so not part of 0004.
+ADDED_BY_0005_COLUMNS = {"events_created", "duplicate_rows"}
+ADDED_BY_0005_CHECKS = {"ck_import_batches_normalised_counts"}
 
 
 @pytest.fixture
@@ -141,7 +144,7 @@ def test_migration_extends_the_chain_from_0003() -> None:
     config = Config(str(BACKEND / "alembic.ini"))
     config.set_main_option("script_location", str(BACKEND / "migrations"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["0004_add_import_batches"]
+    assert "0004_add_import_batches" in {script.revision for script in scripts.walk_revisions()}
     assert scripts.get_revision("0004_add_import_batches").down_revision == "0003_add_security_assessments"
 
 
@@ -161,6 +164,8 @@ def migration_connection() -> Iterator[Connection]:
 
 
 def _new_tables_only(_obj: Any, name: str | None, type_: str, _reflected: bool, _compare_to: Any) -> bool:
+    if type_ == "column" and name in ADDED_BY_0005_COLUMNS:
+        return False
     return type_ != "table" or name in NEW_TABLES
 
 
@@ -180,7 +185,7 @@ def test_migration_matches_model_and_is_guarded(migration_connection: Connection
 
     model_table = Base.metadata.tables["import_batches"]
     model_checks = {constraint.name for constraint in model_table.constraints if constraint.__class__.__name__ == "CheckConstraint"}
-    assert {item["name"] for item in inspector.get_check_constraints("import_batches")} == model_checks
+    assert {item["name"] for item in inspector.get_check_constraints("import_batches")} == model_checks - ADDED_BY_0005_CHECKS
 
     indexes = {index["name"]: index for index in inspector.get_indexes("import_batches")}
     assert set(indexes) == {index.name for index in model_table.indexes}

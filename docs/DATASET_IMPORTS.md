@@ -1,14 +1,17 @@
-# Dataset imports: validation-only upload and CIC-IDS2017 profile
+# Dataset imports: validated upload, CIC-IDS2017 profile and event normalisation
 
 `POST /api/imports` accepts one CSV file, validates it against a named dataset profile and records
-the outcome as an **import batch**. Imports are validation only:
+the outcome as an **import batch**.
 
-- No CSV rows are stored anywhere.
-- Nothing is written to `security_events`, `incidents`, `assets`, `security_assessments` or
-  `assessment_findings`. Dashboard, correlation, collector and assessment behaviour are unchanged.
-- Two profiles are registered: `generic-csv` (structure only) and `cic-ids2017` v1 (see
-  [CIC-IDS2017 profile](#cic-ids2017-profile-cic-ids2017-v1)). Storing dataset rows or turning them
-  into security events is not implemented and needs its own, separately approved design.
+- Two profiles are registered: `generic-csv` (structure only, **validation only**: no row is stored)
+  and `cic-ids2017` v1 (see [CIC-IDS2017 profile](#cic-ids2017-profile-cic-ids2017-v1)).
+- For `cic-ids2017`, the rows of a `VALIDATED` batch that passed every check are stored as
+  **security events** in the same transaction as the batch (see
+  [Normalisation to security events](#normalisation-to-security-events-cic-ids2017)). Rejected rows
+  are reported in the batch and never stored. A `REJECTED` file stores nothing.
+- Nothing is written to `incidents`, `assets`, `security_assessments` or `assessment_findings`.
+  Imported events reach Security Assessment only through its existing evidence rules (see
+  [From imported events to assessment findings](#from-imported-events-to-assessment-findings)).
 - Full-size CIC-IDS2017 files exceed the upload limits. They are checked with the
   [local profiler](#local-profiler) instead, which reads files from disk and stores nothing.
 
@@ -128,8 +131,9 @@ production, take and record a backup or Neon branch, apply 0003 by its documente
 ## CIC-IDS2017 profile (`cic-ids2017` v1)
 
 For the `GeneratedLabelledFlows/TrafficLabelling` CSVs. Defined in
-`backend/app/services/dataset_profiles.py` (`CicIds2017Profile`). Validation only: no value is
-converted, and no row is stored.
+`backend/app/services/dataset_profiles.py` (`CicIds2017Profile`). Validation never converts a
+value; rows that pass are then normalised to events as described in
+[Normalisation to security events](#normalisation-to-security-events-cic-ids2017).
 
 **Header.** Positional: the header must equal the 85 expected names exactly, in order, after
 trimming surrounding whitespace (70 of the 85 names start with a space in the files). A wrong
@@ -226,8 +230,87 @@ the data, not something the files state. The profile does not convert timestamps
 hour outside that set so a contradicting value would surface rather than be guessed at.
 
 **The time zone is unconfirmed.** The files carry no offset or zone. Public descriptions place the
-capture in New Brunswick, Canada, but that has not been verified against these files, so no UTC
-conversion should be designed until it is.
+capture in New Brunswick, Canada, but that has not been verified against these files. Validation
+still never converts a timestamp. Normalisation has to produce `occurred_at`, so it applies both
+readings as explicit, recorded **assumptions** (12-hour clock; UTC-03:00); see
+[Normalisation to security events](#normalisation-to-security-events-cic-ids2017). Confirming or
+correcting them remains open.
+
+## Normalisation to security events (`cic-ids2017`)
+
+Implemented in `backend/app/services/dataset_normalization.py` and
+`CicIds2017Profile.normalize_row`. Schema: migration `0005_dataset_event_provenance` (file `0005_add_dataset_event_provenance.py`).
+
+**What is stored.** Each row that passed validation in a `VALIDATED` batch becomes one
+`security_events` row, inserted in bounded chunks (1,000 rows) inside the batch's transaction: the
+batch and all its events are committed together or not at all.
+
+| Event field | Value |
+|---|---|
+| `source` | `dataset_import` (reserved: `POST /api/events/ingest` refuses it) |
+| `event_type` | `network_flow` |
+| `severity` | `info` for every row. The dataset's `Label` is **ground truth for evaluation, not a NETRA detection**, so it never sets severity or creates a finding. |
+| `src_ip`, `dest_ip`, `src_port`, `dest_port` | As written (validated). |
+| `protocol` | `tcp` for 6, `udp` for 17, otherwise the number as written. |
+| `occurred_at` | Derived from `Timestamp` under two **assumptions** (below). |
+| `import_batch_id`, `source_row` | The batch and the file row (header = row 1). Unique together. |
+| `raw_data` | `groundTruthLabel`, `timestampAsWritten`, `occurredAtInterpretation`, `protocolAsWritten`, `sourceFields` (all 85 columns as written, keyed by profile key), `importBatchId`, `sourceRow`, `fileSha256`, `assetLink`. |
+| `asset_id` | Set only by the asset rule below. |
+
+**Timestamp assumptions (unverified).** `occurred_at` needs a 24-hour, zoned instant that the files
+do not state. Normalisation reads the hour on a 12-hour clock without AM/PM (8-11 morning, 12 noon,
+1-5 afternoon, i.e. 13:00-17:00) in assumed capture-local time **UTC-03:00** (Atlantic Daylight
+Time; the capture is publicly described as taking place in New Brunswick, Canada). Neither reading is
+confirmed by the files. Both are recorded on every event (`occurredAtInterpretation`, with the
+original in `timestampAsWritten`), so events can be found and re-derived if either is corrected. The
+constants are `CIC_IDS2017_ASSUMED_UTC_OFFSET` and `CIC_IDS2017_TIME_INTERPRETATION`.
+
+**Duplicates.** The event uid is `dataset:cic-ids2017:<sha256 of the row's cells as written>`. A row
+identical to one already stored, earlier in the same file or in an earlier batch, is not stored
+again. It is counted in the batch's `duplicateRows`, and the stored event keeps the provenance of the
+first occurrence. `eventsCreated + duplicateRows = acceptedRows` for a normalised batch. Re-uploading
+an identical file is still refused with `409` (see [Duplicate policy](#duplicate-policy)).
+
+**Asset linking (rule `exact-ip-match-v1`).** An event is linked to an asset only when exactly one
+asset's `ip_address` equals the row's source or destination address. With no match, or with more
+than one matching asset, `asset_id` stays empty. The outcome, including candidates when ambiguous,
+is recorded in `raw_data.assetLink`. No asset is created or changed by an import.
+
+**API.** Batch responses add `eventsCreated` and `duplicateRows`. Event responses add `importBatchId`
+and `sourceRow`. `GET /api/events?importBatchId=<id>` lists a batch's events, and
+`GET /api/events?source=DATASET_IMPORT` lists all imported events.
+
+### From imported events to assessment findings
+
+Security Assessment reads events linked to the assessed asset within a 7-day window ending at the
+assessment's `asOf`. `POST /api/assessments` accepts an optional `asOf` (zoned, not in the future;
+default now). This lets a historical dataset such as CIC-IDS2017 (July 2017) be assessed in its own
+time. Only events are bounded by `asOf`; vulnerabilities, incidents and threat indicators are their
+current state.
+
+Imported events are cited in findings only through the engine's existing rules: as matches of
+active IP threat indicators (`threat_intel_matches`, any severity) or as activity on an inactive
+asset. Because imported rows are `info`, they are never counted as high-severity events. Every cited
+event ID traces back to `import_batch_id` and `source_row`; this is covered end to end by
+`backend/tests/test_dataset_normalization.py::test_imported_rows_trace_into_assessment_findings`.
+
+**Preconditions for a demonstration.** The asset must exist with the dataset's IP address **before
+the upload**, because links are made only at import time, and a threat indicator must exist for the
+IP of interest. Neither is created by an import, and neither can be created through the API. For a
+local demonstration, `python -m app.db.seed_dataset_context` (run from `backend/`) creates exactly
+two clearly labelled records: asset `CIC-DEMO-WEB-50` (192.168.10.50, environment `test`) and an
+active IP indicator for 172.16.0.1 whose source reads "NETRA dataset demo (analyst-entered, not a
+threat feed)". Choosing 172.16.0.1 was informed by the dataset's labels, so the indicator is
+analyst-entered context, not an independent detection. The default is a read-only dry run.
+`--apply --confirm-target localhost:5432/netra` writes, and only to a local database. Existing records
+are never changed. Then upload a CIC-IDS2017 extract whose rows involve 192.168.10.50, and assess
+`CIC-DEMO-WEB-50` with an event window ending on 2017-07-07 or later (the Assessment page's
+"Event window ends (UTC)" field, i.e. `asOf`).
+
+**Not implemented yet.** NETRA's own detection rules over imported flows; background processing for
+large files (uploads are processed in the request, within the 25 MiB / 100,000-row limits); and
+per-batch removal of imported events (`import_batch_id` has no `ON DELETE`, so a batch with events
+cannot be deleted by accident).
 
 ## Local profiler
 

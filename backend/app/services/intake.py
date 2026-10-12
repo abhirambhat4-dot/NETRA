@@ -93,10 +93,18 @@ def create_event(db: Session, payload: dict[str, Any]) -> SecurityEvent:
 
     raw_data = _json_safe(raw_data)
 
+    source = _to_enum(DetectionSource, payload.get("source"), "source")
+    if source == DetectionSource.DATASET_IMPORT:
+        # Reserved for events normalised from an import batch, which carry their batch and row.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="source DATASET_IMPORT is assigned only by dataset imports",
+        )
+
     event = SecurityEvent(
         event_uid=event_uid,
         occurred_at=payload["occurred_at"],
-        source=_to_enum(DetectionSource, payload.get("source"), "source"),
+        source=source,
         event_type=str(payload["event_type"]).strip(),
         signature=(payload.get("signature") or None),
         severity=_to_enum(Severity, payload.get("severity"), "severity"),

@@ -158,6 +158,7 @@ def test_foreign_keys_reference_expected_tables(isolated_db: IsolatedDb) -> None
     }
     assert fks == {
         ("security_events", "asset_id", "assets"),
+        ("security_events", "import_batch_id", "import_batches"),
         ("incidents", "asset_id", "assets"),
         ("vulnerabilities", "asset_id", "assets"),
         ("incident_events", "incident_id", "incidents"),

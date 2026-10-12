@@ -24,7 +24,8 @@ class Settings(BaseSettings):
     jwt_secret_key: SecretStr = Field(min_length=32)
     jwt_algorithm: Literal["HS256"] = "HS256"
     access_token_expire_minutes: int = Field(default=60, gt=0)
-    cors_origins: list[str] = ["http://localhost:5173"]
+    # The Vite dev server is reached as localhost or 127.0.0.1; browsers treat them as different origins.
+    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
     # Self-service sign-up through POST /api/auth/register. Off unless a deployment opts in; otherwise
     # an administrator creates accounts with backend/scripts/netra_users.py.

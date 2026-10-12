@@ -89,7 +89,7 @@ def create_assessment(
     current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> AssessmentDetailResponse:
     consume_rate_limit(current_user)
-    return assessment_detail_response(run_assessment(db, current_user, request.asset_id))
+    return assessment_detail_response(run_assessment(db, current_user, request.asset_id, request.as_of))
 
 
 @router.get("", response_model=PageResponse[AssessmentSummaryResponse])

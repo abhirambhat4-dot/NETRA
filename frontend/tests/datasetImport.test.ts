@@ -7,6 +7,8 @@ import {
   checkSelectedFile,
   describeImportFailure,
   describeImportOutcome,
+  describeStoredRows,
+  eventProvenance,
   formatBytes,
   issueLocation,
 } from '../src/lib/datasetImport.ts'
@@ -26,6 +28,8 @@ function batch(overrides: Partial<BackendImportBatchSummary> = {}): BackendImpor
     acceptedRows: 3,
     rejectedRows: 0,
     errorTotal: 0,
+    eventsCreated: 0,
+    duplicateRows: 0,
     createdAt: '2026-10-11T12:00:00Z',
     completedAt: '2026-10-11T12:00:01Z',
     ...overrides,
@@ -103,4 +107,25 @@ test('issue locations use the row, the profile column name, or the column positi
   assert.equal(issueLocation({ ...issue, row: 6 }), 'Row 6')
   assert.equal(issueLocation({ ...issue, column: 'beta' }), 'Column beta')
   assert.equal(issueLocation(issue), 'File')
+})
+
+test('stored rows are described only when a validated batch stored or deduplicated events', () => {
+  assert.equal(describeStoredRows(batch()), null)
+  assert.equal(describeStoredRows(batch({ status: 'REJECTED', acceptedRows: 0 })), null)
+  assert.equal(describeStoredRows(batch({ eventsCreated: 1 })), '1 accepted row stored as security event.')
+  assert.equal(
+    describeStoredRows(batch({ eventsCreated: 2, duplicateRows: 1 })),
+    '2 accepted rows stored as security events; 1 duplicate of existing events not stored again.',
+  )
+})
+
+test('event provenance is shown only for events that name both their import batch and file row', () => {
+  assert.deepEqual(eventProvenance({ importBatchId: BATCH_ID, sourceRow: 1234 }), {
+    batchId: BATCH_ID,
+    row: 1234,
+    label: 'File row 1,234',
+  })
+  assert.equal(eventProvenance({ importBatchId: null, sourceRow: null }), null)
+  assert.equal(eventProvenance({}), null)
+  assert.equal(eventProvenance({ importBatchId: BATCH_ID, sourceRow: null }), null)
 })

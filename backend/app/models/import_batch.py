@@ -14,7 +14,11 @@ if TYPE_CHECKING:
 
 
 class ImportBatch(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
-    """One uploaded dataset file and its validation report. Dataset rows are not stored."""
+    """One uploaded dataset file and its validation report.
+
+    For a profile that defines a normalisation, the accepted rows of a VALIDATED batch are stored as
+    security events in the same transaction (security_events.import_batch_id/source_row point back here).
+    """
 
     __tablename__ = "import_batches"
     __table_args__ = (
@@ -26,6 +30,11 @@ class ImportBatch(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             name="row_counts",
         ),
         CheckConstraint("error_total >= 0", name="error_total_range"),
+        # Every accepted row is either stored as a new event or counted as a duplicate of an existing one.
+        CheckConstraint(
+            "events_created >= 0 AND duplicate_rows >= 0 AND events_created + duplicate_rows <= accepted_rows",
+            name="normalised_counts",
+        ),
         # A file is recorded as validated at most once per profile version. Rejected batches do not
         # reserve the hash, so a corrected or retried upload is never blocked by an earlier failure.
         Index(
@@ -56,5 +65,9 @@ class ImportBatch(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     # Issues name a row, a column and a rule only, never cell contents.
     error_sample: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     completed_at: Mapped[datetime | None]
+    # Normalisation outcome; both stay 0 for validation-only profiles and for rejected batches.
+    events_created: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    # Accepted rows whose content already exists as an event (from this file or an earlier batch).
+    duplicate_rows: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
 
     uploaded_by: Mapped["User | None"] = relationship()

@@ -3,7 +3,7 @@ import type { BackendImportBatchDetail, ImportIssue } from '@/api/types'
 import { DetailSection, DetailSheet, ErrorState, KeyValueList, LoadingState, ToneBadge } from '@/components/netra'
 import { Button } from '@/components/ui/button'
 import { useQuery } from '@/hooks/useQuery'
-import { describeImportOutcome, formatBytes, issueLocation } from '@/lib/datasetImport'
+import { describeImportOutcome, describeStoredRows, formatBytes, issueLocation } from '@/lib/datasetImport'
 import { formatDateTime, formatNumber } from '@/lib/format'
 import { ROUTES } from '@/lib/navigation'
 import { importService } from '@/services'
@@ -92,9 +92,19 @@ function Body({ batch: b }: { batch: BackendImportBatchDetail }) {
       </DetailSection>
 
       <p className="text-[11px] leading-relaxed text-muted-foreground">
-        Validation only: no rows from this file were stored, and nothing was added to Security Events, Incidents or
-        Assessments. Issues name a row, a column and a rule, never cell contents.
+        {describeStoredRows(b) !== null
+          ? `${describeStoredRows(b)} Each stored event records this batch and its file row.`
+          : 'No rows from this file were stored.'}{' '}
+        Rejected rows are never stored, and nothing was added to Incidents or Assessments. Issues name a row, a column
+        and a rule, never cell contents.
       </p>
+      {(b.eventsCreated ?? 0) > 0 && (
+        <Button asChild variant="outline" size="sm">
+          <Link to={`${ROUTES.events}?batch=${encodeURIComponent(b.id)}`}>
+            View the {formatNumber(b.eventsCreated)} event{b.eventsCreated === 1 ? '' : 's'} this batch stored
+          </Link>
+        </Button>
+      )}
     </>
   )
 }
@@ -105,9 +115,11 @@ export function RowCounts({ batch }: { batch: BackendImportBatchDetail }) {
     { label: 'Accepted', value: batch.acceptedRows, className: 'text-low' },
     { label: 'Rejected', value: batch.rejectedRows, className: batch.rejectedRows > 0 ? 'text-critical' : '' },
     { label: 'Issues', value: batch.errorTotal, className: batch.errorTotal > 0 ? 'text-medium' : '' },
+    { label: 'Events stored', value: batch.eventsCreated ?? 0, className: '' },
+    { label: 'Duplicates', value: batch.duplicateRows ?? 0, className: '' },
   ]
   return (
-    <dl className="surface-inset grid grid-cols-2 gap-px overflow-hidden rounded-lg sm:grid-cols-4">
+    <dl className="surface-inset grid grid-cols-2 gap-px overflow-hidden rounded-lg sm:grid-cols-3">
       {items.map((item) => (
         <div key={item.label} className="px-3.5 py-2.5">
           <dt className="text-[11px] text-muted-foreground">{item.label}</dt>

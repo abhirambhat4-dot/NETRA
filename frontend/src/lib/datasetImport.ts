@@ -20,7 +20,7 @@ export const IMPORT_PROFILES: readonly ImportProfileOption[] = [
     id: 'cic-ids2017',
     label: 'CIC-IDS2017 labelled flows (v1)',
     description:
-      'Checks the exact 85-column header and each flow: addresses, ports, protocol, timestamp, label and numeric features. Validation only.',
+      'Checks the exact 85-column header and each flow: addresses, ports, protocol, timestamp, label and numeric features. Rows that pass are stored as security events with their batch and row.',
   },
 ]
 
@@ -129,6 +129,30 @@ export function describeImportOutcome(batch: BackendImportBatchSummary): ImportO
     }
   }
   return { tone: 'low', label: 'Validated', summary: `All ${rows} passed validation.` }
+}
+
+/**
+ * What the batch stored, or null when nothing was (rejected file, or a validation-only profile).
+ * Only rows that passed validation are ever stored; duplicates of existing events are counted, not stored.
+ */
+export function describeStoredRows(batch: BackendImportBatchSummary): string | null {
+  const created = batch.eventsCreated ?? 0
+  const duplicates = batch.duplicateRows ?? 0
+  if (batch.status !== 'VALIDATED' || created + duplicates === 0) return null
+  const events = `${created.toLocaleString('en-US')} accepted row${created === 1 ? '' : 's'} stored as security event${created === 1 ? '' : 's'}`
+  return duplicates > 0
+    ? `${events}; ${duplicates.toLocaleString('en-US')} duplicate${duplicates === 1 ? '' : 's'} of existing events not stored again.`
+    : `${events}.`
+}
+
+/** Where an imported event came from, or null for events that did not come from a dataset upload. */
+export function eventProvenance(event: { importBatchId?: string | null; sourceRow?: number | null }): {
+  batchId: string
+  row: number
+  label: string
+} | null {
+  if (!event.importBatchId || event.sourceRow == null) return null
+  return { batchId: event.importBatchId, row: event.sourceRow, label: `File row ${event.sourceRow.toLocaleString('en-US')}` }
 }
 
 export function statusTone(batch: BackendImportBatchSummary): Tone {
