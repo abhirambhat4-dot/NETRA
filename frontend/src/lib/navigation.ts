@@ -84,15 +84,16 @@ export const NAV_GROUPS: NavGroup[] = [
 ]
 
 /**
- * Intake items hidden on a workspace landing page: Live Tracking is about live collection, Security
- * Workspace about uploaded datasets, so each hides the other's intake. Routes stay registered.
+ * Intake items hidden in a workspace context: Live Tracking and its Live Event Collector are about live
+ * collection, Security Workspace about uploaded datasets, so each hides the other's intake. Routes stay registered.
  */
 const CONTEXT_HIDDEN: Readonly<Record<string, readonly string[]>> = {
   [ROUTES.liveTracking]: [ROUTES.imports],
+  [ROUTES.collector]: [ROUTES.imports],
   [ROUTES.securityWorkspace]: [ROUTES.collector],
 }
 
-/** Sidebar groups for the current path; every route other than /live and /workspace gets NAV_GROUPS unchanged. */
+/** Sidebar groups for the current path; every route other than /live, /collector and /workspace gets NAV_GROUPS unchanged. */
 export function navGroupsForPath(pathname: string): NavGroup[] {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
   const hidden = CONTEXT_HIDDEN[path]

@@ -151,8 +151,7 @@ export function unlinkedEventAttention(events: readonly EventsPageItem[]): Atten
  * records are left out; each row says whether an incident already covers the event.
  */
 export function collectorActivityAttention(events: readonly EventsPageItem[], limit = ATTENTION_LIMIT): AttentionItem[] {
-  return events
-    .filter((event) => !isImportedEvent(event) && !isDemoEvent(event))
+  return liveCollectorEvents(events)
     .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
     .slice(0, limit)
     .map((event) => ({
@@ -165,6 +164,11 @@ export function collectorActivityAttention(events: readonly EventsPageItem[], li
       to: ATTENTION_LINKS.event(event.id),
       at: event.timestamp,
     }))
+}
+
+/** Collector events that are live activity: imported dataset rows and demo seed records are left out. */
+export function liveCollectorEvents(events: readonly EventsPageItem[]): EventsPageItem[] {
+  return events.filter((event) => !isImportedEvent(event) && !isDemoEvent(event))
 }
 
 /** Count per severity, every severity present (0 when none); only the severities given are counted. */
@@ -280,4 +284,51 @@ export function datasetIssueAttention(
   return items
     .sort((left, right) => left.rank - right.rank || right.count - left.count || Date.parse(right.at ?? '') - Date.parse(left.at ?? ''))
     .map(({ rank: _rank, count: _count, ...item }) => item)
+}
+
+// --- Security Workspace: response queue ----------------------------------------------------------
+
+export type ResponseStep = 'authorize' | 'contain' | 'record'
+
+/**
+ * The next workflow step for an incident in each lifecycle state, as the backend enforces it:
+ * VERIFIED needs an approved authorization; AUTHORIZED stays so until the simulated containment is run
+ * and verified; CONTAINED (containment verified) is recorded to Cyber Memory, which makes it LEARNED.
+ */
+export const RESPONSE_STEPS: ReadonlyArray<{ step: ResponseStep; state: 'VERIFIED' | 'AUTHORIZED' | 'CONTAINED'; title: string; reason: string }> = [
+  { step: 'authorize', state: 'VERIFIED', title: 'Authorize response', reason: 'Verified · needs an approved authorization' },
+  { step: 'contain', state: 'AUTHORIZED', title: 'Contain and verify', reason: 'Authorized · run and verify the simulated containment' },
+  { step: 'record', state: 'CONTAINED', title: 'Record in Cyber Memory', reason: 'Containment verified · record the lesson' },
+]
+
+export interface ResponseQueueGroup {
+  step: ResponseStep
+  title: string
+  /** Every incident waiting at this step; `items` holds at most `limit` of them. */
+  total: number
+  items: AttentionItem[]
+}
+
+/** Incidents grouped by their next response step; highest stored risk first (unscored last), then longest waiting. */
+export function responseQueue(incidents: readonly IncidentQueueItem[], limit = ATTENTION_LIMIT): ResponseQueueGroup[] {
+  return RESPONSE_STEPS.map(({ step, state, title, reason }) => {
+    const waiting = incidents
+      .filter((incident) => incident.lifecycle === state)
+      .sort((left, right) => (right.riskScore ?? -1) - (left.riskScore ?? -1) || Date.parse(left.updatedAt) - Date.parse(right.updatedAt))
+    return {
+      step,
+      title,
+      total: waiting.length,
+      items: waiting.slice(0, limit).map((incident) => ({
+        key: `queue-${step}-${incident.id}`,
+        kind: 'incident' as const,
+        title: incident.title,
+        source: incident.key,
+        severity: incident.severity,
+        reason: joinReason([reason, incident.riskScore === null ? 'Risk not calculated' : `Risk ${Math.round(incident.riskScore)}`]),
+        to: ATTENTION_LINKS.incident(incident.id),
+        at: incident.updatedAt,
+      })),
+    }
+  })
 }

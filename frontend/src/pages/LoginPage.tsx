@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { hasCompletedBriefing } from '@/lib/briefing'
+import { postLoginPath } from '@/auth/postLoginRedirect'
 import { ROUTES } from '@/lib/navigation'
 import { HttpError } from '@/services/http'
 import { LoginEvidenceTrail } from './login/LoginEvidenceTrail'
@@ -43,7 +43,7 @@ export function LoginPage() {
     setLoading(true)
     try {
       await login(email.trim(), password, remember)
-      navigate(hasCompletedBriefing() ? ROUTES.commandHome : ROUTES.briefing, { replace: true })
+      navigate(postLoginPath(location.state), { replace: true })
     } catch (cause) {
       setError(cause instanceof HttpError && cause.status === 401
         ? INVALID_CREDENTIALS

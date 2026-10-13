@@ -117,8 +117,8 @@ test('Recharts loads lazily, only for the demo-only trend panel', () => {
 test('login authentication behaviour is unchanged', () => {
   for (const kept of [
     'await login(email.trim(), password, remember)',
-    // Post-sign-in destination is the Command Home workspace selector (tests/commandHome.test.ts).
-    'navigate(hasCompletedBriefing() ? ROUTES.commandHome : ROUTES.briefing, { replace: true })',
+    // Post-sign-in destination: a safe requested route, else Command Home (tests/postLoginRedirect.test.ts).
+    'navigate(postLoginPath(location.state), { replace: true })',
     "'Email or password is incorrect.'",
     "'Unable to sign in right now. Please try again.'",
     'cause instanceof HttpError && cause.status === 401',

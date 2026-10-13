@@ -19,8 +19,8 @@ const allRoutes = routesOf(NAV_GROUPS)
 
 // --- contextual sidebar ---------------------------------------------------------------------------
 
-test('Live Tracking shows the Live Event Collector and hides Dataset Import; everything else is unchanged', () => {
-  for (const path of ['/live', '/live/']) {
+test('Live Tracking and the Live Event Collector show the collector and hide Dataset Import; everything else is unchanged', () => {
+  for (const path of ['/live', '/live/', '/collector', '/collector/']) {
     const routes = routesOf(navGroupsForPath(path))
     assert.ok(routes.includes(ROUTES.collector))
     assert.ok(!routes.includes(ROUTES.imports))
@@ -37,8 +37,18 @@ test('Security Workspace shows Dataset Import and hides the Live Event Collector
   }
 })
 
+test('regression: navigating /live → /collector keeps Dataset Import hidden; /workspace still hides the collector', () => {
+  // The sidebar recomputes its groups from each new pathname, as on a sidebar click.
+  const [live, collector, workspace] = ['/live', '/collector', '/workspace'].map((path) => routesOf(navGroupsForPath(path)))
+  assert.deepEqual(collector, live)
+  for (const routes of [live, collector]) {
+    assert.ok(routes.includes(ROUTES.collector) && !routes.includes(ROUTES.imports))
+  }
+  assert.ok(workspace.includes(ROUTES.imports) && !workspace.includes(ROUTES.collector))
+})
+
 test('every other route keeps the full sidebar, and the hidden routes stay registered', () => {
-  for (const path of ['/dashboard', '/collector', '/imports', '/incidents', '/incidents/abc', '/events', '/settings', '/live-x', '/workspaces', '/']) {
+  for (const path of ['/dashboard', '/imports', '/incidents', '/incidents/abc', '/events', '/settings', '/live-x', '/workspaces', '/']) {
     assert.equal(navGroupsForPath(path), NAV_GROUPS, path)
   }
   assert.ok(allRoutes.includes(ROUTES.collector) && allRoutes.includes(ROUTES.imports))
@@ -104,12 +114,14 @@ test('Live Tracking separates live activity from imported datasets and says when
   const live = source('../src/pages/LiveTrackingPage.tsx')
   assert.match(live, /collectorActivityAttention\(collector\.data\.recentEvents, LIST_LIMIT\)/)
   assert.match(live, /No live feed connected/)
-  assert.match(live, /<ImportedSeparation collector=\{collector\.data\} \/>/)
-  assert.match(live, /not live monitoring, and are not counted anywhere on this page/)
+  // Imported dataset events are a compact status-strip note, still kept apart from live counts.
+  assert.match(live, /footer=\{collector\.data && collector\.data\.importedEventsTotal > 0 \? <ImportedNote total=\{collector\.data\.importedEventsTotal\} \/> : undefined\}/)
+  assert.match(live, /they are not live monitoring and are not counted on this page/)
+  assert.doesNotMatch(live, /ImportedSeparation/)
   // Severity counts and metrics use the demo-filtered list, never the raw API response.
   assert.match(live, /const mix = severityMix\(prioritized\)/)
   assert.doesNotMatch(live, /severityMix\(incidents\.data/)
-  assert.match(live, /<AttentionList items=\{incidentItems\.slice\(0, LIST_LIMIT\)\} showDetail \/>/)
+  assert.match(live, /<AttentionList items=\{incidentItems\.slice\(0, LIST_LIMIT\)\} \/>/)
 })
 
 // --- Security Workspace summaries -----------------------------------------------------------------

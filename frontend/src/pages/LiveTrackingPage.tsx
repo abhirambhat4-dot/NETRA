@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { CircleCheck, Database, Inbox, RadioTower, ServerOff, ShieldAlert } from 'lucide-react'
+import { CircleCheck, Inbox, RadioTower, ServerOff, ShieldAlert } from 'lucide-react'
 import type { CollectorStatus } from '@/api/types'
 import { EmptyState, LoadingState, MetricStrip, PageContainer, PageHeader, Panel, SurfaceCard, type Metric } from '@/components/netra'
 import { useHealthPoll } from '@/hooks/useHealthPoll'
@@ -13,6 +13,7 @@ import {
   incidentAttention,
   isDemoEvent,
   isDemoIncident,
+  liveCollectorEvents,
   liveEmptyState,
   severityMix,
   unlinkedEventAttention,
@@ -90,6 +91,9 @@ function LiveTracking() {
   const mix = severityMix(prioritized)
 
   const recentCollected = collector.data ? collectorActivityAttention(collector.data.recentEvents, LIST_LIMIT) : []
+  // Severity of incoming events: only the latest events the collector status returns carry a severity,
+  // so this covers those (stated as such), never a 24-hour total.
+  const incoming = collector.data ? liveCollectorEvents(collector.data.recentEvents) : []
   const collectedDemoNote = demoExclusionNote(0, collector.data ? collector.data.recentEvents.filter(isDemoEvent).length : 0)
 
   const metrics: Metric[] = [
@@ -121,7 +125,7 @@ function LiveTracking() {
 
   return (
     <PageContainer>
-      <PageHeader icon={RadioTower} eyebrow="Command Home" title="Live Tracking" description={DESCRIPTION} />
+      <PageHeader icon={RadioTower} eyebrow="Monitoring" title="Live Tracking" description={DESCRIPTION} />
 
       {collector.data && collector.data.status === 'idle' && (
         <FeedNotice neverReceived={collector.data.totalEvents === 0} note={collectorIdleNote(collector.data.totalEvents)} />
@@ -130,6 +134,7 @@ function LiveTracking() {
       <StatusRow
         label="Live status"
         items={statusItems(collector.data, collector.error, healthReading?.mode === 'live' ? healthReading.checks : undefined)}
+        footer={collector.data && collector.data.importedEventsTotal > 0 ? <ImportedNote total={collector.data.importedEventsTotal} /> : undefined}
       />
 
       <MetricStrip metrics={metrics} />
@@ -137,8 +142,8 @@ function LiveTracking() {
       <div className="grid items-start gap-4 lg:grid-cols-3">
         <Panel
           className="lg:col-span-2"
-          title="Priority incidents"
-          description="Active incidents in the order of NETRA's prioritisation engine, each with the engine's stated reason."
+          title="Active incidents"
+          description="Incidents being handled now, highest priority first."
           actions={<Link to={ROUTES.incidents} className="text-[12px] font-medium text-primary hover:underline">All incidents</Link>}
           flush
         >
@@ -158,7 +163,7 @@ function LiveTracking() {
             </>
           ) : (
             <>
-              <AttentionList items={incidentItems.slice(0, LIST_LIMIT)} showDetail />
+              <AttentionList items={incidentItems.slice(0, LIST_LIMIT)} />
               <ListNotes
                 notes={[
                   incidentItems.length > LIST_LIMIT && `Showing ${LIST_LIMIT} of ${formatNumber(incidentItems.length)} active incidents`,
@@ -170,15 +175,22 @@ function LiveTracking() {
           )}
         </Panel>
 
-        <Panel title="Active incidents by severity" description="Severity as stored on each active incident.">
-          {incidents.error ? (
-            <p className="text-[13px] text-muted-foreground">Unavailable while active incidents cannot be loaded.</p>
-          ) : !incidents.data ? (
-            <LoadingState count={2} label="Loading severity…" />
-          ) : prioritized.length === 0 ? (
-            <p className="text-[13px] text-muted-foreground">No active incidents.</p>
+        <Panel
+          title="Incoming event severity"
+          description={
+            incoming.length > 0
+              ? `Severity of the latest ${formatNumber(incoming.length)} live ${incoming.length === 1 ? 'event' : 'events'} received by the collector.`
+              : 'Severity of the latest live events received by the collector.'
+          }
+        >
+          {collector.error ? (
+            <p className="text-[13px] text-muted-foreground">Unavailable while the collector status cannot be loaded.</p>
+          ) : !collector.data ? (
+            <LoadingState count={2} label="Loading incoming events…" />
+          ) : incoming.length === 0 ? (
+            <p className="text-[13px] text-muted-foreground">No live events received yet.</p>
           ) : (
-            <SeverityBreakdown mix={mix} label="Active incidents by severity" />
+            <SeverityBreakdown mix={severityMix(incoming)} label="Incoming event severity" />
           )}
         </Panel>
       </div>
@@ -247,8 +259,6 @@ function LiveTracking() {
           )}
         </Panel>
       </div>
-
-      {collector.data && <ImportedSeparation collector={collector.data} />}
     </PageContainer>
   )
 }
@@ -274,25 +284,12 @@ function FeedNotice({ neverReceived, note }: { neverReceived: boolean; note: str
 }
 
 /** Imported dataset events are reported apart from live activity and never counted in it. */
-function ImportedSeparation({ collector }: { collector: CollectorStatus }) {
-  const latest = collector.recentImportedEvents[0]
+function ImportedNote({ total }: { total: number }) {
   return (
-    <SurfaceCard className="flex flex-col gap-3 sm:flex-row sm:items-center">
-      <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-muted text-muted-foreground" aria-hidden>
-        <Database className="size-4" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[14px] font-semibold text-foreground">Imported dataset events · {formatNumber(collector.importedEventsTotal)}</p>
-        <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-          {collector.importedEventsTotal > 0
-            ? `Rows stored from uploaded datasets are historical records, not live monitoring, and are not counted anywhere on this page${latest ? `. The newest row is timestamped ${formatDateTime(latest.timestamp)} UTC` : ''}.`
-            : 'No dataset rows are stored. Uploaded datasets are kept apart from live activity and are never counted here.'}
-        </p>
-      </div>
-      <Link to={ROUTES.securityWorkspace} className="shrink-0 text-[13px] font-medium text-primary hover:underline">
-        Review in Security Workspace
-      </Link>
-    </SurfaceCard>
+    <>
+      {formatNumber(total)} events from uploaded datasets are stored separately: they are not live monitoring and are not counted on this page.{' '}
+      <Link to={ROUTES.securityWorkspace} className="text-primary hover:underline">Review in Security Workspace</Link>
+    </>
   )
 }
 
@@ -346,7 +343,7 @@ function statusItems(
 function LiveTrackingUnavailable() {
   return (
     <PageContainer>
-      <PageHeader icon={RadioTower} eyebrow="Command Home" title="Live Tracking" description={DESCRIPTION} />
+      <PageHeader icon={RadioTower} eyebrow="Monitoring" title="Live Tracking" description={DESCRIPTION} />
       <Panel title="Live status">
         <EmptyState
           icon={ServerOff}
