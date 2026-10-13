@@ -10,10 +10,24 @@ test('offers exactly the two workspaces, each pointing at an existing route', ()
   assert.deepEqual(
     WORKSPACES.map((w) => [w.name, w.summary, w.to]),
     [
-      ['Live Tracking', 'Monitor security activity.', ROUTES.collector],
-      ['Security Workspace', 'Investigate and assess threats.', ROUTES.dashboard],
+      ['Live Tracking', 'Monitor security activity.', ROUTES.liveTracking],
+      ['Security Workspace', 'Investigate and assess threats.', ROUTES.securityWorkspace],
     ],
   )
+})
+
+test('workspace landing pages are protected routes inside the app shell; existing pages stay routed', () => {
+  const router = source('../src/router.tsx')
+  const start = router.indexOf('<RequireAuth><AppLayout /></RequireAuth>')
+  assert.ok(start > 0)
+  const shell = router.slice(start)
+  assert.match(shell, /path: ROUTES\.liveTracking,\s+lazy: page\(\(\) => import\('@\/pages\/LiveTrackingPage'\)/)
+  assert.match(shell, /path: ROUTES\.securityWorkspace,\s+lazy: page\(\(\) => import\('@\/pages\/SecurityWorkspacePage'\)/)
+  for (const route of ['collector', 'dashboard', 'events', 'incidents', 'imports', 'assessments', 'threatIntelligence', 'assets', 'cyberMemory', 'settings']) {
+    assert.match(shell, new RegExp(`path: ROUTES\\.${route},`), `${route} route missing`)
+  }
+  assert.equal(ROUTES.liveTracking, '/live')
+  assert.equal(ROUTES.securityWorkspace, '/workspace')
 })
 
 test('keeps the agreed heading and quote', () => {

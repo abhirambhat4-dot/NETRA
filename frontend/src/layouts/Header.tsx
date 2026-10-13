@@ -14,12 +14,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useNow } from '@/hooks/useNow'
+import { useHealthPoll } from '@/hooks/useHealthPoll'
 import { useQuery } from '@/hooks/useQuery'
 import { timeAgo } from '@/lib/format'
 import { ROUTES, isRouteHandle } from '@/lib/navigation'
 import { severityTone, toneStyles } from '@/lib/tones'
 import { cn } from '@/lib/utils'
-import { dashboardService, incidentQueueService } from '@/services'
+import { HEALTH_CHIP_PENDING, componentListChip, liveHealthChip } from '@/lib/workspaceStatus'
+import { incidentQueueService } from '@/services'
 import { USE_MOCKS } from '@/services/http'
 
 const ACTIVE_STATES = new Set(['DETECTED', 'UNDERSTOOD', 'PRIORITISED', 'VERIFIED', 'AUTHORIZED'])
@@ -32,8 +34,10 @@ export function Header({ onOpenNav }: { onOpenNav: () => void }) {
   const now = useNow()
   const alertsQuery = useQuery('header-alerts', () => incidentQueueService.list({ state: 'ACTIVE', sort: 'risk' }))
   const incidents = alertsQuery.data
-  const { data: systemHealth } = useQuery('header-health', dashboardService.getSystemHealth)
-  const health = systemHealth?.length ? systemHealth.every((component) => component.status === 'HEALTHY') : null
+  const healthReading = useHealthPoll()
+  const health = !healthReading
+    ? HEALTH_CHIP_PENDING
+    : healthReading.mode === 'demo' ? componentListChip(healthReading.components) : liveHealthChip(healthReading.checks)
   const alerts = (incidents ?? [])
     .filter((i) => ACTIVE_STATES.has(i.lifecycle))
     .filter((i) => i.severity === 'CRITICAL' || i.severity === 'HIGH')
@@ -81,10 +85,10 @@ export function Header({ onOpenNav }: { onOpenNav: () => void }) {
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="hidden items-center gap-2 rounded-full border border-border bg-card px-2.5 py-1 sm:flex" title={health === null ? 'System health is not available from the current API' : USE_MOCKS ? 'Demo health data' : 'Health reported by the API'}>
-          <StatusDot tone={health === null ? 'neutral' : health ? 'low' : 'medium'} pulse={health === false} size="sm" />
+        <div className="hidden items-center gap-2 rounded-full border border-border bg-card px-2.5 py-1 sm:flex" title={health.tooltip}>
+          <StatusDot tone={health.tone} pulse={health.pulse} size="sm" />
           <span className="text-xs font-medium text-muted-foreground max-lg:sr-only">
-            {health === null ? 'Health unavailable' : USE_MOCKS ? `Demo health ${health ? 'operational' : 'degraded'}` : health ? 'Operational' : 'Degraded'}
+            {health.label}
           </span>
         </div>
 

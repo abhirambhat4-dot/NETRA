@@ -261,6 +261,22 @@ export interface BackendIncidentPage {
   pageSize: number
 }
 
+/**
+ * GET /incidents/prioritized item: every active incident, ordered by the backend prioritisation
+ * engine (risk score with unscored last, severity, asset criticality, event count, updated time).
+ */
+export interface BackendPrioritizedIncident {
+  incidentId: string
+  state: string
+  riskScore: number | null
+  severity: Severity
+  assetCriticality: string | null
+  eventCount: number
+  updatedAt: string
+  priorityRank: number
+  priorityReason: string
+}
+
 export interface BackendIncidentAsset extends BackendEventAssetReference {
   assetKey: string
   assetType: string

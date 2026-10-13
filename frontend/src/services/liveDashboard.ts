@@ -8,7 +8,18 @@ import type {
   SystemComponentHealth,
   TrendRange,
 } from '@/api/types'
-import { http } from './http'
+import type { HealthOutcome } from '@/lib/workspaceStatus'
+import { HttpError, http } from './http'
+
+/** A health request's outcome, without judging it: the body whenever the API answered. */
+async function healthOutcome(path: string): Promise<HealthOutcome> {
+  try {
+    return { responded: true, ok: true, status: 200, body: await http.get<unknown>(path) }
+  } catch (error) {
+    if (error instanceof HttpError) return { responded: true, ok: false, status: error.status, body: error.body }
+    return { responded: false }
+  }
+}
 
 interface BackendDashboardStats {
   totalSecurityEvents: number
@@ -75,6 +86,11 @@ export const liveDashboardService = {
       { name: 'API', status: 'HEALTHY' },
       { name: 'Database', status: database },
     ]
+  },
+  /** Raw /health and /health/db outcomes, each kept separate; see lib/workspaceStatus.ts for how they are read. */
+  getHealthChecks: async (): Promise<{ api: HealthOutcome; database: HealthOutcome }> => {
+    const [api, database] = await Promise.all([healthOutcome('/health'), healthOutcome('/health/db')])
+    return { api, database }
   },
   getRiskTrend: async (_range: TrendRange): Promise<RiskTrendPoint[]> => [],
 }

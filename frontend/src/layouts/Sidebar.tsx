@@ -1,8 +1,10 @@
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { NetraLogo, NetraMark, StatusDot } from '@/components/netra'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useHealthPoll } from '@/hooks/useHealthPoll'
 import { useQuery } from '@/hooks/useQuery'
-import { NAV_GROUPS, ROUTES, type NavItem } from '@/lib/navigation'
+import { ROUTES, navGroupsForPath, type NavItem } from '@/lib/navigation'
+import { HEALTH_PENDING, componentListSummary, liveHealthSummary } from '@/lib/workspaceStatus'
 import { cn } from '@/lib/utils'
 import { dashboardService } from '@/services'
 
@@ -17,11 +19,13 @@ interface SidebarProps {
 
 export function Sidebar({ mode = 'responsive', onNavigate }: SidebarProps) {
   const expanded = mode === 'expanded'
+  const { pathname } = useLocation()
   const full = expanded ? '' : 'hidden lg:block'
   const { data: stats } = useQuery('sidebar-stats', dashboardService.getStats)
-  const { data: systemHealth } = useQuery('sidebar-health', dashboardService.getSystemHealth)
-  const healthy = systemHealth?.length ? systemHealth.every((c) => c.status === 'HEALTHY') : null
-  const healthyCount = systemHealth?.filter((c) => c.status === 'HEALTHY').length ?? 0
+  const healthReading = useHealthPoll()
+  const health = !healthReading
+    ? HEALTH_PENDING
+    : healthReading.mode === 'demo' ? componentListSummary(healthReading.components) : liveHealthSummary(healthReading.checks)
 
   return (
     <div className="flex h-full flex-col bg-sidebar">
@@ -39,7 +43,7 @@ export function Sidebar({ mode = 'responsive', onNavigate }: SidebarProps) {
       </div>
 
       <nav className="flex-1 space-y-6 overflow-y-auto px-2.5 pt-3 pb-4" aria-label="Main">
-        {NAV_GROUPS.map((group) => (
+        {navGroupsForPath(pathname).map((group) => (
           <div key={group.label}>
             <div className={cn('mb-1.5 px-3 text-[11px] font-semibold tracking-[0.08em] text-muted-foreground/80 uppercase', full)}>
               {group.label}
@@ -64,15 +68,15 @@ export function Sidebar({ mode = 'responsive', onNavigate }: SidebarProps) {
       <div className="shrink-0 border-t border-sidebar-border p-3">
         <div
           className={cn('flex items-center gap-2.5 rounded-lg px-2.5 py-2', !expanded && 'max-lg:justify-center max-lg:px-0')}
-          title={healthy === null ? 'System health is not available from the current API' : `${healthyCount} of ${systemHealth?.length} components healthy`}
+          title={health.tooltip}
         >
-          <StatusDot tone={healthy === null ? 'neutral' : healthy ? 'low' : 'medium'} pulse={healthy === false} />
+          <StatusDot tone={health.tone} pulse={health.pulse} />
           <div className={cn('min-w-0 flex-1 leading-tight', full)}>
             <div className="text-[12px] font-medium text-foreground">
-              {healthy === null ? 'Status unavailable' : healthy ? 'All systems operational' : 'Degraded service'}
+              {health.title}
             </div>
             <div className="text-[11px] text-muted-foreground">
-              {systemHealth?.length ? `${healthyCount}/${systemHealth.length} components healthy` : 'No health report'}
+              {health.detail}
             </div>
           </div>
         </div>

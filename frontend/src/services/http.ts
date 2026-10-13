@@ -24,11 +24,14 @@ function buildUrl(path: string, query?: Query) {
 
 export class HttpError extends Error {
   readonly status: number
+  /** The parsed JSON error body, or null when it was not JSON. */
+  readonly body: unknown
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, body: unknown = null) {
     super(message)
     this.name = 'HttpError'
     this.status = status
+    this.body = body
   }
 }
 
@@ -91,7 +94,7 @@ async function request<T>(method: string, path: string, opts: { query?: Query; b
       window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
     }
     const err = (await res.json().catch(() => null)) as { detail?: unknown } | null
-    throw new HttpError(errorMessage(err?.detail) ?? `Request failed (${res.status})`, res.status)
+    throw new HttpError(errorMessage(err?.detail) ?? `Request failed (${res.status})`, res.status, err)
   }
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>

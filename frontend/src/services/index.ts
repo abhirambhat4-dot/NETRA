@@ -30,6 +30,7 @@ import type {
   BackendIncidentDecisionResponse,
   BackendIncidentPage,
   BackendIncidentResponse,
+  BackendPrioritizedIncident,
   ContainmentAction,
   CyberMemoryEntry,
   DashboardStats,
@@ -58,6 +59,7 @@ import type {
   TrendRange,
 } from '@/api/types'
 import { verifyIncidentPath } from '@/lib/incidentVerification'
+import type { HealthOutcome } from '@/lib/workspaceStatus'
 import { mockApi } from '@/mocks/api'
 import { DEMO_OTP } from '@/mocks/db'
 import { USE_MOCKS, http } from './http'
@@ -363,6 +365,9 @@ export const dashboardService = {
     USE_MOCKS ? mockApi.getSystemHealth() : liveDashboardService.getSystemHealth(),
   getDatabaseHealth: (): Promise<BackendDatabaseHealthResponse | null> =>
     USE_MOCKS ? Promise.resolve(null) : liveDashboardService.getDatabaseHealth(),
+  /** Live only: the API and database health responses, unjudged and independent of each other. */
+  getHealthChecks: (): Promise<{ api: HealthOutcome; database: HealthOutcome }> =>
+    USE_MOCKS ? Promise.reject(new Error('Health checks require the NETRA API.')) : liveDashboardService.getHealthChecks(),
 }
 
 export const incidentService = {
@@ -549,6 +554,18 @@ export const incidentQueueService = {
   /** Command Center variant: unknown lifecycle states are counted, not fatal. */
   listTolerant: async (filters?: IncidentQueueFilters): Promise<TolerantIncidentList> =>
     USE_MOCKS ? { items: await listMockIncidents(filters), unsupported: 0 } : listLiveIncidentsTolerant(filters),
+  /**
+   * Live only: the backend prioritisation order (GET /incidents/prioritized) plus the active incidents
+   * it ranks, whose titles and keys the ordering endpoint does not return. Mock data has no such engine.
+   */
+  listPrioritized: async (): Promise<{ prioritized: BackendPrioritizedIncident[]; incidents: IncidentQueueItem[] }> => {
+    if (USE_MOCKS) throw new Error('Incident prioritisation requires the NETRA API.')
+    const [prioritized, active] = await Promise.all([
+      http.get<BackendPrioritizedIncident[]>('/incidents/prioritized'),
+      listLiveIncidentsTolerant({ state: 'ACTIVE' }),
+    ])
+    return { prioritized, incidents: active.items }
+  },
 }
 
 export const eventService = {

@@ -778,8 +778,8 @@ html:has(.netra-landing) body {
 
 /* ==========================================================================
    Login page (pages/LoginPage.tsx, pages/login/LoginEvidenceTrail.tsx)
-   Light tokens come from .netra-auth above. Register and password-recovery
-   pages keep the dark theme and the shared CyberBackdrop / cb-* rules.
+   Light tokens come from .netra-auth above; the register and password-recovery
+   pages use the same scope with the shared CyberBackdrop / cb-* rules.
    Everything plays once; base styles are the final state.
    ========================================================================== */
 
@@ -787,6 +787,13 @@ html:has(.netra-auth),
 html:has(.netra-auth) body {
     color-scheme: light;
     background: #FFFFFF;
+}
+
+/* Status colours for the light auth pages: the login page's message colours (at least 4.5:1 on white
+   and on their /10 tints), replacing the dark theme's bright values these pages would otherwise inherit. */
+.netra-auth {
+    --success: #065F46;
+    --sev-critical: #991B1B;
 }
 
 .netra-auth ::selection {
@@ -966,11 +973,11 @@ html:has(.netra-auth) body {
 
 /* ==========================================================================
    Authenticated application — light theme
-   (layouts/AppLayout.tsx, pages/BriefingPage.tsx via layouts/useAppTheme.ts)
+   (layouts/AppLayout.tsx, pages/BriefingPage.tsx, pages/CommandHomePage.tsx
+   via layouts/useAppTheme.ts)
    useAppTheme swaps <html class="dark"> for .netra-app-theme while the
    signed-in app is mounted. Tokens live on <html>, so portalled sheets,
-   dialogs, menus, tooltips and toasts follow the same theme. Register and
-   password-recovery pages keep the dark :root tokens above.
+   dialogs, menus, tooltips and toasts follow the same theme.
    ========================================================================== */
 
 html.netra-app-theme {
@@ -1139,7 +1146,7 @@ html.netra-app-theme .ng-spotlight {
 
 /* ==========================================================================
    Command Home (pages/CommandHomePage.tsx, pages/home/CommandHomeBackdrop.tsx)
-   Dark theme. The backdrop loops slowly behind the content; the entrance plays
+   Light app theme. The backdrop loops slowly behind the content; the entrance plays
    once and base styles are the final state. Reduced motion stops all of it.
    ========================================================================== */
 
@@ -1178,7 +1185,7 @@ html.netra-app-theme .ng-spotlight {
     top: 0;
     height: 22vh;
     opacity: 0;
-    background: linear-gradient(180deg, transparent, rgba(56, 217, 255, 0.03) 75%, rgba(56, 217, 255, 0.06));
+    background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--tech-cyan) 3%, transparent) 75%, color-mix(in srgb, var(--tech-cyan) 6%, transparent));
     mask-image: linear-gradient(90deg, transparent, black 20%, black 80%, transparent);
     animation: ch-scan 12s cubic-bezier(0.45, 0, 0.55, 1) 1.2s infinite;
 }
@@ -1188,20 +1195,18 @@ html.netra-app-theme .ng-spotlight {
     inset-inline: 0;
     bottom: 0;
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(56, 217, 255, 0.4), transparent);
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--tech-cyan) 40%, transparent), transparent);
 }
 
-/* Workspace cards: glassy dark surface, accent hairline, lift and glow on hover/focus. */
+/* Workspace cards: light app card surface, accent hairline, lift and glow on hover/focus. */
 .ch-workspace {
     --ch-accent: var(--tech-cyan);
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    border: 1px solid rgba(120, 160, 210, 0.16);
-    background: linear-gradient(180deg, rgba(18, 28, 44, 0.8), rgba(8, 13, 22, 0.88));
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.05),
-        0 30px 60px -40px rgba(0, 0, 0, 0.9);
+    border: 1px solid var(--border);
+    background: var(--card);
+    box-shadow: var(--panel-shadow-lift);
     backdrop-filter: blur(10px);
     transition:
         transform 300ms cubic-bezier(0.22, 1, 0.36, 1),

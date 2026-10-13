@@ -202,7 +202,7 @@ export function CyberBackdrop() {
               const y = N[a.at][1] + a.dy
               return (
                 <g key={a.text} className="cb-alert" style={{ animationDelay: `${a.delay}s` }}>
-                  <rect x={x} y={y - 12} width={a.text.length * 6.6 + 22} height={18} rx={4} fill="rgb(9 12 17 / 0.8)" stroke={a.color} strokeOpacity={0.45} />
+                  <rect x={x} y={y - 12} width={a.text.length * 6.6 + 22} height={18} rx={4} fill="var(--background)" fillOpacity={0.85} stroke={a.color} strokeOpacity={0.45} />
                   <circle cx={x + 9} cy={y - 3} r={2.5} fill={a.color} />
                   <text x={x + 17} y={y + 0.5} fill={a.color} fillOpacity={0.9}>
                     {a.text}
@@ -221,7 +221,7 @@ export function CyberBackdrop() {
       </svg>
 
       {/* Vignette */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_75%_70%_at_50%_50%,transparent_55%,rgb(3_4_7/0.85)_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_75%_70%_at_50%_50%,transparent_55%,var(--background)_100%)]" />
     </div>
   )
 }

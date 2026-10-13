@@ -52,6 +52,16 @@ export const router = createBrowserRouter([
     hydrateFallbackElement: <div className="min-h-svh bg-background" />,
     children: [
       {
+        path: ROUTES.liveTracking,
+        lazy: page(() => import('@/pages/LiveTrackingPage'), 'LiveTrackingPage'),
+        handle: handle({ crumb: 'Live Tracking' }),
+      },
+      {
+        path: ROUTES.securityWorkspace,
+        lazy: page(() => import('@/pages/SecurityWorkspacePage'), 'SecurityWorkspacePage'),
+        handle: handle({ crumb: 'Security Workspace' }),
+      },
+      {
         path: ROUTES.dashboard,
         lazy: page(() => import('@/pages/CommandCenterPage'), 'CommandCenterPage'),
         handle: handle({ crumb: 'Command Center' }),
