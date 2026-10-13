@@ -27,7 +27,9 @@ import {
   incidentAttention,
   isDemoAsset,
   isDemoIncident,
+  responseQueue,
   severityMix,
+  type ResponseStep,
 } from '@/lib/attention'
 import { formatDateTime, formatNumber, timeAgo } from '@/lib/format'
 import { ROUTES } from '@/lib/navigation'
@@ -49,7 +51,7 @@ import { assessmentService, assetInventoryService, importService, incidentQueueS
 import { USE_MOCKS } from '@/services/http'
 import { AttentionList, CapabilityCard, ListNotes, PanelError, StatusRow, type StatusItem } from './workspaces/shared'
 
-const DESCRIPTION = 'Ingest datasets, investigate evidence-backed incidents, and assess assets, with every figure traceable to its record.'
+const DESCRIPTION = 'Investigate prioritised incidents, move them through authorization and simulated containment, and review assessment findings and Cyber Memory.'
 const ALL_DATASETS = 'ALL'
 /** Rows per dashboard list; each list links to its full page. */
 const LIST_LIMIT = 5
@@ -97,126 +99,136 @@ function SecurityWorkspace() {
     : []
   const imported = imports.data ? importScope(imports.data) : undefined
 
+  const findingsPanel = (
+    <Panel
+      title="Priority assessment findings"
+      description="Assessment findings only: failed, then warning checks from each asset's latest assessment, in the assessment's own severity and point-deduction order. Incidents and threat intelligence are reviewed in their own sections."
+      flush
+    >
+      {summaries.error ? (
+        <PanelError error={summaries.error} title="Assessments unavailable" onRetry={summaries.reload} />
+      ) : !scope ? (
+        <LoadingState className="px-5 pt-1" count={ATTENTION_LIMIT} label="Loading assessments…" />
+      ) : scope.latest.length === 0 ? (
+        <EmptyState
+          icon={ClipboardCheck}
+          title="No assessments yet."
+          description="Run a security assessment on an asset to see its failed and warning checks here."
+          action={<Button asChild variant="outline" size="sm"><Link to={ROUTES.assessments}>Open Security Assessment</Link></Button>}
+        />
+      ) : scope.review.length === 0 ? (
+        <EmptyState
+          icon={CircleCheck}
+          title="No failed or warning checks."
+          description={scope.olderNotLoaded > 0
+            ? `None in the newest ${formatNumber(ASSESSMENT_PAGE_SIZE)} assessments; ${formatNumber(scope.olderNotLoaded)} older ones were not read.`
+            : "The latest assessment of each assessed asset has no failed or warning checks."}
+        />
+      ) : details.error ? (
+        <PanelError error={details.error} title="Assessment findings unavailable" onRetry={details.reload} />
+      ) : !findings ? (
+        <LoadingState className="px-5 pt-1" count={ATTENTION_LIMIT} label="Loading assessment findings…" />
+      ) : findings.failed === scope.review.length ? (
+        <ErrorState
+          title="Assessment findings unavailable"
+          message={findings.error?.message}
+          onRetry={details.reload}
+        />
+      ) : (
+        <>
+          <AttentionList items={findings.findings.slice(0, ATTENTION_LIMIT)} />
+          <FindingsScope scope={scope} shown={Math.min(ATTENTION_LIMIT, findings.findings.length)} failed={findings.failed} onRetry={details.reload} />
+        </>
+      )}
+    </Panel>
+  )
+
+  const datasetIssuesPanel = (
+    <Panel
+      title="Dataset import issues"
+      description="Validation and asset-coverage issues in your uploads. Imported rows are stored as INFO; labels in a file are not NETRA detections."
+      actions={
+        batches.length > 0 && (
+          <SelectFilter<string>
+            label="Dataset"
+            value={selected ? selected.id : ALL_DATASETS}
+            onChange={setDataset}
+            options={[
+              { value: ALL_DATASETS, label: 'All datasets' },
+              ...batches.map((batch) => ({ value: batch.id, label: `${batch.originalFilename} · ${formatDateTime(batch.createdAt)}` })),
+            ]}
+            className="max-w-64"
+          />
+        )
+      }
+      flush
+    >
+      {imports.error ? (
+        <PanelError error={imports.error} title="Dataset imports unavailable" onRetry={imports.reload} />
+      ) : !imports.data || !imported ? (
+        <LoadingState className="px-5 pt-1" count={ATTENTION_LIMIT} label="Loading dataset imports…" />
+      ) : batches.length === 0 ? (
+        <EmptyState
+          icon={FileUp}
+          title="No datasets imported yet."
+          description="Upload a dataset to check its validation and asset coverage here."
+          action={<Button asChild variant="outline" size="sm"><Link to={ROUTES.imports}>Open Dataset Import</Link></Button>}
+        />
+      ) : selected && detail.error ? (
+        <PanelError error={detail.error} title="Dataset details unavailable" onRetry={detail.reload} />
+      ) : selected && !selectedDetail ? (
+        <LoadingState className="px-5 pt-1" count={ATTENTION_LIMIT} label="Loading dataset details…" />
+      ) : datasetIssues.length === 0 ? (
+        <>
+          <EmptyState
+            icon={CircleCheck}
+            title={selected ? 'No issues in this dataset.' : 'No import issues found.'}
+            description={
+              selected
+                ? 'No rejected rows, and no stored events without a linked asset.'
+                : imported.notChecked > 0
+                  ? `No rejected uploads or rejected rows in your ${formatNumber(imported.loaded)} most recent imports. Select a dataset to also check its asset coverage.`
+                  : 'No rejected uploads or rejected rows in your imports. Select a dataset to also check its asset coverage.'
+            }
+          />
+          {!selected && <ImportWindowNote notChecked={imported.notChecked} loaded={imported.loaded} />}
+        </>
+      ) : (
+        <>
+          <AttentionList items={datasetIssues.slice(0, ATTENTION_LIMIT)} />
+          <ScopeNotes
+            notes={[
+              moreLabel(Math.min(ATTENTION_LIMIT, datasetIssues.length), datasetIssues.length, ['issue', 'issues']),
+              !selected && 'Select a dataset to also check which of its events are linked to an asset.',
+            ]}
+          />
+          {!selected && <ImportWindowNote notChecked={imported.notChecked} loaded={imported.loaded} />}
+        </>
+      )}
+    </Panel>
+  )
+
   return (
     <PageContainer>
-      <PageHeader icon={Briefcase} eyebrow="Command Home" title="Security Workspace" description={DESCRIPTION} />
+      <PageHeader icon={Briefcase} eyebrow="Investigation" title="Security Workspace" description={DESCRIPTION} />
 
-      <StatusRow
-        label="Workspace status"
-        items={statusItems(imports.data, imports.error, scope, summaries.error)}
-        footer={scope && scope.olderNotLoaded > 0
-          ? `+ Assessment counts cover only the newest ${formatNumber(ASSESSMENT_PAGE_SIZE)} of ${formatNumber(scope.total)} assessments; ${formatNumber(scope.olderNotLoaded)} older ones were not read.`
-          : undefined}
+      <WorkspaceOverview
+        imports={imports}
+        scope={scope}
+        summariesError={summaries.error}
+        reloadSummaries={summaries.reload}
+        findingsPanel={findingsPanel}
+        datasetIssuesPanel={datasetIssuesPanel}
+        importStatus={
+          <StatusRow
+            label="Dataset and assessment coverage"
+            items={statusItems(imports.data, imports.error, scope, summaries.error)}
+            footer={scope && scope.olderNotLoaded > 0
+              ? `+ Assessment counts cover only the newest ${formatNumber(ASSESSMENT_PAGE_SIZE)} of ${formatNumber(scope.total)} assessments; ${formatNumber(scope.olderNotLoaded)} older ones were not read.`
+              : undefined}
+          />
+        }
       />
-
-      <WorkspaceOverview imports={imports} scope={scope} summariesError={summaries.error} reloadSummaries={summaries.reload}>
-        <div className="grid items-start gap-4 xl:grid-cols-2">
-          <Panel
-            title="Priority assessment findings"
-            description="Assessment findings only: failed, then warning checks from each asset's latest assessment, in the assessment's own severity and point-deduction order. Incidents and threat intelligence are reviewed in their own sections."
-            flush
-          >
-            {summaries.error ? (
-              <PanelError error={summaries.error} title="Assessments unavailable" onRetry={summaries.reload} />
-            ) : !scope ? (
-              <LoadingState className="px-5 pt-1" count={ATTENTION_LIMIT} label="Loading assessments…" />
-            ) : scope.latest.length === 0 ? (
-              <EmptyState
-                icon={ClipboardCheck}
-                title="No assessments yet."
-                description="Run a security assessment on an asset to see its failed and warning checks here."
-                action={<Button asChild variant="outline" size="sm"><Link to={ROUTES.assessments}>Open Security Assessment</Link></Button>}
-              />
-            ) : scope.review.length === 0 ? (
-              <EmptyState
-                icon={CircleCheck}
-                title="No failed or warning checks."
-                description={scope.olderNotLoaded > 0
-                  ? `None in the newest ${formatNumber(ASSESSMENT_PAGE_SIZE)} assessments; ${formatNumber(scope.olderNotLoaded)} older ones were not read.`
-                  : "The latest assessment of each assessed asset has no failed or warning checks."}
-              />
-            ) : details.error ? (
-              <PanelError error={details.error} title="Assessment findings unavailable" onRetry={details.reload} />
-            ) : !findings ? (
-              <LoadingState className="px-5 pt-1" count={ATTENTION_LIMIT} label="Loading assessment findings…" />
-            ) : findings.failed === scope.review.length ? (
-              <ErrorState
-                title="Assessment findings unavailable"
-                message={findings.error?.message}
-                onRetry={details.reload}
-              />
-            ) : (
-              <>
-                <AttentionList items={findings.findings.slice(0, ATTENTION_LIMIT)} />
-                <FindingsScope scope={scope} shown={Math.min(ATTENTION_LIMIT, findings.findings.length)} failed={findings.failed} onRetry={details.reload} />
-              </>
-            )}
-          </Panel>
-
-          <Panel
-            title="Dataset import issues"
-            description="Validation and asset-coverage issues in your uploads. Imported rows are stored as INFO; labels in a file are not NETRA detections."
-            actions={
-              batches.length > 0 && (
-                <SelectFilter<string>
-                  label="Dataset"
-                  value={selected ? selected.id : ALL_DATASETS}
-                  onChange={setDataset}
-                  options={[
-                    { value: ALL_DATASETS, label: 'All datasets' },
-                    ...batches.map((batch) => ({ value: batch.id, label: `${batch.originalFilename} · ${formatDateTime(batch.createdAt)}` })),
-                  ]}
-                  className="max-w-64"
-                />
-              )
-            }
-            flush
-          >
-            {imports.error ? (
-              <PanelError error={imports.error} title="Dataset imports unavailable" onRetry={imports.reload} />
-            ) : !imports.data || !imported ? (
-              <LoadingState className="px-5 pt-1" count={ATTENTION_LIMIT} label="Loading dataset imports…" />
-            ) : batches.length === 0 ? (
-              <EmptyState
-                icon={FileUp}
-                title="No datasets imported yet."
-                description="Upload a dataset to check its validation and asset coverage here."
-                action={<Button asChild variant="outline" size="sm"><Link to={ROUTES.imports}>Open Dataset Import</Link></Button>}
-              />
-            ) : selected && detail.error ? (
-              <PanelError error={detail.error} title="Dataset details unavailable" onRetry={detail.reload} />
-            ) : selected && !selectedDetail ? (
-              <LoadingState className="px-5 pt-1" count={ATTENTION_LIMIT} label="Loading dataset details…" />
-            ) : datasetIssues.length === 0 ? (
-              <>
-                <EmptyState
-                  icon={CircleCheck}
-                  title={selected ? 'No issues in this dataset.' : 'No import issues found.'}
-                  description={
-                    selected
-                      ? 'No rejected rows, and no stored events without a linked asset.'
-                      : imported.notChecked > 0
-                        ? `No rejected uploads or rejected rows in your ${formatNumber(imported.loaded)} most recent imports. Select a dataset to also check its asset coverage.`
-                        : 'No rejected uploads or rejected rows in your imports. Select a dataset to also check its asset coverage.'
-                  }
-                />
-                {!selected && <ImportWindowNote notChecked={imported.notChecked} loaded={imported.loaded} />}
-              </>
-            ) : (
-              <>
-                <AttentionList items={datasetIssues.slice(0, ATTENTION_LIMIT)} />
-                <ScopeNotes
-                  notes={[
-                    moreLabel(Math.min(ATTENTION_LIMIT, datasetIssues.length), datasetIssues.length, ['issue', 'issues']),
-                    !selected && 'Select a dataset to also check which of its events are linked to an asset.',
-                  ]}
-                />
-                {!selected && <ImportWindowNote notChecked={imported.notChecked} loaded={imported.loaded} />}
-              </>
-            )}
-          </Panel>
-        </div>
-      </WorkspaceOverview>
     </PageContainer>
   )
 }
@@ -247,14 +259,19 @@ function WorkspaceOverview({
   scope,
   summariesError,
   reloadSummaries,
-  children,
+  findingsPanel,
+  datasetIssuesPanel,
+  importStatus,
 }: {
   imports: Query<BackendImportBatchPage>
   scope: AssessmentScope | undefined
   summariesError: Error | undefined
   reloadSummaries: () => void
-  /** The prioritised findings and import issues, placed right after the capability summaries. */
-  children: React.ReactNode
+  /** Assessment findings, placed with the investigation panels. */
+  findingsPanel: React.ReactNode
+  /** Import issues and the import status strip, placed in the lower ingestion section. */
+  datasetIssuesPanel: React.ReactNode
+  importStatus: React.ReactNode
 }) {
   const incidents = useQuery('workspace-incidents', () => incidentQueueService.listTolerant({ state: 'ALL' }))
   const prioritizedQuery = useQuery('workspace-prioritized-incidents', incidentQueueService.listPrioritized)
@@ -276,6 +293,14 @@ function WorkspaceOverview({
   const activeMix = severityMix(prioritized)
   const scoredActive = prioritized.flatMap((entry) => (entry.riskScore === null ? [] : [entry.riskScore]))
   const rationale = prioritizedQuery.data ? incidentAttention(prioritized, prioritizedQuery.data.incidents) : []
+  // Grouped from every genuine incident: CONTAINED is not an active state, so the active list would miss it.
+  const queue = responseQueue(genuine, LIST_LIMIT)
+  const waiting = (step: ResponseStep) => queue.find((group) => group.step === step)?.total ?? 0
+  const investigationItems = investigationStatusItems({
+    activeIncidents: prioritizedQuery.error ? 'error' : prioritizedQuery.data ? prioritized.length : undefined,
+    queue: incidents.error ? 'error' : incidents.data ? { authorize: waiting('authorize'), contain: waiting('contain'), record: waiting('record') } : undefined,
+    findings: summariesError ? 'error' : scope ? { total: scope.checkTotal, truncated: scope.olderNotLoaded > 0 } : undefined,
+  })
 
   const ingestion = ingestionSummary(imports.data?.items ?? [])
   const importsTruncated = Boolean(imports.data && imports.data.total > imports.data.items.length)
@@ -286,126 +311,53 @@ function WorkspaceOverview({
 
   return (
     <>
-      <section aria-labelledby="workspace-capabilities" className="space-y-3">
-        <SectionHeader
-          title={<span id="workspace-capabilities">Capabilities</span>}
-          description="What NETRA currently records for each stage, with its stated limits. Every figure comes from stored records."
-        />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <CapabilityCard
-            index={1}
-            icon={FileUp}
-            title="Security Data Ingestion"
-            body={cardState([imports], 'Imports')}
-            facts={[
-              { label: 'Imports', value: formatNumber(imports.data?.total ?? 0) },
-              { label: 'Rows accepted', value: `${formatNumber(ingestion.acceptedRows)}${importsTruncated ? '+' : ''}` },
-              { label: 'Rows rejected', value: `${formatNumber(ingestion.rejectedRows)}${importsTruncated ? '+' : ''}`, tone: ingestion.rejectedRows > 0 ? 'medium' : undefined },
-              { label: 'Duplicates skipped', value: `${formatNumber(ingestion.duplicateRows)}${importsTruncated ? '+' : ''}` },
-            ]}
-            note={
-              <>
-                Files are previewed, field-mapped and validated before storage; duplicate rows are skipped and every batch keeps its file hash and rejection reasons.
-                {importsTruncated && ` Row totals cover your newest ${formatNumber(imports.data?.items.length ?? 0)} imports.`}
-              </>
-            }
-            links={[{ label: 'Dataset Import', to: ROUTES.imports }]}
-          />
-          <CapabilityCard
-            index={2}
-            icon={GitMerge}
-            title="Detection & Evidence Correlation"
-            body={cardState([incidents], 'Incidents')}
-            facts={[
-              { label: 'Incidents', value: formatNumber(detection.incidents) },
-              { label: 'With correlated events', value: formatNumber(detection.withEvidence) },
-              { label: 'Top detection source', value: topSource ? `${eventSourceMeta(topSource.source).short} · ${formatNumber(topSource.count)}` : 'None' },
-              { label: 'Unsupported state', value: formatNumber(incidents.data?.unsupported ?? 0) },
-            ]}
-            note={
-              <>
-                Incidents come from NETRA detection sources and event correlation. Labels inside imported datasets are kept as data and are never counted as detections.
-                {incidentDemoNote && ` ${incidentDemoNote}.`}
-              </>
-            }
-            links={[{ label: 'Incidents', to: ROUTES.incidents }, { label: 'Security Events', to: ROUTES.events }]}
-          />
-          <CapabilityCard
-            index={3}
-            icon={Gauge}
-            title="Explainable Risk Assessment"
-            body={cardState([incidents, prioritizedQuery], 'Risk data')}
-            facts={[
-              { label: 'Incidents risk-scored', value: `${formatNumber(response.scored)} of ${formatNumber(detection.incidents)}` },
-              { label: 'Highest active risk', value: scoredActive.length ? Math.round(Math.max(...scoredActive)) : 'Not scored' },
-              { label: 'Active critical', value: formatNumber(activeMix.CRITICAL), tone: activeMix.CRITICAL > 0 ? 'critical' : undefined },
-              { label: 'Active high', value: formatNumber(activeMix.HIGH), tone: activeMix.HIGH > 0 ? 'high' : undefined },
-            ]}
-            note="Scores and severities come from NETRA's risk engine, which returns its factors, reasons and missing evidence for each incident. Unscored incidents are shown as not calculated, never estimated."
-            links={[{ label: 'Incidents', to: ROUTES.incidents }]}
-          />
-          <CapabilityCard
-            index={4}
-            icon={ShieldCheck}
-            title="Decision & Controlled Response"
-            body={cardState([incidents], 'Response data')}
-            facts={[
-              { label: 'Decisions recorded', value: formatNumber(response.decisions) },
-              { label: 'Verified', value: formatNumber(response.stages.VERIFIED) },
-              { label: 'Authorized', value: formatNumber(response.stages.AUTHORIZED) },
-              { label: 'Contained', value: formatNumber(response.stages.CONTAINED) },
-            ]}
-            note="Recommendations need verification and human authorization before any response. Containment is simulated: no firewall, host or account is changed."
-            links={[{ label: 'Incidents', to: ROUTES.incidents }]}
-          />
-          <CapabilityCard
-            index={5}
-            icon={BrainCircuit}
-            title="Cyber Memory & Learning"
-            body={cardState([memory, incidents], 'Cyber Memory')}
-            facts={[
-              { label: 'Lessons recorded', value: formatNumber(lessons.entries) },
-              { label: 'Rated effective', value: formatNumber(lessons.effective) },
-              { label: 'Incidents learned', value: formatNumber(response.stages.LEARNED) },
-              { label: 'Latest lesson', value: lessons.latest[0] ? timeAgo(lessons.latest[0].recordedAt) : 'None' },
-            ]}
-            note={
-              <>
-                A lesson is recorded once a simulated containment is verified, and can be searched in Cyber Memory. Lessons are not fed back into detection, risk or decisions: NETRA does not learn autonomously.
-                {lessons.demo > 0 && ` ${lessons.demo} demo ${lessons.demo === 1 ? 'entry' : 'entries'} excluded.`}
-              </>
-            }
-            links={[{ label: 'Cyber Memory', to: ROUTES.cyberMemory }]}
-          />
-          <CapabilityCard
-            index={6}
-            icon={ClipboardCheck}
-            title="Security Assessment"
-            body={cardState([assets, indicators, assessments], 'Assessment data')}
-            facts={[
-              { label: 'Assets', value: formatNumber(inventory.assets) },
-              { label: 'Assets assessed', value: scope ? countWithWindow(scope.latest.length, scope.olderNotLoaded > 0) : '—' },
-              { label: 'Recorded vulnerabilities', value: formatNumber(inventory.vulnerabilities) },
-              { label: 'Active threat indicators', value: formatNumber(inventory.activeIndicators) },
-            ]}
-            note={
-              <>
-                Each assessment is a per-asset snapshot of stored evidence; every finding names its check, evidence and recommendation. Assessments are not linked to a specific dataset.
-                {demoAssets > 0 && ` ${formatNumber(demoAssets)} demo ${demoAssets === 1 ? 'asset' : 'assets'} excluded.`}
-              </>
-            }
-            links={[
-              { label: 'Security Assessment', to: ROUTES.assessments },
-              { label: 'Assets', to: ROUTES.assets },
-              { label: 'Threat Intelligence', to: ROUTES.threatIntelligence },
-            ]}
-          />
-        </div>
-      </section>
-
-      {children}
+      <StatusRow label="Investigation status" items={investigationItems} />
 
       <div className="grid items-start gap-4 xl:grid-cols-2">
+        <Panel
+          title="Response queue"
+          description="Incidents waiting for their next response step, highest stored risk first. Each opens the incident to continue its workflow."
+          actions={<Link to={ROUTES.incidents} className="text-[12px] font-medium text-primary hover:underline">All incidents</Link>}
+          flush
+        >
+          {incidents.error ? (
+            <PanelError error={incidents.error} title="Response queue unavailable" onRetry={incidents.reload} />
+          ) : !incidents.data ? (
+            <LoadingState className="px-5 pt-1" count={3} label="Loading response queue…" />
+          ) : queue.every((group) => group.total === 0) ? (
+            <>
+              <EmptyState
+                icon={CircleCheck}
+                title="Nothing waiting for a response step."
+                description="Incidents appear here once they are verified, authorized, or contained and not yet recorded in Cyber Memory."
+              />
+              <ListNotes centered notes={[incidentDemoNote]} />
+            </>
+          ) : (
+            <>
+              {queue.map((group) => (
+                <section key={group.step} aria-label={group.title} className="border-t border-border first:border-t-0">
+                  <h3 className="flex items-center justify-between px-5 pt-3 pb-2 text-[12px] font-semibold text-foreground">
+                    {group.title}
+                    <span className="font-mono text-[11px] font-medium text-muted-foreground tabular-nums">{formatNumber(group.total)}</span>
+                  </h3>
+                  {group.items.length > 0 ? (
+                    <>
+                      <AttentionList items={group.items} />
+                      {group.total > group.items.length && (
+                        <p className="px-5 pt-1 pb-2 text-[12px] text-muted-foreground">Showing {group.items.length} of {formatNumber(group.total)}.</p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="px-5 pb-3 text-[12px] text-muted-foreground">None waiting.</p>
+                  )}
+                </section>
+              ))}
+              <ListNotes notes={[incidentDemoNote]} />
+            </>
+          )}
+        </Panel>
+
         <Panel
           title="Risk and priority rationale"
           description="Active incidents in NETRA's priority order, with the risk factors and the engine's own reason for each position."
@@ -430,29 +382,11 @@ function WorkspaceOverview({
             </>
           )}
         </Panel>
-
-        <Panel
-          title="Recent imports"
-          description="Your latest dataset batches with their validation outcome and what was stored."
-          actions={<Link to={ROUTES.imports} className="text-[12px] font-medium text-primary hover:underline">Dataset Import</Link>}
-          flush
-        >
-          {imports.error ? (
-            <PanelError error={imports.error} title="Dataset imports unavailable" onRetry={imports.reload} />
-          ) : !imports.data ? (
-            <LoadingState className="px-5 pt-1" count={3} label="Loading imports…" />
-          ) : imports.data.items.length === 0 ? (
-            <EmptyState icon={FileUp} title="No datasets imported yet." description="Imported batches, their row counts and rejection reasons appear here." />
-          ) : (
-            <>
-              <RecentImports batches={imports.data.items.slice(0, LIST_LIMIT)} />
-              <ListNotes notes={[moreLabel(Math.min(LIST_LIMIT, imports.data.items.length), imports.data.total, ['import', 'imports'])]} />
-            </>
-          )}
-        </Panel>
       </div>
 
       <div className="grid items-start gap-4 xl:grid-cols-2">
+        {findingsPanel}
+
         <Panel
           title="Recent lessons"
           description="The newest Cyber Memory entries, each from a verified, simulated containment."
@@ -483,6 +417,155 @@ function WorkspaceOverview({
             </ul>
           )}
         </Panel>
+      </div>
+
+      <section aria-labelledby="workspace-capabilities" className="space-y-3">
+        <SectionHeader
+          title={<span id="workspace-capabilities">Capabilities</span>}
+          description="What NETRA records for each stage of investigation and response, with its stated limits. Every figure comes from stored records."
+        />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <CapabilityCard
+            index={1}
+            icon={GitMerge}
+            title="Detection & Evidence Correlation"
+            body={cardState([incidents], 'Incidents')}
+            facts={[
+              { label: 'Incidents', value: formatNumber(detection.incidents) },
+              { label: 'With correlated events', value: formatNumber(detection.withEvidence) },
+              { label: 'Top detection source', value: topSource ? `${eventSourceMeta(topSource.source).short} · ${formatNumber(topSource.count)}` : 'None' },
+              { label: 'Unsupported state', value: formatNumber(incidents.data?.unsupported ?? 0) },
+            ]}
+            note={
+              <>
+                Incidents come from NETRA detection sources and event correlation. Labels inside imported datasets are kept as data and are never counted as detections.
+                {incidentDemoNote && ` ${incidentDemoNote}.`}
+              </>
+            }
+            links={[{ label: 'Incidents', to: ROUTES.incidents }, { label: 'Security Events', to: ROUTES.events }]}
+          />
+          <CapabilityCard
+            index={2}
+            icon={Gauge}
+            title="Explainable Risk Assessment"
+            body={cardState([incidents, prioritizedQuery], 'Risk data')}
+            facts={[
+              { label: 'Incidents risk-scored', value: `${formatNumber(response.scored)} of ${formatNumber(detection.incidents)}` },
+              { label: 'Highest active risk', value: scoredActive.length ? Math.round(Math.max(...scoredActive)) : 'Not scored' },
+              { label: 'Active critical', value: formatNumber(activeMix.CRITICAL), tone: activeMix.CRITICAL > 0 ? 'critical' : undefined },
+              { label: 'Active high', value: formatNumber(activeMix.HIGH), tone: activeMix.HIGH > 0 ? 'high' : undefined },
+            ]}
+            note="Scores and severities come from NETRA's risk engine, which returns its factors, reasons and missing evidence for each incident. Unscored incidents are shown as not calculated, never estimated."
+            links={[{ label: 'Incidents', to: ROUTES.incidents }]}
+          />
+          <CapabilityCard
+            index={3}
+            icon={ShieldCheck}
+            title="Decision & Controlled Response"
+            body={cardState([incidents], 'Response data')}
+            facts={[
+              { label: 'Decisions recorded', value: formatNumber(response.decisions) },
+              { label: 'Verified', value: formatNumber(response.stages.VERIFIED) },
+              { label: 'Authorized', value: formatNumber(response.stages.AUTHORIZED) },
+              { label: 'Contained', value: formatNumber(response.stages.CONTAINED) },
+            ]}
+            note="Recommendations need verification and human authorization before any response. Containment is simulated: no firewall, host or account is changed."
+            links={[{ label: 'Incidents', to: ROUTES.incidents }]}
+          />
+          <CapabilityCard
+            index={4}
+            icon={BrainCircuit}
+            title="Cyber Memory & Learning"
+            body={cardState([memory, incidents], 'Cyber Memory')}
+            facts={[
+              { label: 'Lessons recorded', value: formatNumber(lessons.entries) },
+              { label: 'Rated effective', value: formatNumber(lessons.effective) },
+              { label: 'Incidents learned', value: formatNumber(response.stages.LEARNED) },
+              { label: 'Latest lesson', value: lessons.latest[0] ? timeAgo(lessons.latest[0].recordedAt) : 'None' },
+            ]}
+            note={
+              <>
+                A lesson is recorded once a simulated containment is verified, and can be searched in Cyber Memory. Lessons are not fed back into detection, risk or decisions: NETRA does not learn autonomously.
+                {lessons.demo > 0 && ` ${lessons.demo} demo ${lessons.demo === 1 ? 'entry' : 'entries'} excluded.`}
+              </>
+            }
+            links={[{ label: 'Cyber Memory', to: ROUTES.cyberMemory }]}
+          />
+          <CapabilityCard
+            index={5}
+            icon={ClipboardCheck}
+            title="Security Assessment"
+            body={cardState([assets, indicators, assessments], 'Assessment data')}
+            facts={[
+              { label: 'Assets', value: formatNumber(inventory.assets) },
+              { label: 'Assets assessed', value: scope ? countWithWindow(scope.latest.length, scope.olderNotLoaded > 0) : '—' },
+              { label: 'Recorded vulnerabilities', value: formatNumber(inventory.vulnerabilities) },
+              { label: 'Active threat indicators', value: formatNumber(inventory.activeIndicators) },
+            ]}
+            note={
+              <>
+                Each assessment is a per-asset snapshot of stored evidence; every finding names its check, evidence and recommendation. Assessments are not linked to a specific dataset.
+                {demoAssets > 0 && ` ${formatNumber(demoAssets)} demo ${demoAssets === 1 ? 'asset' : 'assets'} excluded.`}
+              </>
+            }
+            links={[
+              { label: 'Security Assessment', to: ROUTES.assessments },
+              { label: 'Assets', to: ROUTES.assets },
+              { label: 'Threat Intelligence', to: ROUTES.threatIntelligence },
+            ]}
+          />
+          <CapabilityCard
+            index={6}
+            icon={FileUp}
+            title="Security Data Ingestion"
+            body={cardState([imports], 'Imports')}
+            facts={[
+              { label: 'Imports', value: formatNumber(imports.data?.total ?? 0) },
+              { label: 'Rows accepted', value: `${formatNumber(ingestion.acceptedRows)}${importsTruncated ? '+' : ''}` },
+              { label: 'Rows rejected', value: `${formatNumber(ingestion.rejectedRows)}${importsTruncated ? '+' : ''}`, tone: ingestion.rejectedRows > 0 ? 'medium' : undefined },
+              { label: 'Duplicates skipped', value: `${formatNumber(ingestion.duplicateRows)}${importsTruncated ? '+' : ''}` },
+            ]}
+            note={
+              <>
+                Files are previewed, field-mapped and validated before storage; duplicate rows are skipped and every batch keeps its file hash and rejection reasons.
+                {importsTruncated && ` Row totals cover your newest ${formatNumber(imports.data?.items.length ?? 0)} imports.`}
+              </>
+            }
+            links={[{ label: 'Dataset Import', to: ROUTES.imports }]}
+          />
+        </div>
+      </section>
+
+      <section aria-labelledby="workspace-ingestion" className="space-y-3">
+        <SectionHeader
+          title={<span id="workspace-ingestion">Data ingestion</span>}
+          description="Uploaded datasets: validation, stored rows and asset coverage. Imported rows are records, not detections."
+        />
+        {importStatus}
+        <div className="grid items-start gap-4 xl:grid-cols-2">
+          {datasetIssuesPanel}
+
+          <Panel
+            title="Recent imports"
+            description="Your latest dataset batches with their validation outcome and what was stored."
+            actions={<Link to={ROUTES.imports} className="text-[12px] font-medium text-primary hover:underline">Dataset Import</Link>}
+            flush
+          >
+            {imports.error ? (
+              <PanelError error={imports.error} title="Dataset imports unavailable" onRetry={imports.reload} />
+            ) : !imports.data ? (
+              <LoadingState className="px-5 pt-1" count={3} label="Loading imports…" />
+            ) : imports.data.items.length === 0 ? (
+              <EmptyState icon={FileUp} title="No datasets imported yet." description="Imported batches, their row counts and rejection reasons appear here." />
+            ) : (
+              <>
+                <RecentImports batches={imports.data.items.slice(0, LIST_LIMIT)} />
+                <ListNotes notes={[moreLabel(Math.min(LIST_LIMIT, imports.data.items.length), imports.data.total, ['import', 'imports'])]} />
+              </>
+            )}
+          </Panel>
+        </div>
+      </section>
 
         <Panel title="Known limits" description="What this workspace does not do yet, so its figures are read correctly.">
           <ul className="space-y-2.5 text-[13px] leading-relaxed text-muted-foreground">
@@ -494,7 +577,6 @@ function WorkspaceOverview({
             ))}
           </ul>
         </Panel>
-      </div>
     </>
   )
 }
@@ -586,6 +668,37 @@ function ImportWindowNote({ notChecked, loaded }: { notChecked: number; loaded: 
   )
 }
 
+/** First status strip: investigation and response work. `'error'` = its source failed; undefined = still loading. */
+function investigationStatusItems({
+  activeIncidents,
+  queue,
+  findings,
+}: {
+  activeIncidents: number | 'error' | undefined
+  queue: Record<ResponseStep, number> | 'error' | undefined
+  findings: { total: number; truncated: boolean } | 'error' | undefined
+}): StatusItem[] {
+  const value = <T,>(source: T | 'error' | undefined, read: (data: T) => string) =>
+    source === 'error' ? 'Unavailable' : source === undefined ? '—' : read(source)
+  const step = (key: ResponseStep, label: string, hint: string): StatusItem => ({
+    label,
+    value: value(queue, (counts) => formatNumber(counts[key])),
+    tone: queue && queue !== 'error' ? (queue[key] > 0 ? 'medium' : 'low') : undefined,
+    hint,
+  })
+  return [
+    { label: 'Active incidents', value: value(activeIncidents, formatNumber), hint: 'Incidents not yet contained; demo records excluded' },
+    step('authorize', 'Awaiting authorization', 'Verified incidents that need an approved authorization'),
+    step('contain', 'Awaiting containment', 'Authorized incidents whose simulated containment is not yet verified'),
+    step('record', 'Awaiting Cyber Memory', 'Contained incidents not yet recorded as a lesson'),
+    {
+      label: 'Open assessment findings',
+      value: value(findings, (found) => countWithWindow(found.total, found.truncated)),
+      hint: "Failed or warning checks in each asset's latest assessment",
+    },
+  ]
+}
+
 function statusItems(
   imports: BackendImportBatchPage | undefined,
   importsError: Error | undefined,
@@ -624,7 +737,7 @@ function statusItems(
 function SecurityWorkspaceUnavailable() {
   return (
     <PageContainer>
-      <PageHeader icon={Briefcase} eyebrow="Command Home" title="Security Workspace" description={DESCRIPTION} />
+      <PageHeader icon={Briefcase} eyebrow="Investigation" title="Security Workspace" description={DESCRIPTION} />
       <Panel title="Workspace status">
         <EmptyState
           icon={ServerOff}

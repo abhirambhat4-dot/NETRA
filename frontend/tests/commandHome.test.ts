@@ -43,9 +43,9 @@ test('Command Home is a protected route outside the app shell', () => {
 })
 
 test('signed-in users land on Command Home; the public landing page stays public', () => {
-  // The guard and LoginPage must agree, or the guard's redirect wins the race and skips the briefing.
-  assert.match(source('../src/auth/RouteGuards.tsx'), /isAuthenticated\) return <Navigate to=\{hasCompletedBriefing\(\) \? ROUTES\.commandHome : ROUTES\.briefing\} replace \/>/)
-  assert.match(source('../src/pages/LoginPage.tsx'), /hasCompletedBriefing\(\) \? ROUTES\.commandHome : ROUTES\.briefing/)
+  // The guard and LoginPage must agree, or the guard's redirect wins the race (tests/postLoginRedirect.test.ts).
+  assert.match(source('../src/auth/RouteGuards.tsx'), /isAuthenticated\) return <Navigate to=\{postLoginPath\(location\.state\)\} replace \/>/)
+  assert.match(source('../src/pages/LoginPage.tsx'), /navigate\(postLoginPath\(location\.state\), \{ replace: true \}\)/)
   assert.match(source('../src/router.tsx'), /path: ROUTES\.home, element: <RedirectAuthenticated><PublicLandingPage \/><\/RedirectAuthenticated>/)
 })
 
