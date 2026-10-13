@@ -25,6 +25,6 @@ export interface Workspace {
 }
 
 export const WORKSPACES = [
-  { id: 'live-tracking', name: 'Live Tracking', summary: 'Monitor security activity.', to: '/collector' },
-  { id: 'security-workspace', name: 'Security Workspace', summary: 'Investigate and assess threats.', to: '/dashboard' },
+  { id: 'live-tracking', name: 'Live Tracking', summary: 'Monitor security activity.', to: '/live' },
+  { id: 'security-workspace', name: 'Security Workspace', summary: 'Investigate and assess threats.', to: '/workspace' },
 ] as const satisfies readonly Workspace[]

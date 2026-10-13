@@ -68,7 +68,7 @@ export function ForgotPasswordPage() {
             {error && <p role="alert" className="rounded-md border border-critical/30 bg-critical/10 px-3 py-2 text-xs text-critical">{error}</p>}
             <div className="space-y-1.5">
               <Label htmlFor="forgot-email" className="text-xs text-foreground/85">Email</Label>
-              <Input id="forgot-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-10 bg-black/25" placeholder="name@organization.com" required />
+              <Input id="forgot-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-10 bg-card dark:bg-card" placeholder="name@organization.com" required />
             </div>
             <Button type="submit" size="lg" disabled={submitting} className="mt-1 h-11 w-full text-[13px] font-semibold tracking-[0.14em] shadow-[0_10px_28px_-10px] shadow-primary/70">
               {submitting ? <><Loader2 className="animate-spin" /> SENDING RESET LINK</> : <>SEND RESET LINK <ArrowRight /></>}

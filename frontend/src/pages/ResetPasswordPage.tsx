@@ -114,11 +114,11 @@ export function ResetPasswordPage() {
         {error && <p role="alert" className="rounded-md border border-critical/30 bg-critical/10 px-3 py-2 text-xs text-critical">{error}</p>}
         <div className="space-y-1.5">
           <Label htmlFor="new-password" className="text-xs text-foreground/85">New Password</Label>
-          <Input id="new-password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} className="h-10 bg-black/25" maxLength={PASSWORD_MAX_LENGTH} required />
+          <Input id="new-password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} className="h-10 bg-card dark:bg-card" maxLength={PASSWORD_MAX_LENGTH} required />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="confirm-new-password" className="text-xs text-foreground/85">Confirm Password</Label>
-          <Input id="confirm-new-password" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="h-10 bg-black/25" maxLength={PASSWORD_MAX_LENGTH} required />
+          <Input id="confirm-new-password" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="h-10 bg-card dark:bg-card" maxLength={PASSWORD_MAX_LENGTH} required />
         </div>
         <ul aria-label="Password requirements" className="space-y-1 text-[11px]">
           <Requirement met={lengthOk}>{PASSWORD_MIN_LENGTH}–{PASSWORD_MAX_LENGTH} characters</Requirement>

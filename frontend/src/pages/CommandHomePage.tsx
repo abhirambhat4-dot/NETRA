@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react'
 import { ArrowRight, RadioTower, ScanSearch } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { NetraMark } from '@/components/netra'
+import { useAppTheme } from '@/layouts/useAppTheme'
 import { CommandHomeBackdrop } from './home/CommandHomeBackdrop'
 import { COMMAND_HOME, WORKSPACES, type WorkspaceId } from './home/content'
 
@@ -20,10 +21,11 @@ const delay = (ms: number) => ({ '--ch-delay': `${ms}ms` }) as React.CSSProperti
 
 /**
  * Signed-in home: pick a workspace. Navigation only — the cards link to existing
- * routes and change no session or permission state. Stays on the dark theme
- * (no useAppTheme) and outside the app shell, like the briefing.
+ * routes and change no session or permission state. Outside the app shell but on
+ * its light theme (useAppTheme), like the briefing.
  */
 export function CommandHomePage() {
+  useAppTheme()
   return (
     <div className="relative isolate flex min-h-svh flex-col overflow-x-hidden bg-background text-foreground">
       <CommandHomeBackdrop />

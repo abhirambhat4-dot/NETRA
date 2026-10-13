@@ -21,6 +21,8 @@ export const ROUTES = {
   resetPassword: '/reset-password',
   briefing: '/briefing',
   commandHome: '/home',
+  liveTracking: '/live',
+  securityWorkspace: '/workspace',
   dashboard: '/dashboard',
   events: '/events',
   incidents: '/incidents',
@@ -80,6 +82,25 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [{ label: 'Settings', to: ROUTES.settings, icon: Settings }],
   },
 ]
+
+/**
+ * Intake items hidden on a workspace landing page: Live Tracking is about live collection, Security
+ * Workspace about uploaded datasets, so each hides the other's intake. Routes stay registered.
+ */
+const CONTEXT_HIDDEN: Readonly<Record<string, readonly string[]>> = {
+  [ROUTES.liveTracking]: [ROUTES.imports],
+  [ROUTES.securityWorkspace]: [ROUTES.collector],
+}
+
+/** Sidebar groups for the current path; every route other than /live and /workspace gets NAV_GROUPS unchanged. */
+export function navGroupsForPath(pathname: string): NavGroup[] {
+  const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+  const hidden = CONTEXT_HIDDEN[path]
+  if (!hidden) return NAV_GROUPS
+  return NAV_GROUPS
+    .map((group) => ({ ...group, items: group.items.filter((item) => !hidden.includes(item.to)) }))
+    .filter((group) => group.items.length > 0)
+}
 
 /** Attached to routes via `handle`; the header builds the breadcrumb from it. */
 export interface RouteHandle {

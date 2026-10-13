@@ -6,8 +6,8 @@ const APP_THEME = 'netra-app-theme'
  * Switches the document to the light authenticated-app theme while the
  * calling component is mounted. Applied to <html> (not a wrapper) so portalled
  * sheets, dialogs, menus and toasts pick up the same tokens; `dark` is removed
- * so shadcn `dark:` variants stay off. Restored on unmount, which keeps the
- * public register and password-recovery pages on their dark theme.
+ * so shadcn `dark:` variants stay off. Restored on unmount, so public pages
+ * keep their own scoped themes.
  */
 export function useAppTheme() {
   useLayoutEffect(() => {
