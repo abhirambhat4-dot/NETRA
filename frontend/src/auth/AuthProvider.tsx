@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { authService, type AuthUser, type RegisterRequest } from '@/services/auth'
 import { AUTH_EXPIRED_EVENT, clearAuthToken, getAuthToken, saveAuthToken } from '@/services/http'
+import { shouldDiscardStoredSession } from './sessionRestore'
 
 interface AuthContextValue {
   user: AuthUser | null
@@ -38,8 +39,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((currentUser) => {
         if (active) setUser(currentUser)
       })
-      .catch(() => {
-        clearAuthToken()
+      .catch((error: unknown) => {
+        // Only a rejected session (401) is discarded; an unreachable or failing API keeps the stored
+        // token so the next load can restore it. Either way this load is not signed in.
+        if (shouldDiscardStoredSession(error)) clearAuthToken()
         if (active) {
           setToken(null)
           setUser(null)
