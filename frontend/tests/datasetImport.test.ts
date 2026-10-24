@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import type { BackendImportBatchSummary, BackendImportPreview } from '../src/api/types.ts'
 import {
   CONFIDENCE_META,
   IMPORT_PROFILES,
+  MAX_ROWS,
   MAX_UPLOAD_BYTES,
   buildImportFormData,
   buildPreviewFormData,
@@ -57,6 +59,29 @@ test('file precheck accepts .csv within the limit and explains anything else', (
   const oversized = checkSelectedFile({ name: 'Friday-DDos.csv', size: 96_101_069 }) ?? ''
   assert.match(oversized, /91\.6 MiB/)
   assert.match(oversized, /25\.0 MiB/)
+})
+
+test('upload size boundary: exactly the limit passes, one byte more is rejected', () => {
+  assert.equal(MAX_UPLOAD_BYTES, 26_214_400)
+  assert.equal(checkSelectedFile({ name: 'extract.csv', size: MAX_UPLOAD_BYTES }), null)
+  assert.match(checkSelectedFile({ name: 'extract.csv', size: MAX_UPLOAD_BYTES + 1 }) ?? '', /upload limit is 25\.0 MiB/)
+})
+
+test('the prepared 14-row CIC-IDS2017 extract (7,752 bytes) is within the upload limit', () => {
+  const extractBytes = 7_752
+  assert.equal(checkSelectedFile({ name: 'netra_cic_ids2017_friday_ddos_extract.csv', size: extractBytes }), null)
+  // A 4,096-byte cap (a local .env.e2e override once) would wrongly reject it; the intended limit is 25 MiB.
+  assert.ok(MAX_UPLOAD_BYTES >= extractBytes * 1024, 'the limit leaves ample room above the prepared extract')
+})
+
+test('the frontend upload limit matches the backend default and the documented example configuration', () => {
+  const config = readFileSync(new URL('../../backend/app/core/config.py', import.meta.url), 'utf8')
+  assert.match(config, /import_max_upload_bytes: int = Field\(default=25 \* 1024 \* 1024,/)
+  assert.match(config, /import_max_rows: int = Field\(default=100_000,/)
+  const example = readFileSync(new URL('../../backend/.env.example', import.meta.url), 'utf8')
+  assert.match(example, /^IMPORT_MAX_UPLOAD_BYTES=26214400$/m)
+  assert.match(example, /^IMPORT_MAX_ROWS=100000$/m)
+  assert.equal(MAX_ROWS, 100_000)
 })
 
 test('formatBytes uses binary units', () => {
