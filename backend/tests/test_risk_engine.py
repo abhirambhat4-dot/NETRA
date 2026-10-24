@@ -546,6 +546,64 @@ SNAPSHOT_CASES: dict[str, Callable[[], IncidentContextBundle]] = {
 SEVERITY_BOUNDARY_SCORES = (0.0, 24.99, 25.0, 49.99, 50.0, 74.99, 75.0, 100.0)
 # END RISK-V1 SNAPSHOT CASES
 
+# Cross-source cases: the same indicator reported by several sources, or by one source in several records.
+# Their scores, levels and every factor except the threat-intelligence evidence text are pinned to the
+# engine's output before evidence grouping (commit d88d659), stored in the snapshot as "groupingBaseline".
+# BEGIN GROUPING CASES
+def _grouping_match(index: int, value: str, indicator_type: str, confidence: float | None, severity: str, source: str) -> ThreatMatchContext:
+    return ThreatMatchContext(
+        id=UUID(int=400 + index),
+        value=value,
+        indicator_type=indicator_type,
+        confidence=confidence,
+        severity=severity,
+        source=source,
+        is_active=True,
+        matched_event_ids=[UUID(int=100)],
+    )
+
+
+def _grouping_bundle(*matches: ThreatMatchContext) -> IncidentContextBundle:
+    return _snapshot_bundle(
+        _snapshot_asset("HIGH"),
+        [_snapshot_event(0, "ssh_bruteforce", "SURICATA", 0.6, "SSH brute force")],
+        [_snapshot_vulnerability(0, 7.5)],
+        matches,
+    )
+
+
+GROUPING_CASES: dict[str, Callable[[], IncidentContextBundle]] = {
+    # One indicator from three sources, one of them without a confidence value.
+    "three_sources_one_ip": lambda: _grouping_bundle(
+        _grouping_match(0, SNAPSHOT_IP, "IP", 0.6, "CRITICAL", "NETRA Demo Feed"),
+        _grouping_match(1, SNAPSHOT_IP, "IP", None, "HIGH", "OSINT Feed"),
+        _grouping_match(2, SNAPSHOT_IP, "IP", 0.8, "MEDIUM", "ThreatFox (abuse.ch)"),
+    ),
+    # Matching is case-insensitive but the unique key is not: one source can hold two rows for one domain.
+    "duplicate_domain_records": lambda: _grouping_bundle(
+        _grouping_match(0, "Evil.Example", "DOMAIN", 0.5, "LOW", "Feed A"),
+        _grouping_match(1, "evil.example", "DOMAIN", 0.9, "HIGH", "Feed A"),
+        _grouping_match(2, "evil.example", "DOMAIN", 0.4, "MEDIUM", "Feed B"),
+    ),
+    # Two spellings of one IPv6 address from one source.
+    "non_canonical_ipv6_records": lambda: _grouping_bundle(
+        _grouping_match(0, "2001:DB8::10", "IP", 0.7, "HIGH", "Feed A"),
+        _grouping_match(1, "2001:db8:0::10", "IP", 0.7, "HIGH", "Feed A"),
+    ),
+    # A grouped indicator next to an indicator reported once: the single one keeps its existing line.
+    "grouped_and_single_indicators": lambda: _grouping_bundle(
+        _grouping_match(0, SNAPSHOT_IP, "IP", 0.9, "HIGH", "Feed A"),
+        _grouping_match(1, SNAPSHOT_IP, "IP", 0.5, "LOW", "Feed B"),
+        _grouping_match(2, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "HASH", 0.95, "CRITICAL", "Feed C"),
+    ),
+    # Different indicators, one source each: nothing to group, so the explanation is unchanged.
+    "two_indicators_one_source_each": lambda: _grouping_bundle(
+        _grouping_match(0, "198.51.100.77", "IP", 0.8, "HIGH", "Feed A"),
+        _grouping_match(1, "203.0.113.9", "IP", 0.6, "MEDIUM", "Feed B"),
+    ),
+}
+# END GROUPING CASES
+
 SNAPSHOT_PATH = Path(__file__).with_name("risk_engine_v1_snapshots.json")
 # Headline figures of the snapshot, captured from the pre-refactor engine (see risk_engine_v1_snapshots.json).
 SNAPSHOT_HEADLINES = {
@@ -560,6 +618,63 @@ SNAPSHOT_HEADLINES = {
 
 def _snapshot() -> dict:
     return json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+
+
+def _id(n: int) -> str:
+    return str(UUID(int=n))
+
+
+# The only intended difference from the captured baselines: threat-intelligence evidence for an indicator
+# held in several records is grouped into one entry naming every source and record. Every number is unchanged.
+GROUPED_EVIDENCE = {
+    "high_two_sources_same_indicator": [
+        "IP 198.51.100.77 is reported by 2 sources (NETRA Demo Feed, ThreatFox (abuse.ch)) in 2 active records. "
+        "This indicator is considered once, using its highest report (72/100); additional sources or records add no points.",
+        f"IP 198.51.100.77 from NETRA Demo Feed: 70% confidence (60) + 30% severity (100) = 72/100 (indicator {_id(301)}).",
+        f"IP 198.51.100.77 from ThreatFox (abuse.ch): 70% confidence (80) + 30% severity (50) = 71/100 (indicator {_id(300)}).",
+    ],
+    "three_sources_one_ip": [
+        "IP 198.51.100.77 is reported by 3 sources (NETRA Demo Feed, OSINT Feed, ThreatFox (abuse.ch)) in 3 active records. "
+        "This indicator is considered once, using its highest report (75/100); additional sources or records add no points.",
+        f"IP 198.51.100.77 from OSINT Feed: severity only; confidence unavailable = 75/100 (indicator {_id(401)}).",
+        f"IP 198.51.100.77 from NETRA Demo Feed: 70% confidence (60) + 30% severity (100) = 72/100 (indicator {_id(400)}).",
+        f"IP 198.51.100.77 from ThreatFox (abuse.ch): 70% confidence (80) + 30% severity (50) = 71/100 (indicator {_id(402)}).",
+    ],
+    "duplicate_domain_records": [
+        "DOMAIN evil.example is reported by 2 sources (Feed A, Feed B) in 3 active records. "
+        "This indicator is considered once, using its highest report (85.5/100); additional sources or records add no points.",
+        "DOMAIN evil.example from Feed A: 70% confidence (90) + 30% severity (75) = 85.5/100 "
+        f"(2 records, indicators {_id(400)}, {_id(401)}; highest shown).",
+        f"DOMAIN evil.example from Feed B: 70% confidence (40) + 30% severity (50) = 43/100 (indicator {_id(402)}).",
+    ],
+    "non_canonical_ipv6_records": [
+        "IP 2001:db8::10 is reported by 1 source (Feed A) in 2 active records. "
+        "This indicator is considered once, using its highest report (71.5/100); additional sources or records add no points.",
+        "IP 2001:db8::10 from Feed A: 70% confidence (70) + 30% severity (75) = 71.5/100 "
+        f"(2 records, indicators {_id(400)}, {_id(401)}; highest shown).",
+    ],
+    "grouped_and_single_indicators": [
+        "IP 198.51.100.77 is reported by 2 sources (Feed A, Feed B) in 2 active records. "
+        "This indicator is considered once, using its highest report (85.5/100); additional sources or records add no points.",
+        f"IP 198.51.100.77 from Feed A: 70% confidence (90) + 30% severity (75) = 85.5/100 (indicator {_id(400)}).",
+        f"IP 198.51.100.77 from Feed B: 70% confidence (50) + 30% severity (25) = 42.5/100 (indicator {_id(401)}).",
+        # Reported once: exactly the existing single-line wording.
+        "HASH e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 from Feed C: "
+        "70% confidence (95) + 30% severity (100) = 96.5/100.",
+    ],
+}
+
+
+def _with_grouped_evidence(name: str, baseline: dict) -> dict:
+    expected = json.loads(json.dumps(baseline))
+    if name in GROUPED_EVIDENCE:
+        expected["factors"]["threat_intelligence"]["evidence"] = GROUPED_EVIDENCE[name]
+    return expected
+
+
+def _expected(name: str) -> dict:
+    """The captured risk-v1 output for a snapshot case, with its threat-intelligence evidence grouped."""
+    return _with_grouped_evidence(name, _snapshot()["cases"][name])
 
 
 def _scored_view(scored: "risk_engine.ContextRiskScore") -> dict:
@@ -579,7 +694,7 @@ def test_the_snapshot_covers_every_case() -> None:
 
 @pytest.mark.parametrize("name", sorted(SNAPSHOT_CASES))
 def test_score_context_reproduces_the_risk_v1_snapshot(name: str) -> None:
-    expected = _snapshot()["cases"][name]
+    expected = _expected(name)
     actual = _scored_view(risk_engine.score_context(SNAPSHOT_CASES[name]()))
     assert actual == expected
     assert list(actual["factors"]) == list(expected["factors"])  # reporting order too
@@ -616,7 +731,10 @@ IMPURE_NAMES = frozenset(
         "get_settings", "Settings", "datetime", "date", "time", "now", "utcnow", "today", "random", "uuid4",
     }
 )
-PURE_FUNCTIONS = ("score_context", "_calculate_factors", "_factor", "_bounded", "_attack_context", "_attack_stages", "_risk_severity")
+PURE_FUNCTIONS = (
+    "score_context", "_calculate_factors", "_factor", "_bounded", "_attack_context", "_attack_stages", "_risk_severity",
+    "_threat_evidence", "_indicator_identity",
+)
 
 
 def test_score_context_uses_no_database_request_settings_or_clock_names() -> None:
@@ -639,7 +757,7 @@ def test_score_context_runs_with_database_and_network_access_disabled(monkeypatc
         context = build()
         before = context.model_dump(mode="json")
         first, second = risk_engine.score_context(context), risk_engine.score_context(context)
-        assert _scored_view(first) == _scored_view(second) == _snapshot()["cases"][name]  # deterministic
+        assert _scored_view(first) == _scored_view(second) == _expected(name)  # deterministic
         assert context.model_dump(mode="json") == before  # the input is not modified
 
 
@@ -661,3 +779,140 @@ def test_calculate_incident_risk_delegates_to_score_context(core_api: CoreApi, m
     assert {key: body[key] for key in scored} == scored
     # The API response keeps exactly its existing fields; the methodology version is not added to it.
     assert set(body) == {"incidentId", "riskScore", "severity", "factors", "reasons", "missingEvidence", "stateTransition"}
+
+
+# --- cross-source threat evidence (explanation only) -----------------------------------------------
+
+
+def _without_threat_evidence(view: dict) -> dict:
+    stripped = json.loads(json.dumps(view))
+    stripped["factors"]["threat_intelligence"].pop("evidence")
+    return stripped
+
+
+def test_the_grouping_baseline_covers_every_case() -> None:
+    assert set(_snapshot()["groupingBaseline"]["cases"]) == set(GROUPING_CASES)
+
+
+@pytest.mark.parametrize("name", sorted(GROUPING_CASES))
+def test_grouping_changes_only_the_threat_intelligence_evidence(name: str) -> None:
+    baseline = _snapshot()["groupingBaseline"]["cases"][name]
+    actual = _scored_view(risk_engine.score_context(GROUPING_CASES[name]()))
+    # Score, level, every factor value, weight and contribution, all reasons and missing evidence: unchanged.
+    assert _without_threat_evidence(actual) == _without_threat_evidence(baseline)
+    assert actual == _with_grouped_evidence(name, baseline)
+
+
+@pytest.mark.parametrize(
+    ("cases", "name"),
+    [("snapshot", name) for name in sorted(SNAPSHOT_CASES)] + [("grouping", name) for name in sorted(GROUPING_CASES)],
+)
+def test_risk_scores_and_levels_are_identical_to_before_grouping(cases: str, name: str) -> None:
+    builders = SNAPSHOT_CASES if cases == "snapshot" else GROUPING_CASES
+    baseline = _snapshot()["cases"][name] if cases == "snapshot" else _snapshot()["groupingBaseline"]["cases"][name]
+    scored = risk_engine.score_context(builders[name]())
+    assert (scored.risk_score, scored.severity) == (baseline["riskScore"], baseline["severity"])
+    assert {key: factor.contribution for key, factor in scored.factors.items()} == {
+        key: factor["contribution"] for key, factor in baseline["factors"].items()
+    }
+
+
+def test_an_indicator_reported_by_one_source_keeps_the_existing_explanation() -> None:
+    for name in ("two_indicators_one_source_each",):
+        baseline = _snapshot()["groupingBaseline"]["cases"][name]["factors"]["threat_intelligence"]["evidence"]
+        scored = risk_engine.score_context(GROUPING_CASES[name]())
+        assert scored.factors["threat_intelligence"].evidence == baseline
+    single = risk_engine.score_context(SNAPSHOT_CASES["critical_full_chain_with_unmapped_source"]())
+    assert single.factors["threat_intelligence"].evidence == [
+        "IP 198.51.100.77 from snapshot-feed: 70% confidence (100) + 30% severity (100) = 100/100."
+    ]
+
+
+@pytest.mark.parametrize("name", sorted(GROUPING_CASES))
+def test_every_source_and_grouped_record_is_named(name: str) -> None:
+    context = GROUPING_CASES[name]()
+    evidence = "\n".join(risk_engine.score_context(context).factors["threat_intelligence"].evidence)
+    for match in context.threat_intelligence_matches:
+        assert match.source in evidence
+        grouped = sum(
+            risk_engine._indicator_identity(other) == risk_engine._indicator_identity(match)
+            for other in context.threat_intelligence_matches
+        ) > 1
+        assert (str(match.id) in evidence) is grouped  # grouped records name their IDs; single lines are unchanged
+
+
+def test_duplicate_records_of_one_source_are_listed_once() -> None:
+    evidence = risk_engine.score_context(GROUPING_CASES["duplicate_domain_records"]()).factors["threat_intelligence"].evidence
+    per_source = [line for line in evidence if " from " in line]
+    assert [line.split(" from ")[1].split(":")[0] for line in per_source] == ["Feed A", "Feed B"]
+    # Feed A's lower duplicate (42.5) is not presented as a separate report; its record ID is still listed.
+    assert not any("42.5/100" in line for line in evidence)
+    ipv6 = risk_engine.score_context(GROUPING_CASES["non_canonical_ipv6_records"]()).factors["threat_intelligence"].evidence
+    assert len([line for line in ipv6 if " from Feed A:" in line]) == 1
+
+
+def test_more_sources_for_one_indicator_add_no_points() -> None:
+    reported_three_times = GROUPING_CASES["three_sources_one_ip"]()
+    strongest_alone = reported_three_times.model_copy(
+        update={"threat_intelligence_matches": [m for m in reported_three_times.threat_intelligence_matches if m.source == "OSINT Feed"]}
+    )
+    three, one = risk_engine.score_context(reported_three_times), risk_engine.score_context(strongest_alone)
+    assert three.risk_score == one.risk_score
+    assert three.factors["threat_intelligence"].normalized_value == one.factors["threat_intelligence"].normalized_value == 75
+
+
+def _add_indicator(core_api: CoreApi, value: str, source: str, confidence: float, severity: Severity, *, active: bool) -> None:
+    with core_api.session_factory() as session:
+        session.add(
+            ThreatIndicator(
+                value=value,
+                indicator_type=IndicatorType.IP,
+                source=source,
+                confidence=confidence,
+                severity=severity,
+                is_active=active,
+            )
+        )
+        session.commit()
+
+
+def test_inactive_indicators_stay_excluded_and_active_sources_are_grouped(core_api: CoreApi) -> None:
+    # Active: risk-test-feed (0.8, HIGH = 78.5) and Second Feed (0.5, MEDIUM = 50). Inactive: Retired Feed,
+    # whose 1.0/CRITICAL report (= 100) would raise the factor if it leaked into matching.
+    incident_id = seed_risk_case(core_api, threat_match=(0.8, Severity.HIGH))
+    _add_indicator(core_api, "198.51.100.77", "Second Feed", 0.5, Severity.MEDIUM, active=True)
+    _add_indicator(core_api, "198.51.100.77", "Retired Feed", 1.0, Severity.CRITICAL, active=False)
+
+    response = calculate(core_api, incident_id)
+
+    assert response.status_code == 200
+    factor = response.json()["factors"]["threat_intelligence"]
+    assert factor["normalizedValue"] == 78.5 and factor["contribution"] == 7.85
+    evidence = "\n".join(factor["evidence"])
+    assert "Retired Feed" not in evidence
+    assert factor["evidence"][0].startswith("IP 198.51.100.77 is reported by 2 sources (Second Feed, risk-test-feed) in 2 active records")
+    assert len(factor["evidence"]) == 3
+
+
+def test_grouping_leaves_the_api_score_and_workflow_unchanged(core_api: CoreApi) -> None:
+    single = seed_risk_case(core_api, cvss_scores=[7.1], threat_match=(0.8, Severity.HIGH))
+    # Same evidence; its events share the first incident's source IP, so risk-test-feed's indicator matches it too.
+    reported_twice = seed_risk_case(core_api, cvss_scores=[7.1])
+    single_before = calculate(core_api, single).json()
+    _add_indicator(core_api, "198.51.100.77", "Second Feed", 0.5, Severity.MEDIUM, active=True)
+    grouped = calculate(core_api, reported_twice).json()
+
+    assert grouped["riskScore"] == single_before["riskScore"] and grouped["severity"] == single_before["severity"]
+    assert set(grouped) == set(single_before)
+    for name, factor in grouped["factors"].items():
+        expected = single_before["factors"][name]
+        assert (factor["normalizedValue"], factor["weight"], factor["contribution"], factor["reason"]) == (
+            expected["normalizedValue"], expected["weight"], expected["contribution"], expected["reason"],
+        )
+    assert len(grouped["factors"]["threat_intelligence"]["evidence"]) == 3  # grouped: summary + one line per source
+    assert len(single_before["factors"]["threat_intelligence"]["evidence"]) == 1
+    assert grouped["missingEvidence"] == single_before["missingEvidence"]
+    assert grouped["stateTransition"] == {"fromState": "UNDERSTOOD", "toState": "PRIORITISED", "action": "risk_calculated"}
+    with core_api.session_factory() as session:
+        incident = session.get(Incident, reported_twice)
+        assert incident.state == IncidentState.PRIORITISED and incident.risk_score == grouped["riskScore"]

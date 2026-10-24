@@ -470,5 +470,378 @@
         "No active threat-intelligence match is available; absence is not evidence of benign activity."
       ]
     }
+  },
+  "groupingBaseline": {
+    "capturedFrom": "app/services/risk_engine.py at d88d659 (before evidence grouping), pure computation",
+    "cases": {
+      "three_sources_one_ip": {
+        "riskScore": 66.0,
+        "severity": "HIGH",
+        "factors": {
+          "asset_criticality": {
+            "normalizedValue": 75.0,
+            "weight": 0.25,
+            "contribution": 18.75,
+            "evidence": [
+              "Asset AST-SNAPSHOT criticality is HIGH."
+            ],
+            "reason": "Asset criticality HIGH maps to 75/100; exposure and status are context only in this V1 factor."
+          },
+          "vulnerability": {
+            "normalizedValue": 75.0,
+            "weight": 0.2,
+            "contribution": 15.0,
+            "evidence": [
+              "CVE-2026-20000: CVSS 7.5, severity HIGH, status OPEN."
+            ],
+            "reason": "The highest available CVSS score (7.5) is normalized by multiplying by 10."
+          },
+          "anomaly": {
+            "normalizedValue": 60.0,
+            "weight": 0.2,
+            "contribution": 12.0,
+            "evidence": [
+              "evt-snapshot-0: anomaly score 0.6."
+            ],
+            "reason": "The highest linked-event anomaly score is normalized by multiplying by 100."
+          },
+          "detection": {
+            "normalizedValue": 85.0,
+            "weight": 0.15,
+            "contribution": 12.75,
+            "evidence": [
+              "SURICATA: 85/100 (signature-based network alert; strong signal, not confirmed compromise)."
+            ],
+            "reason": "The highest linked-event source mapping is used as a V1 confidence proxy; the mapping is heuristic, not a calibrated probability."
+          },
+          "threat_intelligence": {
+            "normalizedValue": 75.0,
+            "weight": 0.1,
+            "contribution": 7.5,
+            "evidence": [
+              "IP 198.51.100.77 from NETRA Demo Feed: 70% confidence (60) + 30% severity (100) = 72/100.",
+              "IP 198.51.100.77 from OSINT Feed: severity only; confidence unavailable = 75/100.",
+              "IP 198.51.100.77 from ThreatFox (abuse.ch): 70% confidence (80) + 30% severity (50) = 71/100."
+            ],
+            "reason": "Each active match combines confidence and severity; the highest combined match is used."
+          },
+          "attack_context": {
+            "normalizedValue": 0.0,
+            "weight": 0.1,
+            "contribution": 0.0,
+            "evidence": [
+              "1 linked events; 0 related events beyond the first.",
+              "1 distinct event types and 1 distinct signatures.",
+              "Recognized event-context stages: authentication.",
+              "Points: event count 0, signal diversity 0, stage coverage 0."
+            ],
+            "reason": "Attack context adds 15 points per related event beyond the first (cap 45), 10 per additional event type and 5 per additional signature (combined cap 20), then 20 points for two recognized stages or 35 for all three. It uses no MITRE mapping."
+          }
+        },
+        "reasons": [
+          "Asset criticality HIGH maps to 75/100; exposure and status are context only in this V1 factor.",
+          "The highest available CVSS score (7.5) is normalized by multiplying by 10.",
+          "The highest linked-event anomaly score is normalized by multiplying by 100.",
+          "The highest linked-event source mapping is used as a V1 confidence proxy; the mapping is heuristic, not a calibrated probability.",
+          "Each active match combines confidence and severity; the highest combined match is used.",
+          "Attack context adds 15 points per related event beyond the first (cap 45), 10 per additional event type and 5 per additional signature (combined cap 20), then 20 points for two recognized stages or 35 for all three. It uses no MITRE mapping."
+        ],
+        "missingEvidence": []
+      },
+      "duplicate_domain_records": {
+        "riskScore": 67.05,
+        "severity": "HIGH",
+        "factors": {
+          "asset_criticality": {
+            "normalizedValue": 75.0,
+            "weight": 0.25,
+            "contribution": 18.75,
+            "evidence": [
+              "Asset AST-SNAPSHOT criticality is HIGH."
+            ],
+            "reason": "Asset criticality HIGH maps to 75/100; exposure and status are context only in this V1 factor."
+          },
+          "vulnerability": {
+            "normalizedValue": 75.0,
+            "weight": 0.2,
+            "contribution": 15.0,
+            "evidence": [
+              "CVE-2026-20000: CVSS 7.5, severity HIGH, status OPEN."
+            ],
+            "reason": "The highest available CVSS score (7.5) is normalized by multiplying by 10."
+          },
+          "anomaly": {
+            "normalizedValue": 60.0,
+            "weight": 0.2,
+            "contribution": 12.0,
+            "evidence": [
+              "evt-snapshot-0: anomaly score 0.6."
+            ],
+            "reason": "The highest linked-event anomaly score is normalized by multiplying by 100."
+          },
+          "detection": {
+            "normalizedValue": 85.0,
+            "weight": 0.15,
+            "contribution": 12.75,
+            "evidence": [
+              "SURICATA: 85/100 (signature-based network alert; strong signal, not confirmed compromise)."
+            ],
+            "reason": "The highest linked-event source mapping is used as a V1 confidence proxy; the mapping is heuristic, not a calibrated probability."
+          },
+          "threat_intelligence": {
+            "normalizedValue": 85.5,
+            "weight": 0.1,
+            "contribution": 8.55,
+            "evidence": [
+              "DOMAIN Evil.Example from Feed A: 70% confidence (50) + 30% severity (25) = 42.5/100.",
+              "DOMAIN evil.example from Feed A: 70% confidence (90) + 30% severity (75) = 85.5/100.",
+              "DOMAIN evil.example from Feed B: 70% confidence (40) + 30% severity (50) = 43/100."
+            ],
+            "reason": "Each active match combines confidence and severity; the highest combined match is used."
+          },
+          "attack_context": {
+            "normalizedValue": 0.0,
+            "weight": 0.1,
+            "contribution": 0.0,
+            "evidence": [
+              "1 linked events; 0 related events beyond the first.",
+              "1 distinct event types and 1 distinct signatures.",
+              "Recognized event-context stages: authentication.",
+              "Points: event count 0, signal diversity 0, stage coverage 0."
+            ],
+            "reason": "Attack context adds 15 points per related event beyond the first (cap 45), 10 per additional event type and 5 per additional signature (combined cap 20), then 20 points for two recognized stages or 35 for all three. It uses no MITRE mapping."
+          }
+        },
+        "reasons": [
+          "Asset criticality HIGH maps to 75/100; exposure and status are context only in this V1 factor.",
+          "The highest available CVSS score (7.5) is normalized by multiplying by 10.",
+          "The highest linked-event anomaly score is normalized by multiplying by 100.",
+          "The highest linked-event source mapping is used as a V1 confidence proxy; the mapping is heuristic, not a calibrated probability.",
+          "Each active match combines confidence and severity; the highest combined match is used.",
+          "Attack context adds 15 points per related event beyond the first (cap 45), 10 per additional event type and 5 per additional signature (combined cap 20), then 20 points for two recognized stages or 35 for all three. It uses no MITRE mapping."
+        ],
+        "missingEvidence": []
+      },
+      "non_canonical_ipv6_records": {
+        "riskScore": 65.65,
+        "severity": "HIGH",
+        "factors": {
+          "asset_criticality": {
+            "normalizedValue": 75.0,
+            "weight": 0.25,
+            "contribution": 18.75,
+            "evidence": [
+              "Asset AST-SNAPSHOT criticality is HIGH."
+            ],
+            "reason": "Asset criticality HIGH maps to 75/100; exposure and status are context only in this V1 factor."
+          },
+          "vulnerability": {
+            "normalizedValue": 75.0,
+            "weight": 0.2,
+            "contribution": 15.0,
+            "evidence": [
+              "CVE-2026-20000: CVSS 7.5, severity HIGH, status OPEN."
+            ],
+            "reason": "The highest available CVSS score (7.5) is normalized by multiplying by 10."
+          },
+          "anomaly": {
+            "normalizedValue": 60.0,
+            "weight": 0.2,
+            "contribution": 12.0,
+            "evidence": [
+              "evt-snapshot-0: anomaly score 0.6."
+            ],
+            "reason": "The highest linked-event anomaly score is normalized by multiplying by 100."
+          },
+          "detection": {
+            "normalizedValue": 85.0,
+            "weight": 0.15,
+            "contribution": 12.75,
+            "evidence": [
+              "SURICATA: 85/100 (signature-based network alert; strong signal, not confirmed compromise)."
+            ],
+            "reason": "The highest linked-event source mapping is used as a V1 confidence proxy; the mapping is heuristic, not a calibrated probability."
+          },
+          "threat_intelligence": {
+            "normalizedValue": 71.5,
+            "weight": 0.1,
+            "contribution": 7.15,
+            "evidence": [
+              "IP 2001:DB8::10 from Feed A: 70% confidence (70) + 30% severity (75) = 71.5/100.",
+              "IP 2001:db8:0::10 from Feed A: 70% confidence (70) + 30% severity (75) = 71.5/100."
+            ],
+            "reason": "Each active match combines confidence and severity; the highest combined match is used."
+          },
+          "attack_context": {
+            "normalizedValue": 0.0,
+            "weight": 0.1,
+            "contribution": 0.0,
+            "evidence": [
+              "1 linked events; 0 related events beyond the first.",
+              "1 distinct event types and 1 distinct signatures.",
+              "Recognized event-context stages: authentication.",
+              "Points: event count 0, signal diversity 0, stage coverage 0."
+            ],
+            "reason": "Attack context adds 15 points per related event beyond the first (cap 45), 10 per additional event type and 5 per additional signature (combined cap 20), then 20 points for two recognized stages or 35 for all three. It uses no MITRE mapping."
+          }
+        },
+        "reasons": [
+          "Asset criticality HIGH maps to 75/100; exposure and status are context only in this V1 factor.",
+          "The highest available CVSS score (7.5) is normalized by multiplying by 10.",
+          "The highest linked-event anomaly score is normalized by multiplying by 100.",
+          "The highest linked-event source mapping is used as a V1 confidence proxy; the mapping is heuristic, not a calibrated probability.",
+          "Each active match combines confidence and severity; the highest combined match is used.",
+          "Attack context adds 15 points per related event beyond the first (cap 45), 10 per additional event type and 5 per additional signature (combined cap 20), then 20 points for two recognized stages or 35 for all three. It uses no MITRE mapping."
+        ],
+        "missingEvidence": []
+      },
+      "grouped_and_single_indicators": {
+        "riskScore": 68.15,
+        "severity": "HIGH",
+        "factors": {
+          "asset_criticality": {
+            "normalizedValue": 75.0,
+            "weight": 0.25,
+            "contribution": 18.75,
+            "evidence": [
+              "Asset AST-SNAPSHOT criticality is HIGH."
+            ],
+            "reason": "Asset criticality HIGH maps to 75/100; exposure and status are context only in this V1 factor."
+          },
+          "vulnerability": {
+            "normalizedValue": 75.0,
+            "weight": 0.2,
+            "contribution": 15.0,
+            "evidence": [
+              "CVE-2026-20000: CVSS 7.5, severity HIGH, status OPEN."
+            ],
+            "reason": "The highest available CVSS score (7.5) is normalized by multiplying by 10."
+          },
+          "anomaly": {
+            "normalizedValue": 60.0,
+            "weight": 0.2,
+            "contribution": 12.0,
+            "evidence": [
+              "evt-snapshot-0: anomaly score 0.6."
+            ],
+            "reason": "The highest linked-event anomaly score is normalized by multiplying by 100."
+          },
+          "detection": {
+            "normalizedValue": 85.0,
+            "weight": 0.15,
+            "contribution": 12.75,
+            "evidence": [
+              "SURICATA: 85/100 (signature-based network alert; strong signal, not confirmed compromise)."
+            ],
+            "reason": "The highest linked-event source mapping is used as a V1 confidence proxy; the mapping is heuristic, not a calibrated probability."
+          },
+          "threat_intelligence": {
+            "normalizedValue": 96.5,
+            "weight": 0.1,
+            "contribution": 9.65,
+            "evidence": [
+              "IP 198.51.100.77 from Feed A: 70% confidence (90) + 30% severity (75) = 85.5/100.",
+              "IP 198.51.100.77 from Feed B: 70% confidence (50) + 30% severity (25) = 42.5/100.",
+              "HASH e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 from Feed C: 70% confidence (95) + 30% severity (100) = 96.5/100."
+            ],
+            "reason": "Each active match combines confidence and severity; the highest combined match is used."
+          },
+          "attack_context": {
+            "normalizedValue": 0.0,
+            "weight": 0.1,
+            "contribution": 0.0,
+            "evidence": [
+              "1 linked events; 0 related events beyond the first.",
+              "1 distinct event types and 1 distinct signatures.",
+              "Recognized event-context stages: authentication.",
+              "Points: event count 0, signal diversity 0, stage coverage 0."
+            ],
+            "reason": "Attack context adds 15 points per related event beyond the first (cap 45), 10 per additional event type and 5 per additional signature (combined cap 20), then 20 points for two recognized stages or 35 for all three. It uses no MITRE mapping."
+          }
+        },
+        "reasons": [
+          "Asset criticality HIGH maps to 75/100; exposure and status are context only in this V1 factor.",
+          "The highest available CVSS score (7.5) is normalized by multiplying by 10.",
+          "The highest linked-event anomaly score is normalized by multiplying by 100.",
+          "The highest linked-event source mapping is used as a V1 confidence proxy; the mapping is heuristic, not a calibrated probability.",
+          "Each active match combines confidence and severity; the highest combined match is used.",
+          "Attack context adds 15 points per related event beyond the first (cap 45), 10 per additional event type and 5 per additional signature (combined cap 20), then 20 points for two recognized stages or 35 for all three. It uses no MITRE mapping."
+        ],
+        "missingEvidence": []
+      },
+      "two_indicators_one_source_each": {
+        "riskScore": 66.35,
+        "severity": "HIGH",
+        "factors": {
+          "asset_criticality": {
+            "normalizedValue": 75.0,
+            "weight": 0.25,
+            "contribution": 18.75,
+            "evidence": [
+              "Asset AST-SNAPSHOT criticality is HIGH."
+            ],
+            "reason": "Asset criticality HIGH maps to 75/100; exposure and status are context only in this V1 factor."
+          },
+          "vulnerability": {
+            "normalizedValue": 75.0,
+            "weight": 0.2,
+            "contribution": 15.0,
+            "evidence": [
+              "CVE-2026-20000: CVSS 7.5, severity HIGH, status OPEN."
+            ],
+            "reason": "The highest available CVSS score (7.5) is normalized by multiplying by 10."
+          },
+          "anomaly": {
+            "normalizedValue": 60.0,
+            "weight": 0.2,
+            "contribution": 12.0,
+            "evidence": [
+              "evt-snapshot-0: anomaly score 0.6."
+            ],
+            "reason": "The highest linked-event anomaly score is normalized by multiplying by 100."
+          },
+          "detection": {
+            "normalizedValue": 85.0,
+            "weight": 0.15,
+            "contribution": 12.75,
+            "evidence": [
+              "SURICATA: 85/100 (signature-based network alert; strong signal, not confirmed compromise)."
+            ],
+            "reason": "The highest linked-event source mapping is used as a V1 confidence proxy; the mapping is heuristic, not a calibrated probability."
+          },
+          "threat_intelligence": {
+            "normalizedValue": 78.5,
+            "weight": 0.1,
+            "contribution": 7.85,
+            "evidence": [
+              "IP 198.51.100.77 from Feed A: 70% confidence (80) + 30% severity (75) = 78.5/100.",
+              "IP 203.0.113.9 from Feed B: 70% confidence (60) + 30% severity (50) = 57/100."
+            ],
+            "reason": "Each active match combines confidence and severity; the highest combined match is used."
+          },
+          "attack_context": {
+            "normalizedValue": 0.0,
+            "weight": 0.1,
+            "contribution": 0.0,
+            "evidence": [
+              "1 linked events; 0 related events beyond the first.",
+              "1 distinct event types and 1 distinct signatures.",
+              "Recognized event-context stages: authentication.",
+              "Points: event count 0, signal diversity 0, stage coverage 0."
+            ],
+            "reason": "Attack context adds 15 points per related event beyond the first (cap 45), 10 per additional event type and 5 per additional signature (combined cap 20), then 20 points for two recognized stages or 35 for all three. It uses no MITRE mapping."
+          }
+        },
+        "reasons": [
+          "Asset criticality HIGH maps to 75/100; exposure and status are context only in this V1 factor.",
+          "The highest available CVSS score (7.5) is normalized by multiplying by 10.",
+          "The highest linked-event anomaly score is normalized by multiplying by 100.",
+          "The highest linked-event source mapping is used as a V1 confidence proxy; the mapping is heuristic, not a calibrated probability.",
+          "Each active match combines confidence and severity; the highest combined match is used.",
+          "Attack context adds 15 points per related event beyond the first (cap 45), 10 per additional event type and 5 per additional signature (combined cap 20), then 20 points for two recognized stages or 35 for all three. It uses no MITRE mapping."
+        ],
+        "missingEvidence": []
+      }
+    }
   }
 }

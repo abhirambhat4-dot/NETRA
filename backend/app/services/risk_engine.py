@@ -1,3 +1,4 @@
+import ipaddress
 import re
 from dataclasses import dataclass
 from typing import Iterable
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.enums import Criticality, IncidentState, Severity
 from app.models.incident import Incident, IncidentHistory
-from app.schemas.enrichment import EventContext, IncidentContextBundle
+from app.schemas.enrichment import EventContext, IncidentContextBundle, ThreatMatchContext
 from app.schemas.risk import (
     RiskFactorExplanation,
     RiskScoreResult,
@@ -17,8 +18,9 @@ from app.schemas.risk import (
 )
 from app.services.context_enrichment import enrich_incident_context
 
-#: The scoring methodology below: weights, normalisations, thresholds and evidence wording. Change any of
-#: them only under a new version (tests/risk_engine_v1_snapshots.json pins risk-v1).
+#: The scoring methodology below: weights, normalisations, rounding and thresholds. Change any of them only
+#: under a new version. tests/risk_engine_v1_snapshots.json pins risk-v1's numbers and its evidence wording;
+#: a wording change that leaves every number unchanged is reviewed against that snapshot, not versioned.
 RISK_METHODOLOGY_VERSION = "risk-v1"
 
 FACTOR_WEIGHTS = {
@@ -134,6 +136,62 @@ def _attack_context(events: Iterable[EventContext]) -> tuple[float, list[str], s
     return float(score), evidence, reason
 
 
+#: A threat-intelligence match with its combined 0-100 value and how that value was formed.
+ScoredMatch = tuple[ThreatMatchContext, float, str]
+
+
+def _indicator_identity(match: ThreatMatchContext) -> tuple[str, str]:
+    """(type, value) as enrichment matches it: IP addresses in canonical form, other values case-folded."""
+    if match.indicator_type == "IP":
+        try:
+            return match.indicator_type, str(ipaddress.ip_address(match.value))
+        except ValueError:
+            pass
+    return match.indicator_type, match.value.casefold()
+
+
+def _threat_evidence(scored_matches: list[ScoredMatch]) -> list[str]:
+    """Threat-intelligence evidence, one entry per indicator; explanation only, never part of the score.
+
+    An indicator in one record keeps its single line. One indicator in several records (several sources, or
+    duplicate records of one source) is listed once with every source and record ID, and each source once,
+    at its highest report: the factor uses the highest single report, so more reports add no points.
+    """
+    groups: dict[tuple[str, str], list[ScoredMatch]] = {}
+    for scored in scored_matches:
+        groups.setdefault(_indicator_identity(scored[0]), []).append(scored)
+
+    evidence: list[str] = []
+    for (indicator_type, value), records in groups.items():
+        if len(records) == 1:
+            match, combined_value, combination = records[0]
+            evidence.append(
+                f"{match.indicator_type} {match.value} from {match.source}: {combination} = {combined_value:g}/100."
+            )
+            continue
+        by_source: dict[str, list[ScoredMatch]] = {}
+        for scored in records:
+            by_source.setdefault(scored[0].source, []).append(scored)
+        sources = sorted(by_source)
+        highest = max(combined_value for _, combined_value, _ in records)
+        evidence.append(
+            f"{indicator_type} {value} is reported by {len(sources)} source{'' if len(sources) == 1 else 's'} "
+            f"({', '.join(sources)}) in {len(records)} active records. This indicator is considered once, using its "
+            f"highest report ({highest:g}/100); additional sources or records add no points."
+        )
+        ranked = sorted(by_source.items(), key=lambda item: (-max(scored[1] for scored in item[1]), item[0]))
+        for source, source_records in ranked:
+            match, combined_value, combination = max(source_records, key=lambda scored: scored[1])
+            ids = ", ".join(sorted(str(scored[0].id) for scored in source_records))
+            label = (
+                f"indicator {ids}"
+                if len(source_records) == 1
+                else f"{len(source_records)} records, indicators {ids}; highest shown"
+            )
+            evidence.append(f"{indicator_type} {value} from {source}: {combination} = {combined_value:g}/100 ({label}).")
+    return evidence
+
+
 def _calculate_factors(context: IncidentContextBundle) -> tuple[dict[str, RiskFactorExplanation], list[str]]:
     missing: list[str] = []
 
@@ -214,7 +272,7 @@ def _calculate_factors(context: IncidentContextBundle) -> tuple[dict[str, RiskFa
 
     severity_values = SEVERITY_VALUES
     threat_scores: list[tuple[float, str]] = []
-    threat_evidence: list[str] = []
+    scored_matches: list[ScoredMatch] = []
     for match in context.threat_intelligence_matches:
         severity_value = severity_values[match.severity]
         if match.confidence is None:
@@ -225,9 +283,8 @@ def _calculate_factors(context: IncidentContextBundle) -> tuple[dict[str, RiskFa
             combined_value = round(confidence_value * 0.7 + severity_value * 0.3, 2)
             combination = f"70% confidence ({confidence_value:g}) + 30% severity ({severity_value:g})"
         threat_scores.append((combined_value, match.value))
-        threat_evidence.append(
-            f"{match.indicator_type} {match.value} from {match.source}: {combination} = {combined_value:g}/100."
-        )
+        scored_matches.append((match, combined_value, combination))
+    threat_evidence = _threat_evidence(scored_matches)
     if threat_scores:
         threat_value = max(value for value, _ in threat_scores)
         threat_reason = "Each active match combines confidence and severity; the highest combined match is used."
