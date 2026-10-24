@@ -8,7 +8,10 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.asset import Asset
@@ -26,6 +29,7 @@ from app.models.enums import (
 )
 from app.models.event import SecurityEvent
 from app.models.incident import Incident, IncidentHistory
+from app.models.risk_evaluation import RiskEvaluation
 from app.models.threat_indicator import ThreatIndicator
 from app.models.vulnerability import Vulnerability
 from app.schemas.enrichment import (
@@ -916,3 +920,165 @@ def test_grouping_leaves_the_api_score_and_workflow_unchanged(core_api: CoreApi)
     with core_api.session_factory() as session:
         incident = session.get(Incident, reported_twice)
         assert incident.state == IncidentState.PRIORITISED and incident.risk_score == grouped["riskScore"]
+
+
+# --- initial risk evaluation history ---------------------------------------------------------------
+
+
+def _evaluations(core_api: CoreApi, incident_id: UUID) -> list[RiskEvaluation]:
+    with core_api.session_factory() as session:
+        return list(
+            session.scalars(
+                select(RiskEvaluation).where(RiskEvaluation.incident_id == incident_id).order_by(RiskEvaluation.created_at)
+            )
+        )
+
+
+def _risk_history(core_api: CoreApi, incident_id: UUID) -> list[IncidentHistory]:
+    with core_api.session_factory() as session:
+        return list(
+            session.scalars(
+                select(IncidentHistory).where(
+                    IncidentHistory.incident_id == incident_id, IncidentHistory.action == "risk_calculated"
+                )
+            )
+        )
+
+
+def test_an_initial_calculation_records_exactly_one_evaluation_matching_the_result(core_api: CoreApi) -> None:
+    incident_id = seed_risk_case(core_api, cvss_scores=[7.1], threat_match=(0.8, Severity.HIGH))
+    _add_indicator(core_api, "198.51.100.77", "Second Feed", 0.5, Severity.MEDIUM, active=True)
+    _add_indicator(core_api, "198.51.100.77", "Retired Feed", 1.0, Severity.CRITICAL, active=False)
+
+    response = calculate(core_api, incident_id)
+
+    assert response.status_code == 200
+    body = response.json()
+    (evaluation,) = _evaluations(core_api, incident_id)
+    assert evaluation.methodology_version == risk_engine.RISK_METHODOLOGY_VERSION == "risk-v1"
+    assert (evaluation.risk_score, evaluation.risk_level) == (body["riskScore"], body["severity"])
+    assert evaluation.factors == body["factors"]  # the breakdown exactly as the API reported it, grouped evidence included
+    assert evaluation.missing_evidence == body["missingEvidence"]
+    assert evaluation.previous_risk_score == 12.0  # the incident's score before this calculation (seeded)
+    assert (evaluation.trigger, evaluation.actor) == ("initial", "core-api-test@example.com")
+    assert evaluation.created_at is not None
+
+    with core_api.session_factory() as session:
+        indicators = {row.source: row for row in session.scalars(select(ThreatIndicator))}
+        event_ids = [str(event.id) for event in session.get(Incident, incident_id).events]
+    # Active matches only, with their identifiers and attribution; the inactive Retired Feed record is absent.
+    assert sorted(evaluation.matched_indicators, key=lambda item: item["source"]) == [
+        {
+            "id": str(indicators[source].id),
+            "indicatorType": "IP",
+            "value": "198.51.100.77",
+            "source": source,
+            "confidence": confidence,
+            "severity": severity,
+            "matchedEventIds": event_ids,
+        }
+        for source, confidence, severity in (("Second Feed", 0.5, "MEDIUM"), ("risk-test-feed", 0.8, "HIGH"))
+    ]
+
+
+def test_an_evaluation_leaves_the_incident_history_and_response_as_before(core_api: CoreApi) -> None:
+    incident_id = seed_risk_case(core_api, cvss_scores=[5.5])
+
+    response = calculate(core_api, incident_id)
+
+    body = response.json()
+    assert set(body) == {"incidentId", "riskScore", "severity", "factors", "reasons", "missingEvidence", "stateTransition"}
+    (history,) = _risk_history(core_api, incident_id)
+    # The history entry keeps its existing content and format (snake_case model dump).
+    assert history.details == {"risk_calculation": risk_engine.RiskScoreResult.model_validate(body).model_dump(mode="json")}
+    assert (history.from_state, history.to_state, history.actor) == (
+        IncidentState.UNDERSTOOD, IncidentState.PRIORITISED, "core-api-test@example.com",
+    )
+    with core_api.session_factory() as session:
+        incident = session.get(Incident, incident_id)
+        assert (incident.state, incident.risk_score) == (IncidentState.PRIORITISED, body["riskScore"])
+    (evaluation,) = _evaluations(core_api, incident_id)
+    assert evaluation.matched_indicators == []  # no threat-intelligence match in this case
+
+
+def test_a_repeated_calculation_is_refused_and_records_no_second_evaluation(core_api: CoreApi) -> None:
+    incident_id = seed_risk_case(core_api)
+    assert calculate(core_api, incident_id).status_code == 200
+    assert calculate(core_api, incident_id).status_code == 409
+    assert len(_evaluations(core_api, incident_id)) == 1
+    assert len(_risk_history(core_api, incident_id)) == 1
+
+
+def test_a_refused_calculation_records_no_evaluation(core_api: CoreApi) -> None:
+    incident_id = seed_risk_case(core_api, state=IncidentState.DETECTED)
+    assert calculate(core_api, incident_id).status_code == 409
+    assert _evaluations(core_api, incident_id) == []
+
+
+def test_a_failed_evaluation_insert_rolls_back_the_incident_and_history(core_api: CoreApi, monkeypatch: pytest.MonkeyPatch) -> None:
+    incident_id = seed_risk_case(core_api, cvss_scores=[7.1], threat_match=(0.8, Severity.HIGH))
+    # An empty methodology version violates ck_risk_evaluations_methodology_version_present, so the
+    # evaluation insert fails inside the calculation's single commit.
+    monkeypatch.setattr(risk_engine, "RISK_METHODOLOGY_VERSION", "")
+
+    with pytest.raises(IntegrityError, match="ck_risk_evaluations_methodology_version_present"):
+        calculate(core_api, incident_id)
+
+    with core_api.session_factory() as session:
+        incident = session.get(Incident, incident_id)
+        assert (incident.state, incident.risk_score) == (IncidentState.UNDERSTOOD, 12.0)
+    assert _risk_history(core_api, incident_id) == []
+    assert _evaluations(core_api, incident_id) == []
+
+    # Nothing was left half-written: with the version restored, the same calculation succeeds once.
+    monkeypatch.undo()
+    assert calculate(core_api, incident_id).status_code == 200
+    assert len(_evaluations(core_api, incident_id)) == len(_risk_history(core_api, incident_id)) == 1
+
+
+# --- row lock on the incident read -------------------------------------------------------------------
+
+
+def test_the_incident_read_compiles_to_for_no_key_update() -> None:
+    statement = risk_engine._locked_incident(uuid4())
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+    assert sql.rstrip().endswith("FOR NO KEY UPDATE")
+    assert "FOR UPDATE" not in sql  # the lighter lock: inserts that only reference the incident are not blocked
+    assert statement.get_execution_options()["populate_existing"] is True
+
+
+def test_calculate_incident_risk_reads_the_incident_through_the_locked_query(core_api: CoreApi, monkeypatch: pytest.MonkeyPatch) -> None:
+    incident_id = seed_risk_case(core_api)
+    requested: list[UUID] = []
+    original = risk_engine._locked_incident
+
+    def spy(requested_id: UUID):  # type: ignore[no-untyped-def]
+        requested.append(requested_id)
+        return original(requested_id)
+
+    monkeypatch.setattr(risk_engine, "_locked_incident", spy)
+    assert calculate(core_api, incident_id).status_code == 200
+    assert requested == [incident_id]
+
+
+def test_a_stale_incident_in_a_long_lived_session_is_refreshed_before_the_state_check(core_api: CoreApi) -> None:
+    # seed_demo runs every step in one session: an incident loaded earlier must not hide a newer committed state.
+    incident_id = seed_risk_case(core_api)
+    with core_api.session_factory() as long_lived:
+        assert long_lived.get(Incident, incident_id).state == IncidentState.UNDERSTOOD  # now held in its identity map
+        with core_api.session_factory() as other:
+            other.get(Incident, incident_id).state = IncidentState.PRIORITISED
+            other.commit()
+
+        with pytest.raises(HTTPException) as refused:
+            risk_engine.calculate_incident_risk(long_lived, incident_id, actor="core-api-test@example.com")
+        assert refused.value.status_code == 409
+        long_lived.rollback()
+    assert _evaluations(core_api, incident_id) == [] and _risk_history(core_api, incident_id) == []
+
+
+def test_an_unknown_incident_is_still_not_found(core_api: CoreApi) -> None:
+    missing = uuid4()
+    response = calculate(core_api, missing)
+    assert (response.status_code, response.json()) == (404, {"detail": "Incident not found"})
+    assert _evaluations(core_api, missing) == []

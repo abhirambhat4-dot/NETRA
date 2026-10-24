@@ -5,11 +5,12 @@ from typing import Iterable
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from app.models.enums import Criticality, IncidentState, Severity
 from app.models.incident import Incident, IncidentHistory
+from app.models.risk_evaluation import RiskEvaluation
 from app.schemas.enrichment import EventContext, IncidentContextBundle, ThreatMatchContext
 from app.schemas.risk import (
     RiskFactorExplanation,
@@ -383,8 +384,67 @@ def score_context(context: IncidentContextBundle) -> ContextRiskScore:
     )
 
 
+def _matched_indicator_snapshot(context: IncidentContextBundle) -> list[dict[str, object]]:
+    """The active indicators an evaluation used, as identifiers and attribution (inactive ones never match)."""
+    return [
+        {
+            "id": str(match.id),
+            "indicatorType": match.indicator_type,
+            "value": match.value,
+            "source": match.source,
+            "confidence": match.confidence,
+            "severity": match.severity,
+            "matchedEventIds": [str(event_id) for event_id in match.matched_event_ids],
+        }
+        for match in context.threat_intelligence_matches
+    ]
+
+
+def _evaluation_record(
+    incident_id: UUID,
+    scored: ContextRiskScore,
+    result: RiskScoreResult,
+    context: IncidentContextBundle,
+    *,
+    previous_risk_score: float | None,
+    trigger: str,
+    actor: str,
+) -> RiskEvaluation:
+    """A RiskEvaluation snapshot of one scoring run; the caller adds it in the same transaction as its other writes."""
+    return RiskEvaluation(
+        incident_id=incident_id,
+        methodology_version=scored.methodology_version,  # RISK_METHODOLOGY_VERSION when the score was computed
+        risk_score=scored.risk_score,
+        risk_level=scored.severity,
+        previous_risk_score=previous_risk_score,
+        # The factor breakdown exactly as the risk API reports it.
+        factors=result.model_dump(mode="json", by_alias=True)["factors"],
+        missing_evidence=list(scored.missing_evidence),
+        matched_indicators=_matched_indicator_snapshot(context),
+        trigger=trigger,
+        actor=actor,
+    )
+
+
+def _locked_incident(incident_id: UUID) -> Select[tuple[Incident]]:
+    """The incident row, locked until the calculation commits or rolls back.
+
+    FOR NO KEY UPDATE serialises concurrent calculations of one incident: under READ COMMITTED a second
+    request waits here, then reads the committed PRIORITISED state and is refused (409), so it cannot add a
+    second risk_calculated entry or evaluation. Unlike FOR UPDATE it does not block other transactions'
+    inserts that only reference the incident. populate_existing refreshes an incident the session already
+    holds (seed_demo uses one long-lived session), so the state check sees the locked row's values.
+    """
+    return (
+        select(Incident)
+        .where(Incident.id == incident_id)
+        .with_for_update(key_share=True)
+        .execution_options(populate_existing=True)
+    )
+
+
 def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> RiskScoreResult:
-    incident = db.scalars(select(Incident).where(Incident.id == incident_id)).one_or_none()
+    incident = db.scalars(_locked_incident(incident_id)).one_or_none()
     if incident is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
     if incident.state != IncidentState.UNDERSTOOD:
@@ -411,6 +471,7 @@ def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> Ri
         state_transition=transition,
     )
 
+    previous_risk_score = incident.risk_score
     incident.risk_score = risk_score
     incident.state = IncidentState.PRIORITISED
     db.add(
@@ -421,6 +482,19 @@ def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> Ri
             action="risk_calculated",
             actor=actor,
             details={"risk_calculation": result.model_dump(mode="json")},
+        )
+    )
+    # Committed together with the score, the state change and the history entry, or not at all. The state
+    # check above makes this the incident's only initial evaluation: a repeat call is refused with 409.
+    db.add(
+        _evaluation_record(
+            incident.id,
+            scored,
+            result,
+            context,
+            previous_risk_score=previous_risk_score,
+            trigger="initial",
+            actor=actor,
         )
     )
     db.commit()
