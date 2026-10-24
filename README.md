@@ -16,7 +16,8 @@ score.
 > More documentation: [Project documentation](docs/PROJECT_DOCUMENTATION.md) ·
 > [Demo and viva guide](docs/DEMO_AND_VIVA.md) · [Dataset imports](docs/DATASET_IMPORTS.md) ·
 > [Demo data and accounts](docs/DEMO_DATA.md) ·
-> [Security Assessment migration notes](docs/SECURITY_ASSESSMENT_MIGRATION.md)
+> [Security Assessment migration notes](docs/SECURITY_ASSESSMENT_MIGRATION.md) ·
+> [ThreatFox threat intelligence](docs/THREAT_INTEL_THREATFOX.md)
 
 ---
 
@@ -224,6 +225,10 @@ cd backend
 **Safety:**
 - Run these commands from `backend\` so `.env` is the configuration used; a `DATABASE_URL` set in
   the shell wins over `.env`.
+- Online Alembic runs against a non-local host (for example Neon) are refused before connecting unless
+  `NETRA_MIGRATION_CONFIRM_TARGET` names that exact `host:port/database` (`app/db/migration_guard.py`).
+  Local targets are unaffected. Backend tests run only through `scripts\netra_e2e_pytest.py run`; any
+  other pytest invocation is refused before it can reach a database (`tests/_launch_guard.py`).
 - Back up with `pg_dump -Fc` before any migration, and verify the archive with `pg_restore --list`.
 - Never point these commands at a shared or production database. Alembic revision IDs must be at
   most 32 characters (a regression test enforces this).

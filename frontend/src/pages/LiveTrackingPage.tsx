@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { CircleCheck, Inbox, RadioTower, ServerOff, ShieldAlert } from 'lucide-react'
+import { CircleCheck, Crosshair, Inbox, RadioTower, ServerOff, ShieldAlert } from 'lucide-react'
 import type { CollectorStatus } from '@/api/types'
 import { EmptyState, LoadingState, MetricStrip, PageContainer, PageHeader, Panel, SurfaceCard, type Metric } from '@/components/netra'
 import { useHealthPoll } from '@/hooks/useHealthPoll'
@@ -21,8 +21,9 @@ import {
 import { formatDateTime, formatNumber, timeAgo } from '@/lib/format'
 import { HEALTH_REFRESH_MS } from '@/lib/healthPoller'
 import { ROUTES } from '@/lib/navigation'
+import { THREATFOX_SOURCE, threatFeedStatus, type ThreatFeedSummary } from '@/lib/threatFeed'
 import { apiHealthState, databaseHealthState, type ApiHealthState, type DatabaseHealthState, type HealthOutcome } from '@/lib/workspaceStatus'
-import { collectorService, eventService, incidentQueueService } from '@/services'
+import { collectorService, eventService, incidentQueueService, threatFeedService } from '@/services'
 import { USE_MOCKS } from '@/services/http'
 import { AttentionList, ListNotes, PanelError, SeverityBreakdown, StatusRow, type StatusItem } from './workspaces/shared'
 
@@ -62,7 +63,9 @@ function LiveTracking() {
   const healthReading = useHealthPoll()
   const incidents = useQuery('live-prioritized-incidents', incidentQueueService.listPrioritized)
   const events = useQuery('live-unlinked-events', listUnlinkedHighSeverityEvents)
-  const reloads = [collector.reload, incidents.reload, events.reload]
+  // Stored ThreatFox indicators (imported by the backend sync); read-only, through the existing API.
+  const threatFeed = useQuery('live-threatfox-feed', () => threatFeedService.summary(THREATFOX_SOURCE))
+  const reloads = [collector.reload, incidents.reload, events.reload, threatFeed.reload]
 
   // Same cadence as the collector page; hidden tabs do not poll.
   useEffect(() => {
@@ -259,7 +262,51 @@ function LiveTracking() {
           )}
         </Panel>
       </div>
+
+      <ThreatFeedCard summary={threatFeed.data} error={threatFeed.error} onRetry={threatFeed.reload} />
     </PageContainer>
+  )
+}
+
+/**
+ * ThreatFox indicators NETRA has stored. They are reference data for matching events, imported on demand from
+ * recent ThreatFox reports: never live activity, and never counted in the collector figures above.
+ */
+function ThreatFeedCard({ summary, error, onRetry }: { summary?: ThreatFeedSummary; error?: Error; onRetry: () => void }) {
+  const status = summary ? threatFeedStatus(summary) : undefined
+  return (
+    <SurfaceCard aria-label="Threat intelligence feed" className="flex flex-col gap-3 sm:flex-row sm:items-start">
+      <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-muted text-muted-foreground" aria-hidden>
+        <Crosshair className="size-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-medium text-muted-foreground">Threat intelligence feed · {THREATFOX_SOURCE}</p>
+        {error ? (
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-muted-foreground" role="status">
+            Feed status unavailable.
+            <button type="button" onClick={onRetry} className="font-medium text-primary hover:underline">Retry</button>
+          </p>
+        ) : !status || !summary ? (
+          <p className="mt-1 text-[13px] text-muted-foreground">Loading feed status…</p>
+        ) : (
+          <>
+            <p className="mt-1 text-[14px] font-semibold text-foreground">{status.title}</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+              {status.description}
+              {summary.latestSeenAt && (
+                <>
+                  {' '}Latest ThreatFox report:{' '}
+                  <time dateTime={summary.latestSeenAt} title={`${formatDateTime(summary.latestSeenAt)} UTC`}>{timeAgo(summary.latestSeenAt)}</time>.
+                </>
+              )}
+            </p>
+          </>
+        )}
+      </div>
+      <Link to={ROUTES.threatIntelligence} className="shrink-0 text-[13px] font-medium text-primary hover:underline sm:self-center">
+        Threat Intelligence
+      </Link>
+    </SurfaceCard>
   )
 }
 

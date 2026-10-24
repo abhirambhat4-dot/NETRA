@@ -10,7 +10,7 @@ database was queried when this was written. Re-run the read-only checks below be
 | Database | Last reported Alembic revision | Notes |
 |---|---|---|
 | Neon test branch | `0004_add_import_batches` (head) | 0003 and 0004 applied to the test branch. |
-| Neon production | `0002_add_password_reset_tokens` | 0003 **not** applied. |
+| Neon production | `0002_add_password_reset_tokens` (**verification required**) | 0003 **not** applied when recorded. This is a historical note, not a known current state: the production revision may have changed since 2026-10-12. Verify it with the read-only checks below before acting; do not infer it from this table. |
 | Local `netra_e2e` | Not recorded here | Set up by `backend/scripts/netra_e2e.py`: `init-schema` (`app.db.init_db`), then `stamp` (`alembic stamp head`). |
 
 No production backup or production Neon branch is recorded in this repository. Take one, and record
@@ -70,6 +70,35 @@ ORDER BY table_name, ordinal_position;
 
 Before writing anything, take a Neon branch (or backup) and run the chosen path against the branch
 first; then repeat on the production branch.
+
+## Non-local targets need explicit confirmation
+
+Alembic resolves its database exactly as the application does: a `DATABASE_URL` set in the shell first,
+then `backend/.env`. To stop a shell variable left pointing at Neon from being migrated by accident,
+`backend/migrations/env.py` checks the target before it creates any engine (`app/db/migration_guard.py`):
+
+- **Local targets** (`localhost`, `127.0.0.1`, `::1`) run as before, including `scripts/netra_e2e.py stamp`.
+- **Any other host, including every Neon branch,** is refused unless `NETRA_MIGRATION_CONFIRM_TARGET` names
+  that exact `host:port/database`. Only the host, port and database are compared and printed, never the user
+  name or password. A confirmation for a different branch or database is refused.
+- **Always refused:** URL options that could redirect the connection (`host`, `hostaddr`, `port`, `dbname`,
+  `service`, `servicefile`) and libpq variables (`PGHOST`, `PGHOSTADDR`, `PGPORT`, `PGDATABASE`, `PGSERVICE`,
+  `PGSERVICEFILE`).
+- **Offline** (`--sql`) runs never connect and are not checked.
+
+For an approved run against a Neon branch, set the confirmation in the same shell only for that command,
+using the exact `host:port/database` the refusal message prints, then remove it:
+
+```powershell
+# DATABASE_URL already set (without printing it) to the approved Neon branch
+$env:NETRA_MIGRATION_CONFIRM_TARGET = '<host>:5432/<database>'   # exactly as printed by the refusal
+.\.venv\Scripts\python.exe -m alembic current                     # read-only check first
+.\.venv\Scripts\python.exe -m alembic upgrade head
+Remove-Item env:NETRA_MIGRATION_CONFIRM_TARGET
+```
+
+The guard only checks that the target is the one you meant; it does not replace the backup, the branch-first
+run or the approval each production write needs.
 
 ## Order of operations
 

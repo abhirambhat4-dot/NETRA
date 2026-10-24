@@ -1,3 +1,8 @@
+# First, before anything below can create or use a database engine: importing the tests package
+# enforces the launcher guard (tests/_launch_guard.py). If this conftest is loaded under another module
+# name, this import still runs it, or fails, closed.
+import tests  # noqa: F401  isort: skip
+
 import asyncio
 import json
 import os

@@ -59,6 +59,7 @@ import type {
   TrendRange,
 } from '@/api/types'
 import { verifyIncidentPath } from '@/lib/incidentVerification'
+import type { ThreatFeedSummary } from '@/lib/threatFeed'
 import type { HealthOutcome } from '@/lib/workspaceStatus'
 import { mockApi } from '@/mocks/api'
 import { DEMO_OTP } from '@/mocks/db'
@@ -711,6 +712,24 @@ export const threatIntelInventoryService = {
       : listLiveThreatIndicators(filters),
   get: async (id: string): Promise<ThreatIndicatorInventoryItem> =>
     adaptBackendThreatIndicator(await http.get<BackendThreatIndicatorResponse>(`/threat-intelligence/${id}`)),
+}
+
+/**
+ * Live only: how many indicators one feed has stored, and its latest last-seen, from a single page of the
+ * existing GET /api/threat-intelligence (source filter, newest first). Mock data has no stored feeds.
+ */
+export const threatFeedService = {
+  summary: async (source: string): Promise<ThreatFeedSummary> => {
+    if (USE_MOCKS) throw new Error('Threat feed status requires the NETRA API.')
+    const page = await http.get<BackendThreatIndicatorPage>('/threat-intelligence', {
+      source,
+      sortBy: 'lastSeen',
+      sortOrder: 'desc',
+      page: 1,
+      pageSize: 1,
+    })
+    return { total: page.total, latestSeenAt: page.items[0]?.lastSeen ?? null }
+  },
 }
 
 export const threatIntelService = {

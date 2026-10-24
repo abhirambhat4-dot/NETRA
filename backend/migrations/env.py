@@ -1,11 +1,15 @@
+import os
+import sys
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import make_url
 
 import app.models  # noqa: F401
 from app.core.config import get_settings
 from app.db.base import Base
+from app.db.migration_guard import describe, migration_refusal
 
 config = context.config
 if config.config_file_name is not None:
@@ -29,6 +33,11 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    # Before any engine exists: a non-local target needs explicit confirmation (app/db/migration_guard.py).
+    url = make_url(database_url)
+    if refusal := migration_refusal(url, os.environ):
+        sys.exit(f"REFUSED: {refusal}; no database connection was made.")
+    print(f"alembic target: {describe(url)}", file=sys.stderr)
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
