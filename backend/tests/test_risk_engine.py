@@ -1,8 +1,15 @@
+import ast
+import inspect
+import json
+import socket
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.models.asset import Asset
 from app.models.enums import (
@@ -21,6 +28,15 @@ from app.models.event import SecurityEvent
 from app.models.incident import Incident, IncidentHistory
 from app.models.threat_indicator import ThreatIndicator
 from app.models.vulnerability import Vulnerability
+from app.schemas.enrichment import (
+    AssetContext,
+    EventContext,
+    IncidentContext,
+    IncidentContextBundle,
+    ThreatMatchContext,
+    VulnerabilityContext,
+)
+from app.services import risk_engine
 from tests.conftest import CoreApi
 
 
@@ -391,3 +407,257 @@ def test_phase_one_to_three_flow_remains_usable(core_api: CoreApi) -> None:
     assert correlated.status_code == enriched.status_code == risk_response.status_code == 200
     assert len(enriched.json()["events"]) == 3
     assert risk_response.json()["stateTransition"]["toState"] == "PRIORITISED"
+
+
+# --- risk-v1 snapshot cases: pure contexts, no database --------------------------------------------
+# The expected outputs in risk_engine_v1_snapshots.json were produced by the risk engine as it was before
+# score_context existed (commit e005a93), from exactly these contexts. They pin risk-v1: any change to a
+# score, level, factor value, weight, contribution, evidence line, reason or missing-evidence note fails.
+# BEGIN RISK-V1 SNAPSHOT CASES
+SNAPSHOT_TIME = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
+SNAPSHOT_IP = "198.51.100.77"
+
+
+def _snapshot_asset(criticality: str) -> AssetContext:
+    return AssetContext(
+        id=UUID(int=1),
+        asset_key="AST-SNAPSHOT",
+        name="Snapshot asset",
+        hostname="snapshot-host-01",
+        ip_address="10.60.0.10",
+        criticality=criticality,
+        exposure="INTERNET_FACING",
+        status="ACTIVE",
+        asset_type="SERVER",
+        environment="PRODUCTION",
+    )
+
+
+def _snapshot_event(index: int, event_type: str, source: str, anomaly: float | None, signature: str | None = None) -> EventContext:
+    return EventContext(
+        id=UUID(int=100 + index),
+        event_uid=f"evt-snapshot-{index}",
+        occurred_at=SNAPSHOT_TIME + timedelta(minutes=2 * index),
+        event_type=event_type,
+        signature=signature,
+        severity="HIGH",
+        anomaly_score=anomaly,
+        detection_source=source,
+        source_ip=SNAPSHOT_IP,
+        destination_ip="10.60.0.10",
+        source_port=None,
+        destination_port=22,
+        protocol="TCP",
+    )
+
+
+def _snapshot_vulnerability(index: int, cvss: float | None) -> VulnerabilityContext:
+    return VulnerabilityContext(
+        id=UUID(int=200 + index),
+        cve_id=f"CVE-2026-{20000 + index}",
+        title=f"Snapshot vulnerability {index}",
+        description=None,
+        cvss_score=cvss,
+        severity="HIGH",
+        status="OPEN",
+    )
+
+
+def _snapshot_match(index: int, confidence: float | None, severity: str, source: str) -> ThreatMatchContext:
+    return ThreatMatchContext(
+        id=UUID(int=300 + index),
+        value=SNAPSHOT_IP,
+        indicator_type="IP",
+        confidence=confidence,
+        severity=severity,
+        source=source,
+        is_active=True,
+        matched_event_ids=[UUID(int=100)],
+    )
+
+
+def _snapshot_bundle(
+    asset: AssetContext | None,
+    events: Sequence[EventContext] = (),
+    vulnerabilities: Sequence[VulnerabilityContext] = (),
+    matches: Sequence[ThreatMatchContext] = (),
+) -> IncidentContextBundle:
+    return IncidentContextBundle(
+        incident=IncidentContext(
+            id=UUID(int=9),
+            incident_key="INC-SNAPSHOT",
+            title="Snapshot incident",
+            description=None,
+            severity="HIGH",
+            state="UNDERSTOOD",
+            detection_source="SURICATA",
+            asset_id=asset.id if asset else None,
+        ),
+        asset=asset,
+        vulnerabilities=list(vulnerabilities),
+        threat_intelligence_matches=list(matches),
+        events=list(events),
+        findings=[],
+    )
+
+
+SNAPSHOT_CASES: dict[str, Callable[[], IncidentContextBundle]] = {
+    # Every factor without evidence: zero contributions and all six missing-evidence notes.
+    "no_evidence": lambda: _snapshot_bundle(None),
+    "low_manual_event": lambda: _snapshot_bundle(
+        _snapshot_asset("LOW"), [_snapshot_event(0, "login_attempt", "MANUAL", 0.1)]
+    ),
+    # Vulnerability records without CVSS, no anomaly score, and a match with no confidence (severity only).
+    "unscored_vulnerability_and_severity_only_match": lambda: _snapshot_bundle(
+        _snapshot_asset("MEDIUM"),
+        [_snapshot_event(0, "port_scan", "SURICATA", None, "ET SCAN Nmap")],
+        [_snapshot_vulnerability(0, None)],
+        [_snapshot_match(0, None, "MEDIUM", "snapshot-feed")],
+    ),
+    # Two sources report the same indicator: risk-v1 scores each match separately and takes the highest.
+    "high_two_sources_same_indicator": lambda: _snapshot_bundle(
+        _snapshot_asset("HIGH"),
+        [
+            _snapshot_event(0, "ssh_bruteforce", "ML_ANOMALY", 0.5, "SSH brute force A"),
+            _snapshot_event(1, "ssh_bruteforce", "SURICATA", 0.73, "SSH brute force B"),
+        ],
+        [_snapshot_vulnerability(0, 6.0), _snapshot_vulnerability(1, 8.4)],
+        [
+            _snapshot_match(0, 0.8, "MEDIUM", "ThreatFox (abuse.ch)"),
+            _snapshot_match(1, 0.6, "CRITICAL", "NETRA Demo Feed"),
+        ],
+    ),
+    # All three attack-context stages, the score cap, and a detection source risk-v1 does not map (0 points).
+    "critical_full_chain_with_unmapped_source": lambda: _snapshot_bundle(
+        _snapshot_asset("CRITICAL"),
+        [
+            _snapshot_event(0, "port_scan", "THREAT_INTEL", 1.0, "Recon probe"),
+            _snapshot_event(1, "ssh_bruteforce", "SURICATA", 1.0, "SSH password guessing"),
+            _snapshot_event(2, "suspicious_outbound_connection", "ML_ANOMALY", 1.0, "Beacon"),
+            _snapshot_event(3, "flow_record", "DATASET_IMPORT", None),
+        ],
+        [_snapshot_vulnerability(0, 10.0)],
+        [_snapshot_match(0, 1.0, "CRITICAL", "snapshot-feed")],
+    ),
+    "dataset_import_only": lambda: _snapshot_bundle(
+        _snapshot_asset("HIGH"), [_snapshot_event(0, "flow_record", "DATASET_IMPORT", None)]
+    ),
+}
+SEVERITY_BOUNDARY_SCORES = (0.0, 24.99, 25.0, 49.99, 50.0, 74.99, 75.0, 100.0)
+# END RISK-V1 SNAPSHOT CASES
+
+SNAPSHOT_PATH = Path(__file__).with_name("risk_engine_v1_snapshots.json")
+# Headline figures of the snapshot, captured from the pre-refactor engine (see risk_engine_v1_snapshots.json).
+SNAPSHOT_HEADLINES = {
+    "no_evidence": (0.0, "LOW"),
+    "low_manual_event": (15.75, "LOW"),
+    "unscored_vulnerability_and_severity_only_match": (30.25, "MEDIUM"),
+    "high_two_sources_same_indicator": (72.1, "HIGH"),
+    "critical_full_chain_with_unmapped_source": (97.75, "CRITICAL"),
+    "dataset_import_only": (18.75, "LOW"),
+}
+
+
+def _snapshot() -> dict:
+    return json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+
+
+def _scored_view(scored: "risk_engine.ContextRiskScore") -> dict:
+    """The shape the snapshot stores: the API's field names, factors in the order they are reported."""
+    return {
+        "riskScore": scored.risk_score,
+        "severity": scored.severity,
+        "factors": {name: factor.model_dump(mode="json", by_alias=True) for name, factor in scored.factors.items()},
+        "reasons": scored.reasons,
+        "missingEvidence": scored.missing_evidence,
+    }
+
+
+def test_the_snapshot_covers_every_case() -> None:
+    assert set(_snapshot()["cases"]) == set(SNAPSHOT_CASES)
+
+
+@pytest.mark.parametrize("name", sorted(SNAPSHOT_CASES))
+def test_score_context_reproduces_the_risk_v1_snapshot(name: str) -> None:
+    expected = _snapshot()["cases"][name]
+    actual = _scored_view(risk_engine.score_context(SNAPSHOT_CASES[name]()))
+    assert actual == expected
+    assert list(actual["factors"]) == list(expected["factors"])  # reporting order too
+
+
+def test_snapshot_headline_scores_and_levels() -> None:
+    # Readable copy of the snapshot's headline figures; the full comparison is the test above.
+    assert {name: (case["riskScore"], case["severity"]) for name, case in _snapshot()["cases"].items()} == SNAPSHOT_HEADLINES
+
+
+def test_risk_level_thresholds_are_unchanged() -> None:
+    expected = _snapshot()["severityBoundaries"]
+    assert {str(score): risk_engine._risk_severity(score) for score in SEVERITY_BOUNDARY_SCORES} == expected
+
+
+def test_missing_evidence_is_reported_exactly_as_before() -> None:
+    no_evidence = risk_engine.score_context(SNAPSHOT_CASES["no_evidence"]())
+    assert no_evidence.risk_score == 0 and no_evidence.severity == "LOW"
+    assert all(factor.contribution == 0 for factor in no_evidence.factors.values())
+    assert no_evidence.missing_evidence == _snapshot()["cases"]["no_evidence"]["missingEvidence"]
+    assert len(no_evidence.missing_evidence) == 6
+
+
+def test_the_methodology_is_versioned() -> None:
+    assert risk_engine.RISK_METHODOLOGY_VERSION == "risk-v1"
+    assert risk_engine.score_context(SNAPSHOT_CASES["low_manual_event"]()).methodology_version == "risk-v1"
+
+
+# Names whose use inside the scoring code would mean database, request, settings or clock access.
+IMPURE_NAMES = frozenset(
+    {
+        "db", "session", "Session", "select", "commit", "flush", "execute", "scalars",
+        "Incident", "IncidentHistory", "enrich_incident_context", "HTTPException",
+        "get_settings", "Settings", "datetime", "date", "time", "now", "utcnow", "today", "random", "uuid4",
+    }
+)
+PURE_FUNCTIONS = ("score_context", "_calculate_factors", "_factor", "_bounded", "_attack_context", "_attack_stages", "_risk_severity")
+
+
+def test_score_context_uses_no_database_request_settings_or_clock_names() -> None:
+    for name in PURE_FUNCTIONS:
+        tree = ast.parse(inspect.getsource(getattr(risk_engine, name)))
+        used = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+        used |= {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+        assert not used & IMPURE_NAMES, (name, sorted(used & IMPURE_NAMES))
+    assert list(inspect.signature(risk_engine.score_context).parameters) == ["context"]
+
+
+def test_score_context_runs_with_database_and_network_access_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("score_context must not access the database or network")
+
+    for method in ("execute", "scalars", "scalar", "get", "add", "commit", "flush"):
+        monkeypatch.setattr(Session, method, forbidden)
+    monkeypatch.setattr(socket.socket, "connect", forbidden)
+    for name, build in SNAPSHOT_CASES.items():
+        context = build()
+        before = context.model_dump(mode="json")
+        first, second = risk_engine.score_context(context), risk_engine.score_context(context)
+        assert _scored_view(first) == _scored_view(second) == _snapshot()["cases"][name]  # deterministic
+        assert context.model_dump(mode="json") == before  # the input is not modified
+
+
+def test_calculate_incident_risk_delegates_to_score_context(core_api: CoreApi, monkeypatch: pytest.MonkeyPatch) -> None:
+    incident_id = seed_risk_case(core_api, cvss_scores=[7.1], threat_match=(0.72, Severity.MEDIUM))
+    seen: list[risk_engine.ContextRiskScore] = []
+    original = risk_engine.score_context
+
+    def spy(context: IncidentContextBundle) -> risk_engine.ContextRiskScore:
+        seen.append(original(context))
+        return seen[-1]
+
+    monkeypatch.setattr(risk_engine, "score_context", spy)
+    response = calculate(core_api, incident_id)
+
+    assert response.status_code == 200 and len(seen) == 1
+    body = response.json()
+    scored = _scored_view(seen[0])
+    assert {key: body[key] for key in scored} == scored
+    # The API response keeps exactly its existing fields; the methodology version is not added to it.
+    assert set(body) == {"incidentId", "riskScore", "severity", "factors", "reasons", "missingEvidence", "stateTransition"}

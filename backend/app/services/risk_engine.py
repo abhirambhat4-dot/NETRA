@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 from typing import Iterable
 from uuid import UUID
 
@@ -15,6 +16,10 @@ from app.schemas.risk import (
     RiskStateTransition,
 )
 from app.services.context_enrichment import enrich_incident_context
+
+#: The scoring methodology below: weights, normalisations, thresholds and evidence wording. Change any of
+#: them only under a new version (tests/risk_engine_v1_snapshots.json pins risk-v1).
+RISK_METHODOLOGY_VERSION = "risk-v1"
 
 FACTOR_WEIGHTS = {
     "asset_criticality": 0.25,
@@ -287,6 +292,40 @@ def _risk_severity(score: float) -> str:
     return "CRITICAL"
 
 
+@dataclass(frozen=True)
+class ContextRiskScore:
+    """What ``score_context`` derives from an incident context; ``calculate_incident_risk`` reports it."""
+
+    methodology_version: str
+    risk_score: float
+    severity: str
+    factors: dict[str, RiskFactorExplanation]
+    missing_evidence: list[str]
+
+    @property
+    def reasons(self) -> list[str]:
+        return [factor.reason for factor in self.factors.values()]
+
+
+def score_context(context: IncidentContextBundle) -> ContextRiskScore:
+    """Score an already-gathered incident context with risk-v1.
+
+    Pure: it reads only ``context``; no database, clock, settings or network access, and no state change.
+    """
+    factors, missing_evidence = _calculate_factors(context)
+    risk_score = round(
+        min(100.0, max(0.0, sum(factor.contribution for factor in factors.values()))),
+        2,
+    )
+    return ContextRiskScore(
+        methodology_version=RISK_METHODOLOGY_VERSION,
+        risk_score=risk_score,
+        severity=_risk_severity(risk_score),
+        factors=factors,
+        missing_evidence=missing_evidence,
+    )
+
+
 def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> RiskScoreResult:
     incident = db.scalars(select(Incident).where(Incident.id == incident_id)).one_or_none()
     if incident is None:
@@ -298,12 +337,8 @@ def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> Ri
         )
 
     context = enrich_incident_context(db, incident_id, actor=actor, record_history=False)
-    factors, missing_evidence = _calculate_factors(context)
-    risk_score = round(
-        min(100.0, max(0.0, sum(factor.contribution for factor in factors.values()))),
-        2,
-    )
-    severity = _risk_severity(risk_score)
+    scored = score_context(context)
+    risk_score = scored.risk_score
     transition = RiskStateTransition(
         from_state=IncidentState.UNDERSTOOD.name,
         to_state=IncidentState.PRIORITISED.name,
@@ -312,10 +347,10 @@ def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> Ri
     result = RiskScoreResult(
         incident_id=incident.id,
         risk_score=risk_score,
-        severity=severity,
-        factors=factors,
-        reasons=[factor.reason for factor in factors.values()],
-        missing_evidence=missing_evidence,
+        severity=scored.severity,
+        factors=scored.factors,
+        reasons=scored.reasons,
+        missing_evidence=scored.missing_evidence,
         state_transition=transition,
     )
 
