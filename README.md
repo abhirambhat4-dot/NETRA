@@ -77,7 +77,7 @@ A diagram and the full data flow are in [docs/PROJECT_DOCUMENTATION.md](docs/PRO
 | Cyber Memory | `api/cyber_memory.py`, `services/controlled_response.py` | Cyber Memory | Record incident outcome and lessons learned |
 | Security Assessment | `api/assessments.py`, `services/assessment.py`, `assessment_engine.py` | Security Assessment | Deterministic, evidence-cited asset assessments stored as immutable snapshots |
 | Assets and threat intelligence | `api/assets.py`, `api/threat_intelligence.py` | Assets, Threat Intelligence | Read-only inventory, vulnerabilities and indicators (no create API) |
-| Dashboard | `api/dashboard.py`, `api/health.py` | Command Center | Aggregate statistics and health checks |
+| Dashboard | `api/dashboard.py`, `services/risk_trend.py`, `api/health.py` | Command Center | Aggregate statistics, risk trend reconstructed from stored history, health checks |
 
 ## 5. Dataset ingestion, validation, deduplication and provenance
 
@@ -145,6 +145,13 @@ Full reference: [docs/DATASET_IMPORTS.md](docs/DATASET_IMPORTS.md).
   returns them oldest first, read-only and never recalculated; an empty list before the first
   calculation, `404` for an unknown incident and `401` without a token. Incident details show them
   in the "Risk evaluations" panel.
+- **Dashboard risk trend:** `GET /api/dashboard/risk-trend?range=24h|7d` (any signed-in user; `401`
+  without a token, `422` for another range) returns 24 hourly or 28 six-hour UTC buckets, oldest
+  first. Each bucket gives the average risk of the incidents active at its end (the latest bucket
+  equals the Command Center's average active incident risk; `null` when none was scored), the
+  number of active and scored incidents, and event counts by detection source. It reconstructs
+  history from stored evidence (incident history, risk evaluations, event timestamps) and never
+  recalculates or writes anything.
 
 ## 7. Assessment history and persistence
 

@@ -1059,7 +1059,7 @@ export type TrendRange = '24h' | '7d'
 /** One bucket of the system risk / activity trend. */
 export interface RiskTrendPoint {
   timestamp: string // bucket start
-  riskScore: number // 0–100 system risk at bucket end
+  riskScore: number | null // 0–100 risk at bucket end; null (live API only) when no active incident was scored
   activeIncidents: number
   events: Record<Exclude<DetectionSource, 'HYBRID'>, number> // event volume by source
 }

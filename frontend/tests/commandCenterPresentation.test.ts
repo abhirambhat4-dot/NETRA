@@ -108,10 +108,27 @@ test('the guide target for the dashboard exists on the page', () => {
   assert.ok(page.includes(`data-guide-target="${target}"`), `no element with data-guide-target="${target}"`)
 })
 
-test('Recharts loads lazily, only for the demo-only trend panel', () => {
+test('Recharts loads lazily, only for the trend panel', () => {
   assert.doesNotMatch(page, /import \{ RiskTrendPanel \}/)
   assert.match(page, /lazy\(\(\) => import\('\.\/dashboard\/RiskTrendPanel'\)/)
-  assert.match(page, /<Suspense/)
+  assert.equal(page.match(/<Suspense/g)?.length, 2)
+})
+
+test('the risk trend is shown once per mode: live variant on the live dashboard, unchanged in the demo section', () => {
+  const uses = page.match(/<RiskTrendPanel[^>]*\/>/g) ?? []
+  assert.deepEqual(uses, ['<RiskTrendPanel live className="cc-card rounded-2xl" />', '<RiskTrendPanel />'])
+  // The live instance sits in a !USE_MOCKS block; the original one stays inside the USE_MOCKS demo disclosure.
+  const live = page.indexOf('<RiskTrendPanel live')
+  assert.ok(page.lastIndexOf('{!USE_MOCKS && (', live) > page.lastIndexOf('{USE_MOCKS && (', live))
+  const demo = page.indexOf('<RiskTrendPanel />')
+  assert.ok(page.lastIndexOf('Open demo-only dashboard enrichment', demo) > live)
+})
+
+test('the live availability list says drivers are still missing while risk history is now available', () => {
+  assert.doesNotMatch(page, /Risk history and drivers/)
+  assert.match(page, /<Availability label="Risk drivers \(risk history is now shown in the trend below\)" \/>/)
+  assert.match(page, /<Availability label="ATT&CK activity" \/>/)
+  assert.match(page, /<Availability label="Asset risk scores" \/>/)
 })
 
 test('login authentication behaviour is unchanged', () => {

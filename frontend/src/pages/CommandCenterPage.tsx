@@ -351,7 +351,7 @@ export function CommandCenterPage() {
           ) : (
             <Panel title="Not returned by the current API" description="These signals are not estimated or filled with demo values." className="cc-card rounded-2xl">
               <dl className="divide-y divide-border text-[13px]">
-                <Availability label="Risk history and drivers" />
+                <Availability label="Risk drivers (risk history is now shown in the trend below)" />
                 <Availability label="ATT&CK activity" />
                 <Availability label="Asset risk scores" />
               </dl>
@@ -359,6 +359,15 @@ export function CommandCenterPage() {
           )}
         </div>
       </div>
+
+      {/* Live risk history: reconstructed by the API from stored incident history (GET /dashboard/risk-trend). */}
+      {!USE_MOCKS && (
+        <div className="cc-rise" style={delay(460)}>
+          <Suspense fallback={<Panel title="Average active incident risk trend" className="cc-card min-h-90 rounded-2xl"><LoadingState variant="inline" label="Loading chart…" /></Panel>}>
+            <RiskTrendPanel live className="cc-card rounded-2xl" />
+          </Suspense>
+        </div>
+      )}
 
       {USE_MOCKS && (
         <Disclosure label="Open demo-only dashboard enrichment" hint="Mock data · not live telemetry">

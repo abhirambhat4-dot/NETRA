@@ -246,3 +246,16 @@ class DashboardStats(CoreResponse):
     threat_indicator_count: int
     recent_events_24h: int = Field(alias="recentEvents24h")
     recent_incidents_24h: int = Field(alias="recentIncidents24h")
+
+
+class RiskTrendPointResponse(CoreResponse):
+    """One dashboard trend bucket (GET /api/dashboard/risk-trend); reconstructed from stored history."""
+
+    timestamp: datetime = Field(description="Bucket start (UTC).")
+    risk_score: float | None = Field(
+        description="Average risk score of incidents active at the bucket end (the last bucket: now), ignoring "
+        "unscored ones; the same definition as averageRiskScore. Null when no active incident was scored."
+    )
+    active_incidents: int
+    scored_incidents: int
+    events: dict[str, int] = Field(description="Security events that occurred in the bucket, by detection source.")
