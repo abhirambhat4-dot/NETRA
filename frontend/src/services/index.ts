@@ -59,6 +59,7 @@ import type {
   TrendRange,
 } from '@/api/types'
 import { verifyIncidentPath } from '@/lib/incidentVerification'
+import { adaptRiskEvaluation, type BackendRiskEvaluation, type RiskEvaluationView } from '@/lib/riskEvaluation'
 import type { ThreatFeedSummary } from '@/lib/threatFeed'
 import type { HealthOutcome } from '@/lib/workspaceStatus'
 import { mockApi } from '@/mocks/api'
@@ -512,6 +513,9 @@ interface LiveCyberMemoryResponse {
 export const liveIncidentDetailsService = {
   get: async (id: string): Promise<LiveIncidentDetailsViewModel> =>
     adaptLiveIncidentDetails(await http.get<BackendIncidentDetailResponse>(`/incidents/${id}`)),
+  /** Stored risk evaluations, oldest first (GET /incidents/{id}/risk-evaluations); read-only. */
+  riskEvaluations: async (id: string): Promise<RiskEvaluationView[]> =>
+    (await http.get<BackendRiskEvaluation[]>(`/incidents/${id}/risk-evaluations`)).map(adaptRiskEvaluation),
 }
 
 export const liveIncidentWorkflowService = {

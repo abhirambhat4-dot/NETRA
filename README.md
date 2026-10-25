@@ -138,6 +138,13 @@ Full reference: [docs/DATASET_IMPORTS.md](docs/DATASET_IMPORTS.md).
 - **Incident risk** (`POST /api/incidents/{id}/risk-score`) is a weighted, documented heuristic:
   asset criticality 0.25, vulnerability 0.20, anomaly 0.20, detection confidence 0.15, threat
   intelligence 0.10, attack context 0.10. Each factor's rationale is returned.
+- **Risk evaluation history:** each successful calculation also stores an append-only
+  `risk_evaluations` row (migration `0006_add_risk_evaluations`) in the same transaction as the score:
+  score, level, methodology version (`risk-v1`), factor breakdown, missing evidence, matched active
+  indicators, trigger and actor. `GET /api/incidents/{id}/risk-evaluations` (any signed-in user)
+  returns them oldest first, read-only and never recalculated; an empty list before the first
+  calculation, `404` for an unknown incident and `401` without a token. Incident details show them
+  in the "Risk evaluations" panel.
 
 ## 7. Assessment history and persistence
 
@@ -208,7 +215,7 @@ Dataset Import have no mock mode.
 
 **Schema ownership: read before running Alembic.** Migration `0001` creates only `users`. The core
 tables (assets, events, incidents, decisions and so on) are created by `app.db.init_db`, and
-migrations `0002`–`0005` add the remaining tables and columns with guards for tables that already
+migrations `0002`–`0006` add the remaining tables and columns with guards for tables that already
 exist. Therefore:
 
 ```powershell
@@ -219,7 +226,7 @@ cd backend
 
 # Existing database tracked by Alembic: back it up first, then
 .\.venv\Scripts\python.exe -m alembic current
-.\.venv\Scripts\python.exe -m alembic upgrade head     # head = 0005_dataset_event_provenance
+.\.venv\Scripts\python.exe -m alembic upgrade head     # head = 0006_add_risk_evaluations
 ```
 
 **Safety:**

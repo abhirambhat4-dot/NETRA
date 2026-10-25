@@ -28,6 +28,7 @@ from app.models.decision import Decision
 from app.models.enums import IncidentState, Severity
 from app.models.event import SecurityEvent
 from app.models.incident import Incident, IncidentEvent, IncidentHistory
+from app.models.risk_evaluation import RiskEvaluation
 from app.models.user import User
 from app.models.vulnerability import Vulnerability
 from app.schemas.core import (
@@ -42,7 +43,7 @@ from app.schemas.core import (
     TimelineEntryResponse,
 )
 from app.schemas.enrichment import IncidentContextBundle
-from app.schemas.risk import RiskScoreResult
+from app.schemas.risk import RiskEvaluationResponse, RiskScoreResult
 from app.services.context_enrichment import enrich_incident_context
 from app.services.controlled_response import create_incident_cyber_memory
 from app.services.decision_workflow import recommend_incident_decision, verify_incident
@@ -320,6 +321,27 @@ def get_incident_timeline(
     if db.get(Incident, incident_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
     return build_timeline(db, incident_id)
+
+
+@router.get(
+    "/{incident_id}/risk-evaluations",
+    response_model=list[RiskEvaluationResponse],
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Incident not found"}},
+)
+def list_incident_risk_evaluations(
+    incident_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+) -> list[RiskEvaluationResponse]:
+    """The incident's stored risk evaluations, oldest first. Read-only: nothing is recalculated."""
+    if db.get(Incident, incident_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
+    evaluations = db.scalars(
+        select(RiskEvaluation)
+        .where(RiskEvaluation.incident_id == incident_id)
+        .order_by(RiskEvaluation.created_at, RiskEvaluation.id)
+    ).all()
+    return [RiskEvaluationResponse.model_validate(evaluation, from_attributes=True) for evaluation in evaluations]
 
 
 @router.get(

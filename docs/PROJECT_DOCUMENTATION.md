@@ -128,7 +128,7 @@ authorized → contained → learned`. The service functions that drive it are i
 | **Normalisation** | `services/dataset_normalization.py`, `CicIds2017Profile.normalize_row` | Turns accepted CIC-IDS2017 rows into `network_flow` events in chunks of 1,000, inside the batch transaction. Content-hash deduplication, exact-IP asset linking, full provenance in `raw_data`. |
 | **Event intake** | `api/events.py`, `api/collector.py`, `services/intake.py`, `services/collector.py` | Event list (filters include `source` and `importBatchId`) and detail. Manual/collector submission stores events as `manual` (the `dataset_import` source is reserved). |
 | **Correlation and enrichment** | `services/event_correlation.py`, `services/context_enrichment.py` | Links events to an incident within a 30-minute window by shared addresses and attack family. Adds asset, vulnerability and threat-intelligence context. |
-| **Risk and prioritisation** | `services/risk_engine.py`, `services/prioritization.py` | Weighted factors: asset criticality 0.25, vulnerability 0.20, anomaly 0.20, detection confidence 0.15, threat intelligence 0.10, attack context 0.10. Each factor carries a rationale. Active incidents are ordered by risk score (unscored last), then severity, then asset criticality. |
+| **Risk and prioritisation** | `services/risk_engine.py`, `services/prioritization.py` | Weighted factors: asset criticality 0.25, vulnerability 0.20, anomaly 0.20, detection confidence 0.15, threat intelligence 0.10, attack context 0.10. Each factor carries a rationale. Every calculation is stored as an append-only `risk_evaluations` row in the same transaction; `GET /api/incidents/{id}/risk-evaluations` returns them oldest first (signed-in users; `404` for an unknown incident). Active incidents are ordered by risk score (unscored last), then severity, then asset criticality. |
 | **Decision workflow** | `services/decision_workflow.py`, `api/decisions.py`, `api/authorizations.py` | Deterministic recommendation (`ISOLATE_HOST`, `BLOCK_IP`, `INVESTIGATE` or `MONITOR`, by documented thresholds). Request, approve or reject authorisation, with the approver required to differ from the requester. |
 | **Controlled response** | `services/controlled_response.py`, `api/containments.py` | **Simulated** containment of an approved action (records `"simulated": true`; changes no external system). Verification of the outcome; Cyber Memory entry with the lesson. |
 | **Security Assessment** | `services/assessment_engine.py` (pure), `services/assessment.py`, `api/assessments.py` | `assessment-v2`: nine checks, severity-based deductions from 100, grades A–F. Bounded evidence loading; immutable snapshots; optional `asOf`. 10 runs per user per minute. |
@@ -173,6 +173,7 @@ erDiagram
 | `incidents`, `incident_events`, `incident_history` | Incident, event links, audit trail of state changes | State and action enums |
 | `decisions`, `authorizations`, `containment_actions`, `cyber_memories` | Response workflow records | FKs to incident, decision and authorisation |
 | `security_assessments`, `assessment_findings` | Immutable assessment snapshots and per-check findings | Score 0–100, grade A–F, unique (assessment, check) |
+| `risk_evaluations` | Append-only history of incident risk calculations: score, level, methodology version, factors, missing evidence, matched indicators, trigger, actor | Score and previous score 0–100; level LOW/MEDIUM/HIGH/CRITICAL; trigger initial/reevaluation; deleted only with its incident; index (incident, created_at) |
 
 **Migrations** (`backend/migrations/versions`):
 
@@ -183,11 +184,14 @@ erDiagram
 | `0003_add_security_assessments` | `security_assessments`, `assessment_findings` |
 | `0004_add_import_batches` | `import_batches` |
 | `0005_dataset_event_provenance` | `security_events.import_batch_id` and `source_row`; `import_batches.events_created` and `duplicate_rows`; `dataset_import` source value |
+| `0006_add_risk_evaluations` | `risk_evaluations` (fails clearly if `incidents` is missing; skips a table already created by `init_db`) |
 
-The core operational tables are created by `app.db.init_db`; migrations `0002`–`0005` are guarded
+The core operational tables are created by `app.db.init_db`; migrations `0002`–`0006` are guarded
 for tables that already exist. On the local development database, 0002–0005 were applied with a
-verified `pg_dump` backup before each step, and pre-existing row counts were unchanged. Production
-migration state has **not** been verified for this version.
+verified `pg_dump` backup before each step, and pre-existing row counts were unchanged; 0006 was
+applied to the local development and E2E databases on 2026-10-25, each after a verified `pg_dump`
+backup and a read-only schema check. Production migration state has **not** been verified for this
+version, and 0006 has not been applied there.
 
 ## 8. Security considerations
 

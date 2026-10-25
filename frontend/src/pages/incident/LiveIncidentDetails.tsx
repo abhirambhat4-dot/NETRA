@@ -13,6 +13,7 @@ import { forbiddenActionMessage, permissionExplanation, resolutionAccess } from 
 import { formatDateTime } from '@/lib/format'
 import { canVerifyIncident, shouldRefreshAfterVerifyError } from '@/lib/incidentVerification'
 import { ROUTES } from '@/lib/navigation'
+import { latestRiskEvaluation, riskChange, riskEvaluationSummary } from '@/lib/riskEvaluation'
 import { DATA_CHANGED_EVENT, liveIncidentDetailsService, liveIncidentWorkflowService } from '@/services'
 import { HttpError } from '@/services/http'
 import { riskToSeverity, severityTone, toneStyles } from '@/lib/tones'
@@ -60,6 +61,11 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
   const [rejectionReason, setRejectionReason] = useState('')
   const [forbidden, setForbidden] = useState<string | null>(null)
   const { incident } = detail
+  // Stored risk evaluations; reloaded with the rest of the page after every workflow action.
+  const riskEvaluations = useQuery(`live-incident-risk-evaluations-${incident.id}`, () =>
+    liveIncidentDetailsService.riskEvaluations(incident.id),
+  )
+  const latestEvaluation = riskEvaluations.data ? latestRiskEvaluation(riskEvaluations.data) : null
   const latestDecisionId = incident.latestDecision?.id
   const decision = incident.latestDecision ?? detail.decisions[detail.decisions.length - 1] ?? null
   const authorization = decision
@@ -357,9 +363,47 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
               <Unavailable message="No asset is associated with this incident." />
             )}
             <div className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
-              <Fact label="Risk assessment" value="Unavailable from this endpoint" />
+              <Fact
+                label="Risk assessment"
+                value={riskEvaluations.error ? 'Risk evaluations could not be loaded' : riskEvaluations.data ? riskEvaluationSummary(latestEvaluation) : 'Loading…'}
+              />
               <Fact label="MITRE ATT&CK technique" value="Unavailable from this endpoint" />
             </div>
+          </Panel>
+
+          <Panel title="Risk evaluations" description="Stored scoring runs from the risk engine, oldest first; never recalculated">
+            {riskEvaluations.error ? (
+              <ErrorState title="Risk evaluations could not be loaded" message={riskEvaluations.error.message} onRetry={riskEvaluations.reload} />
+            ) : !riskEvaluations.data ? (
+              <LoadingState count={2} />
+            ) : riskEvaluations.data.length ? (
+              <RecordList>
+                {riskEvaluations.data.map((evaluation) => (
+                  <Record key={evaluation.id} id={evaluation.id} timestamp={evaluation.createdAt} label={`${evaluation.riskScore}/100 ${evaluation.riskLevel}`}>
+                    {evaluation.id === latestEvaluation?.id && <p className="text-[10px] font-semibold text-primary">Latest evaluation</p>}
+                    <p className="text-[11px]">
+                      Methodology: {evaluation.methodologyVersion} · Trigger: {evaluation.trigger} · Actor: {evaluation.actor}
+                    </p>
+                    {riskChange(evaluation) && <p className="text-[11px]">{riskChange(evaluation)}</p>}
+                    <ul className="space-y-0.5 text-[11px] text-muted-foreground">
+                      {evaluation.factors.map((factor) => (
+                        <li key={factor.key} title={factor.reason}>
+                          {factor.label}: {factor.contribution} points ({factor.normalizedValue}/100 × {factor.weight})
+                        </li>
+                      ))}
+                    </ul>
+                    {evaluation.matchedIndicators.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground">Matched indicators: {evaluation.matchedIndicators.join('; ')}</p>
+                    )}
+                    {evaluation.missingEvidence.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground">Missing evidence: {evaluation.missingEvidence.join(' ')}</p>
+                    )}
+                  </Record>
+                ))}
+              </RecordList>
+            ) : (
+              <Unavailable message="No risk evaluation has been recorded yet. Calculate risk once the incident is UNDERSTOOD." />
+            )}
           </Panel>
 
           <Panel title="Security events" description={`${detail.events.length} linked event${detail.events.length === 1 ? '' : 's'}`}>
