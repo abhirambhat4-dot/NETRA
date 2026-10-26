@@ -161,6 +161,7 @@ def submit_event(db: Session, user: User, index: int, raw: Any) -> CollectorEven
         "protocol": event.protocol,
         "anomaly_score": event.anomaly_score,
         "asset_id": event.asset_id,
+        "attack_technique_ids": event.attack_technique_ids,
         "raw_data": {
             **(event.raw_data or {}),
             RESERVED_RAW_DATA_KEY: {
@@ -171,7 +172,11 @@ def submit_event(db: Session, user: User, index: int, raw: Any) -> CollectorEven
         },
     }
     try:
-        stored = create_event(db, {name: value for name, value in payload.items() if value is not None})
+        stored = create_event(
+            db,
+            {name: value for name, value in payload.items() if value is not None},
+            attack_technique_origin="collector_field",
+        )
     except HTTPException as error:
         db.rollback()
         if error.status_code == status.HTTP_409_CONFLICT:
@@ -217,7 +222,11 @@ def collector_status(db: Session) -> dict[str, Any]:
     recent = db.scalars(
         select(SecurityEvent)
         .where(*is_collector_event)
-        .options(joinedload(SecurityEvent.asset), selectinload(SecurityEvent.incidents))
+        .options(
+            joinedload(SecurityEvent.asset),
+            selectinload(SecurityEvent.incidents),
+            selectinload(SecurityEvent.attack_techniques),
+        )
         .order_by(SecurityEvent.created_at.desc(), SecurityEvent.id.desc())
         .limit(RECENT_EVENT_LIMIT)
     ).unique().all()
@@ -229,7 +238,11 @@ def collector_status(db: Session) -> dict[str, Any]:
     recent_imported = db.scalars(
         select(SecurityEvent)
         .where(is_imported)
-        .options(joinedload(SecurityEvent.asset), selectinload(SecurityEvent.incidents))
+        .options(
+            joinedload(SecurityEvent.asset),
+            selectinload(SecurityEvent.incidents),
+            selectinload(SecurityEvent.attack_techniques),
+        )
         # A batch's events share created_at (one transaction); keep its file order within it.
         .order_by(SecurityEvent.created_at.desc(), SecurityEvent.source_row, SecurityEvent.id)
         .limit(RECENT_EVENT_LIMIT)

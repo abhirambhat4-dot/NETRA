@@ -76,7 +76,11 @@ def list_events(
     statement = (
         select(SecurityEvent)
         .where(*conditions)
-        .options(joinedload(SecurityEvent.asset), selectinload(SecurityEvent.incidents))
+        .options(
+            joinedload(SecurityEvent.asset),
+            selectinload(SecurityEvent.incidents),
+            selectinload(SecurityEvent.attack_techniques),
+        )
         .order_by(sort_expression, SecurityEvent.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -113,7 +117,11 @@ def get_event(
     statement = (
         select(SecurityEvent)
         .where(SecurityEvent.id == event_id)
-        .options(joinedload(SecurityEvent.asset), selectinload(SecurityEvent.incidents))
+        .options(
+            joinedload(SecurityEvent.asset),
+            selectinload(SecurityEvent.incidents),
+            selectinload(SecurityEvent.attack_techniques),
+        )
     )
     event = db.scalars(statement).unique().one_or_none()
     if event is None:

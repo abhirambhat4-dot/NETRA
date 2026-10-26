@@ -11,6 +11,7 @@ from app.models.enums import DetectionSource, Severity
 
 if TYPE_CHECKING:
     from app.models.asset import Asset
+    from app.models.attack_technique import EventAttackTechnique
     from app.models.incident import Incident
 
 
@@ -57,4 +58,9 @@ class SecurityEvent(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     asset: Mapped["Asset | None"] = relationship(back_populates="events")
     incidents: Mapped[list["Incident"]] = relationship(
         secondary="incident_events", back_populates="events", passive_deletes=True
+    )
+    # Source-supplied ATT&CK technique IDs (event_attack_techniques). Read-only here: rows are written only by
+    # intake.create_event, and removed by the database together with the event.
+    attack_techniques: Mapped[list["EventAttackTechnique"]] = relationship(
+        viewonly=True, order_by="EventAttackTechnique.technique_id"
     )

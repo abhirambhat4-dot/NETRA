@@ -17,7 +17,7 @@ from app.services.decision_workflow import approve_decision_authorization
 from tests.conftest import APPROVER_EMAIL, CoreApi
 from tests.test_authorization import create_decision, request_authorization
 from tests.test_containment import contain, create_pending_authorization
-from tests.test_decision import seed_prioritised_incident
+from tests.test_decision import request_decision, seed_prioritised_incident
 from tests.test_incident_verification import request_incident_verification
 from tests.test_verification import verify
 
@@ -250,6 +250,7 @@ def test_unrecognised_role_cannot_verify_and_incident_is_unchanged(core_api: Cor
 @pytest.mark.parametrize("role", ["approver", "admin"])
 def test_elevated_roles_can_still_verify(core_api: CoreApi, role: str) -> None:
     incident_id = seed_prioritised_incident(core_api)
+    assert request_decision(core_api, incident_id).status_code == 201  # verification needs a current decision
 
     response = core_api.client.post(f"/api/incidents/{incident_id}/verify", headers=headers_for(core_api, role=role))
 

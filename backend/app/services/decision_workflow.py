@@ -16,14 +16,32 @@ from app.models.enums import (
 from app.models.incident import Incident, IncidentHistory
 from app.schemas.enrichment import IncidentContextBundle
 from app.services.context_enrichment import enrich_incident_context
+from app.services.decision_validity import decision_validity, rejected as _rejected
+from app.services.incident_locking import lock_incident, serialized_timestamp
 from app.services.prioritization import get_prioritized_incidents
 
 
+# An authorization in one of these states is still open: it may yet be approved or acted on.
+OPEN_AUTHORIZATION_STATUSES = (AuthorizationStatus.PENDING, AuthorizationStatus.APPROVED)
+
+
+def _superseded(decision: Decision, incident: Incident) -> bool:
+    """A decision made for a score the incident no longer has (a re-evaluation changed it), with no open request.
+
+    Its authorization can never be requested or approved (the scores must match), so a new decision may replace it.
+    """
+    return decision.risk_score != incident.risk_score and not any(
+        authorization.status in OPEN_AUTHORIZATION_STATUSES for authorization in decision.authorizations
+    )
+
+
 def verify_incident(db: Session, incident_id: UUID, *, actor: str) -> Incident:
+    lock_incident(db, incident_id)
     incident = db.scalars(
         select(Incident)
         .where(Incident.id == incident_id)
-        .options(selectinload(Incident.events), selectinload(Incident.decisions))
+        .options(selectinload(Incident.events), selectinload(Incident.decisions).selectinload(Decision.authorizations))
+        .execution_options(populate_existing=True)
     ).unique().one_or_none()
     if incident is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
@@ -31,6 +49,14 @@ def verify_incident(db: Session, incident_id: UUID, *, actor: str) -> Incident:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Incident must be PRIORITISED before verification",
+        )
+    # Verification needs a decision that can still be authorized: one for the current risk score and not
+    # rejected. Otherwise a VERIFIED incident could be left with no decision it can act on, since a new decision
+    # can only be recommended while it is PRIORITISED.
+    if not any(decision_validity(decision, incident.risk_score) == "CURRENT" for decision in incident.decisions):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A current decision is required before verification: recommend a decision for the incident's current risk score first",
         )
 
     previous_state = incident.state
@@ -177,9 +203,8 @@ def _select_action(
 
 
 def recommend_incident_decision(db: Session, incident_id: UUID, *, actor: str) -> Decision:
-    incident = db.scalars(
-        select(Incident).where(Incident.id == incident_id)
-    ).one_or_none()
+    # Locked first: the one-decision-per-incident check below then cannot pass in two requests at once.
+    incident = lock_incident(db, incident_id)
     if incident is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
     if incident.state != IncidentState.PRIORITISED or incident.risk_score is None:
@@ -192,7 +217,8 @@ def recommend_incident_decision(db: Session, incident_id: UUID, *, actor: str) -
         select(IncidentHistory)
         .where(
             IncidentHistory.incident_id == incident.id,
-            IncidentHistory.action == "risk_calculated",
+            # The latest stored calculation: the initial one, or a later explicit re-evaluation.
+            IncidentHistory.action.in_(("risk_calculated", "risk_reevaluated")),
         )
         .order_by(desc(IncidentHistory.occurred_at), desc(IncidentHistory.id))
         .limit(1)
@@ -203,8 +229,15 @@ def recommend_incident_decision(db: Session, incident_id: UUID, *, actor: str) -
             detail="A persisted Phase 4 risk calculation is required before decision recommendation",
         )
 
-    existing = db.scalar(select(Decision.id).where(Decision.incident_id == incident.id).limit(1))
-    if existing is not None:
+    # A new recommendation is allowed only once every earlier one was rejected or superseded by a changed risk
+    # score; the earlier records are kept.
+    previous_decisions = db.scalars(
+        select(Decision)
+        .where(Decision.incident_id == incident.id)
+        .options(selectinload(Decision.authorizations))
+        .order_by(Decision.created_at, Decision.id)
+    ).all()
+    if not all(_rejected(previous) or _superseded(previous, incident) for previous in previous_decisions):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A decision already exists for this incident",
@@ -251,6 +284,8 @@ def recommend_incident_decision(db: Session, incident_id: UUID, *, actor: str) -
 
     decision = Decision(
         incident_id=incident.id,
+        # Ordered by the incident lock: "the latest decision" (authorization eligibility) is the one made last.
+        created_at=serialized_timestamp(Decision.created_at, Decision.incident_id == incident.id),
         action=action,
         rationale=rationale,
         risk_score=risk_score,
@@ -275,6 +310,7 @@ def recommend_incident_decision(db: Session, incident_id: UUID, *, actor: str) -
                 "supporting_evidence": evidence,
                 "risk_history_id": str(risk_history.id),
                 "priority_rank": priority_entry["priorityRank"] if priority_entry else None,
+                **({"previous_decision_id": str(previous_decisions[-1].id)} if previous_decisions else {}),
             },
         )
     )
@@ -289,10 +325,15 @@ def request_decision_authorization(
     *,
     actor: str,
 ) -> Authorization:
+    # A decision's incident never changes: read it unlocked, lock the incident, then load the decision.
+    incident_id = db.scalar(select(Decision.incident_id).where(Decision.id == decision_id))
+    if incident_id is not None:
+        lock_incident(db, incident_id)
     decision = db.scalars(
         select(Decision)
         .where(Decision.id == decision_id)
         .options(joinedload(Decision.incident))
+        .execution_options(populate_existing=True)
     ).unique().one_or_none()
     if decision is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Decision not found")
@@ -307,19 +348,43 @@ def request_decision_authorization(
             status_code=status.HTTP_409_CONFLICT,
             detail="Decision risk score no longer matches the incident risk score",
         )
-    existing = db.scalar(
-        select(Authorization.id).where(Authorization.decision_id == decision.id).limit(1)
-    )
-    if existing is not None:
+    # After a rejection a new request may be made; the rejected one stays as it is. At most one request
+    # per incident is open at a time, and only for the incident's latest decision.
+    authorizations = db.scalars(
+        select(Authorization)
+        .where(Authorization.incident_id == incident.id)
+        .order_by(Authorization.requested_at, Authorization.id)
+    ).all()
+    open_requests = [item for item in authorizations if item.status in OPEN_AUTHORIZATION_STATUSES]
+    if any(item.decision_id == decision.id for item in open_requests):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An authorization request already exists for this decision",
         )
+    if open_requests:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Another authorization request is already open for this incident",
+        )
+    latest_decision_id = db.scalar(
+        select(Decision.id)
+        .where(Decision.incident_id == incident.id)
+        .order_by(Decision.created_at.desc(), Decision.id.desc())
+        .limit(1)
+    )
+    if latest_decision_id != decision.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Authorization can only be requested for the incident's latest decision",
+        )
+    previous_requests = [item for item in authorizations if item.decision_id == decision.id]
     if decision.action not in ResponseAction:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Decision action is invalid")
 
     authorization = Authorization(
         incident_id=incident.id,
+        # Ordered by the incident lock, so a new request always sorts after the requests it follows.
+        requested_at=serialized_timestamp(Authorization.requested_at, Authorization.incident_id == incident.id),
         decision_id=decision.id,
         requested_action=decision.action,
         status=AuthorizationStatus.PENDING,
@@ -342,6 +407,7 @@ def request_decision_authorization(
                 "decision_id": str(decision.id),
                 "requested_action": decision.action.name,
                 "status": AuthorizationStatus.PENDING.name,
+                **({"previous_authorization_id": str(previous_requests[-1].id)} if previous_requests else {}),
             },
         )
     )
@@ -351,6 +417,10 @@ def request_decision_authorization(
 
 
 def _load_authorization(db: Session, authorization_id: UUID) -> Authorization:
+    """The authorization, read after its incident is locked, so approval and rejection cannot both pass."""
+    incident_id = db.scalar(select(Authorization.incident_id).where(Authorization.id == authorization_id))
+    if incident_id is not None:
+        lock_incident(db, incident_id)
     authorization = db.scalars(
         select(Authorization)
         .where(Authorization.id == authorization_id)
@@ -358,6 +428,7 @@ def _load_authorization(db: Session, authorization_id: UUID) -> Authorization:
             joinedload(Authorization.incident),
             joinedload(Authorization.decision),
         )
+        .execution_options(populate_existing=True)
     ).unique().one_or_none()
     if authorization is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Authorization not found")
@@ -399,6 +470,12 @@ def approve_decision_authorization(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Incident must be VERIFIED before authorization approval",
+        )
+    # An approval authorizes containment for the score the decision was made for, and no other.
+    if authorization.decision.risk_score != incident.risk_score:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Decision risk score no longer matches the incident risk score",
         )
 
     authorization.status = AuthorizationStatus.APPROVED

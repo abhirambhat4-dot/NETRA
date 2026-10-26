@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.models.incident import IncidentHistory
 from app.models.user import User
 from app.services.auth import hash_password
-from app.services.risk_engine import RISK_METHODOLOGY_VERSION
+from app.services.risk_engine import RISK_V2_METHODOLOGY_VERSION
 from tests.conftest import CoreApi
 
 PASSWORD = "workflow-test-password-1"
@@ -99,7 +99,7 @@ def test_the_principal_workflow_persists_and_returns_a_consistent_risk_evaluatio
     assert evaluation["riskLevel"] == score["severity"]
     assert evaluation["factors"] == score["factors"]
     assert evaluation["missingEvidence"] == score["missingEvidence"]
-    assert evaluation["methodologyVersion"] == RISK_METHODOLOGY_VERSION
+    assert evaluation["methodologyVersion"] == RISK_V2_METHODOLOGY_VERSION
     assert (evaluation["trigger"], evaluation["incidentId"], evaluation["previousRiskScore"]) == ("initial", incident_id, None)
     assert evaluation["actor"].startswith("workflow-") and evaluation["createdAt"]
     assert set(evaluation) == {

@@ -119,9 +119,10 @@ def _upgraded(connection: Connection) -> Connection:
 # --- chain -----------------------------------------------------------------------------------------
 
 
-def test_0006_is_the_single_head_after_0005() -> None:
+def test_0006_follows_0005() -> None:
     scripts = _scripts()
-    assert scripts.get_heads() == [REVISION]
+    # 0007_event_attack_techniques is now the single head (tests/test_attack_technique_models.py).
+    assert scripts.get_heads() == ["0007_event_attack_techniques"]
     assert scripts.get_revision(REVISION).down_revision == "0005_dataset_event_provenance"
     assert len(REVISION) <= 32  # alembic_version.version_num is VARCHAR(32)
 

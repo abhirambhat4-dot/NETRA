@@ -2,6 +2,7 @@
 
 from app.models.assessment import AssessmentFinding, SecurityAssessment
 from app.models.asset import Asset
+from app.models.attack_technique import EventAttackTechnique
 from app.models.authorization import Authorization
 from app.models.containment import ContainmentAction
 from app.models.cyber_memory import CyberMemory
@@ -22,6 +23,7 @@ __all__ = [
     "ContainmentAction",
     "CyberMemory",
     "Decision",
+    "EventAttackTechnique",
     "ImportBatch",
     "Incident",
     "IncidentEvent",

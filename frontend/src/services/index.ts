@@ -59,6 +59,11 @@ import type {
   TrendRange,
 } from '@/api/types'
 import { verifyIncidentPath } from '@/lib/incidentVerification'
+import {
+  observedTechniqueParams,
+  type BackendObservedTechniquePage,
+  type ObservedTechniqueFilters,
+} from '@/lib/observedTechniques'
 import { adaptRiskEvaluation, type BackendRiskEvaluation, type RiskEvaluationView } from '@/lib/riskEvaluation'
 import type { ThreatFeedSummary } from '@/lib/threatFeed'
 import type { HealthOutcome } from '@/lib/workspaceStatus'
@@ -722,6 +727,17 @@ export const threatIntelInventoryService = {
  * Live only: how many indicators one feed has stored, and its latest last-seen, from a single page of the
  * existing GET /api/threat-intelligence (source filter, newest first). Mock data has no stored feeds.
  */
+/**
+ * Live only: ATT&CK technique IDs reported by detection sources (GET /api/threat-intelligence/techniques/observed).
+ * Source-supplied evidence only; no catalogue is bundled, so names and tactics are not returned. Mock data has none.
+ */
+export const observedTechniquesService = {
+  list: async (filters: ObservedTechniqueFilters): Promise<BackendObservedTechniquePage> => {
+    if (USE_MOCKS) throw new Error('Observed techniques require the NETRA API.')
+    return http.get<BackendObservedTechniquePage>('/threat-intelligence/techniques/observed', observedTechniqueParams(filters))
+  },
+}
+
 export const threatFeedService = {
   summary: async (source: string): Promise<ThreatFeedSummary> => {
     if (USE_MOCKS) throw new Error('Threat feed status requires the NETRA API.')

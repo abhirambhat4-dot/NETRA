@@ -2,11 +2,12 @@ import json
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy import String, case, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.api.auth import get_current_user, require_permission
+from app.api.cyber_memory import memory_sources
 from app.api.core_serializers import (
     asset_response,
     authorization_response,
@@ -47,10 +48,10 @@ from app.schemas.risk import RiskEvaluationResponse, RiskScoreResult
 from app.services.context_enrichment import enrich_incident_context
 from app.services.controlled_response import create_incident_cyber_memory
 from app.services.decision_workflow import recommend_incident_decision, verify_incident
-from app.services.event_correlation import correlate_incident_events
+from app.services.event_correlation import correlate_incident_events, review_incident
 from app.services.intake import create_incident, link_event_to_incident
 from app.services.prioritization import get_prioritized_incidents
-from app.services.risk_engine import calculate_incident_risk
+from app.services.risk_engine import calculate_incident_risk, reevaluate_incident_risk
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 ACTIVE_STATES = tuple(state for state in IncidentState if state not in (IncidentState.CONTAINED, IncidentState.LEARNED))
@@ -159,7 +160,7 @@ def list_incidents(
     statement = (
         select(Incident, event_count.label("event_count"))
         .where(*conditions)
-        .options(joinedload(Incident.asset), selectinload(Incident.decisions))
+        .options(joinedload(Incident.asset), selectinload(Incident.decisions).selectinload(Decision.authorizations))
         .order_by(sort_expression, Incident.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -185,9 +186,9 @@ def list_prioritized_incidents(
 def create_incident_endpoint(
     request: IncidentCreateRequest,
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> IncidentResponse:
-    incident = create_incident(db, request.model_dump(exclude_none=True))
+    incident = create_incident(db, request.model_dump(exclude_none=True), actor=current_user.email)
     return incident_response(incident, event_count=len(incident.events))
 
 
@@ -200,9 +201,9 @@ def link_event_to_incident_endpoint(
     incident_id: UUID,
     request: IncidentEventLinkRequest,
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> IncidentEventLinkResponse:
-    link = link_event_to_incident(db, incident_id, request.event_id)
+    link = link_event_to_incident(db, incident_id, request.event_id, actor=current_user.email)
     return IncidentEventLinkResponse(
         incident_id=link.incident_id,
         event_id=link.event_id,
@@ -240,6 +241,26 @@ def correlate_incident(
 
 
 @router.post(
+    "/{incident_id}/review",
+    response_model=IncidentResponse,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Incident not found"},
+        status.HTTP_409_CONFLICT: {"description": "Incident must be DETECTED with a linked event before review"},
+    },
+)
+def review_incident_endpoint(
+    incident_id: UUID,
+    reason: Annotated[str, Body(embed=True, min_length=1)],
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
+) -> IncidentResponse:
+    """Analyst review: moves a DETECTED incident to UNDERSTOOD with a recorded reason, for when correlation
+    found no related events. Correlation alone never makes this transition."""
+    incident = review_incident(db, incident_id, actor=current_user.email, reason=reason)
+    return incident_response(incident, event_count=len(incident.events))
+
+
+@router.post(
     "/{incident_id}/risk-score",
     response_model=RiskScoreResult,
     responses={
@@ -253,6 +274,26 @@ def calculate_incident_risk_endpoint(
     current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> RiskScoreResult:
     return calculate_incident_risk(db, incident_id, actor=current_user.email)
+
+
+@router.post(
+    "/{incident_id}/risk-reevaluation",
+    response_model=RiskScoreResult,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Incident not found"},
+        status.HTTP_409_CONFLICT: {
+            "description": "Incident is not a scored PRIORITISED or VERIFIED incident, or an authorization request is open"
+        },
+    },
+)
+def reevaluate_incident_risk_endpoint(
+    incident_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
+) -> RiskScoreResult:
+    """Explicit re-evaluation with the current methodology: appends a risk evaluation, keeps every earlier record.
+    A changed score returns a VERIFIED incident to PRIORITISED, so a new decision and authorization are needed."""
+    return reevaluate_incident_risk(db, incident_id, actor=current_user.email)
 
 
 @router.post(
@@ -305,7 +346,7 @@ def create_cyber_memory_endpoint(
     current_user: Annotated[User, Depends(require_permission(Permission.OPERATE_WORKFLOW))],
 ) -> CyberMemoryResponse:
     memory = create_incident_cyber_memory(db, incident_id, actor=current_user.email)
-    return cyber_memory_response(memory)
+    return cyber_memory_response(memory, memory_sources(db, [memory]).get(memory.id, (None, None)))
 
 
 @router.get(
@@ -361,8 +402,9 @@ def get_incident(
             joinedload(Incident.asset),
             selectinload(Incident.events).joinedload(SecurityEvent.asset),
             selectinload(Incident.events).selectinload(SecurityEvent.incidents),
+            selectinload(Incident.events).selectinload(SecurityEvent.attack_techniques),
             selectinload(Incident.history),
-            selectinload(Incident.decisions),
+            selectinload(Incident.decisions).selectinload(Decision.authorizations),
             selectinload(Incident.authorizations),
             selectinload(Incident.containment_actions),
             selectinload(Incident.memories),

@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils'
 import { eventService, threatIntelInventoryService, threatIntelService } from '@/services'
 import { HttpError, USE_MOCKS } from '@/services/http'
 import { IndicatorDetailSheet } from './intel/IndicatorDetailSheet'
+import { ObservedTechniquesPanel } from './intel/ObservedTechniquesPanel'
 
 const TYPE_META: Record<IndicatorType, { label: string; icon: LucideIcon }> = {
   IP: { label: 'IP', icon: Network },
@@ -299,11 +300,8 @@ export function ThreatIntelligencePage() {
         </div>
       </div>
 
-      {!USE_MOCKS && (
-        <Panel title="ATT&CK correlations" description="Correlation data is not returned by the live API.">
-          <p className="text-sm text-muted-foreground">Unavailable</p>
-        </Panel>
-      )}
+      {/* Live: technique IDs reported by detection sources (source-supplied evidence only). */}
+      {!USE_MOCKS && <ObservedTechniquesPanel />}
 
       {USE_MOCKS && <MitreSection techniques={techniques.data} />}
 

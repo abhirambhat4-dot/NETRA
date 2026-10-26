@@ -765,16 +765,17 @@ def test_score_context_runs_with_database_and_network_access_disabled(monkeypatc
         assert context.model_dump(mode="json") == before  # the input is not modified
 
 
-def test_calculate_incident_risk_delegates_to_score_context(core_api: CoreApi, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_calculate_incident_risk_delegates_to_score_context_v2(core_api: CoreApi, monkeypatch: pytest.MonkeyPatch) -> None:
+    # New calculations use the current methodology, risk-v2; risk-v1 (score_context) stays pinned above.
     incident_id = seed_risk_case(core_api, cvss_scores=[7.1], threat_match=(0.72, Severity.MEDIUM))
     seen: list[risk_engine.ContextRiskScore] = []
-    original = risk_engine.score_context
+    original = risk_engine.score_context_v2
 
     def spy(context: IncidentContextBundle) -> risk_engine.ContextRiskScore:
         seen.append(original(context))
         return seen[-1]
 
-    monkeypatch.setattr(risk_engine, "score_context", spy)
+    monkeypatch.setattr(risk_engine, "score_context_v2", spy)
     response = calculate(core_api, incident_id)
 
     assert response.status_code == 200 and len(seen) == 1
@@ -955,7 +956,7 @@ def test_an_initial_calculation_records_exactly_one_evaluation_matching_the_resu
     assert response.status_code == 200
     body = response.json()
     (evaluation,) = _evaluations(core_api, incident_id)
-    assert evaluation.methodology_version == risk_engine.RISK_METHODOLOGY_VERSION == "risk-v1"
+    assert evaluation.methodology_version == risk_engine.RISK_V2_METHODOLOGY_VERSION == "risk-v2"
     assert (evaluation.risk_score, evaluation.risk_level) == (body["riskScore"], body["severity"])
     assert evaluation.factors == body["factors"]  # the breakdown exactly as the API reported it, grouped evidence included
     assert evaluation.missing_evidence == body["missingEvidence"]
@@ -1019,7 +1020,7 @@ def test_a_failed_evaluation_insert_rolls_back_the_incident_and_history(core_api
     incident_id = seed_risk_case(core_api, cvss_scores=[7.1], threat_match=(0.8, Severity.HIGH))
     # An empty methodology version violates ck_risk_evaluations_methodology_version_present, so the
     # evaluation insert fails inside the calculation's single commit.
-    monkeypatch.setattr(risk_engine, "RISK_METHODOLOGY_VERSION", "")
+    monkeypatch.setattr(risk_engine, "RISK_V2_METHODOLOGY_VERSION", "")
 
     with pytest.raises(IntegrityError, match="ck_risk_evaluations_methodology_version_present"):
         calculate(core_api, incident_id)

@@ -71,7 +71,7 @@ def test_memory_records_actual_incident_decision_and_containment_evidence(core_a
     assert data["incidentId"] == str(incident_id)
     assert data["decisionId"] == str(decision_id)
     assert data["actionTaken"] == "ISOLATE_HOST"
-    assert data["effectiveness"] == "EFFECTIVE"
+    assert data["effectiveness"] == "UNKNOWN"  # simulated containment: real-world effect not established
     assert "ssh_bruteforce" in data["lesson"]
     assert "CRITICAL" in data["lesson"]
     assert "Simulated containment action ISOLATE_HOST" in data["outcome"]

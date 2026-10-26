@@ -326,8 +326,8 @@ def test_migration_0005_follows_0004() -> None:
     config = Config(str(BACKEND / "alembic.ini"))
     config.set_main_option("script_location", str(BACKEND / "migrations"))
     scripts = ScriptDirectory.from_config(config)
-    # 0006_add_risk_evaluations is now the head (tests/test_risk_evaluation_models.py).
-    assert scripts.get_heads() == ["0006_add_risk_evaluations"]
+    # 0007_event_attack_techniques is now the head (tests/test_attack_technique_models.py).
+    assert scripts.get_heads() == ["0007_event_attack_techniques"]
     assert scripts.get_revision("0006_add_risk_evaluations").down_revision == "0005_dataset_event_provenance"
     assert scripts.get_revision("0005_dataset_event_provenance").down_revision == "0004_add_import_batches"
 

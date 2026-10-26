@@ -91,9 +91,14 @@ export function latestRiskEvaluation(evaluations: RiskEvaluationView[]): RiskEva
   return evaluations.length ? evaluations[evaluations.length - 1] : null
 }
 
-/** One-line summary for the incident's risk assessment fact. */
-export function riskEvaluationSummary(evaluation: RiskEvaluationView | null): string {
-  if (!evaluation) return 'Not calculated yet'
+/** Shown when an incident has a risk score but no stored evaluation: it was scored before evaluation history was
+ * recorded. It is never recalculated automatically. */
+export const LEGACY_RISK_HISTORY_MESSAGE =
+  'This incident was scored before risk-evaluation history was recorded, so no stored evaluation exists. It is not recalculated automatically.'
+
+/** One-line summary for the incident's risk assessment fact; ``riskScore`` is the incident's current score. */
+export function riskEvaluationSummary(evaluation: RiskEvaluationView | null, riskScore: number | null = null): string {
+  if (!evaluation) return riskScore == null ? 'Not calculated yet' : `${riskScore}/100 · scored before evaluation history was recorded`
   return `${evaluation.riskScore}/100 ${evaluation.riskLevel} · ${evaluation.methodologyVersion}`
 }
 

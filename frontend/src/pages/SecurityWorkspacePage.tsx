@@ -46,7 +46,7 @@ import {
   showingOf,
   type AssessmentScope,
 } from '@/lib/workspaceStatus'
-import { detectionSummary, ingestionSummary, inventorySummary, memorySummary, responseSummary } from '@/lib/workspaceSummary'
+import { detectionSummary, effectivenessLabel, ingestionSummary, inventorySummary, memorySummary, responseSummary } from '@/lib/workspaceSummary'
 import { assessmentService, assetInventoryService, importService, incidentQueueService, memoryService, threatIntelInventoryService } from '@/services'
 import { USE_MOCKS } from '@/services/http'
 import { AttentionList, CapabilityCard, ListNotes, PanelError, StatusRow, type StatusItem } from './workspaces/shared'
@@ -406,7 +406,7 @@ function WorkspaceOverview({
                   <p className="line-clamp-2 text-[13px] leading-snug text-foreground">{entry.lessonsLearned}</p>
                   <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
                     {entry.outcome && <span>{entry.outcome}</span>}
-                    {entry.effectiveness && <span>· {entry.effectiveness.replaceAll('_', ' ').toLowerCase()}</span>}
+                    {entry.effectiveness && <span>· {effectivenessLabel(entry.effectiveness)}</span>}
                     <time dateTime={entry.recordedAt} title={`${formatDateTime(entry.recordedAt)} UTC`}>· {timeAgo(entry.recordedAt)}</time>
                     {entry.incidentId && (
                       <Link to={ATTENTION_LINKS.incident(entry.incidentId)} className="text-primary hover:underline">· Open incident</Link>

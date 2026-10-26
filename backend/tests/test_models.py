@@ -63,6 +63,7 @@ EXPECTED_TABLES = {
     "assessment_findings",
     "import_batches",
     "risk_evaluations",
+    "event_attack_techniques",
 }
 
 
@@ -178,6 +179,7 @@ def test_foreign_keys_reference_expected_tables(isolated_db: IsolatedDb) -> None
         ("assessment_findings", "assessment_id", "security_assessments"),
         ("import_batches", "uploaded_by_id", "users"),
         ("risk_evaluations", "incident_id", "incidents"),
+        ("event_attack_techniques", "event_id", "security_events"),
     }
 
 

@@ -1,9 +1,11 @@
 from datetime import datetime
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
+
+from app.models.attack_technique import normalize_attack_technique_ids
 
 T = TypeVar("T")
 
@@ -72,6 +74,11 @@ class EventResponse(CoreResponse):
     asset: AssetReference | None
     import_batch_id: UUID | None = Field(default=None, description="Import batch an event was normalised from.")
     source_row: int | None = Field(default=None, description="Row of the uploaded file (header = row 1).")
+    attack_technique_ids: list[str] = Field(
+        default_factory=list,
+        description="ATT&CK technique IDs the submitting source explicitly reported (source-supplied evidence "
+        "only; never inferred from raw data, signatures or labels). Sorted.",
+    )
 
 
 class EventIngestRequest(CoreResponse):
@@ -89,6 +96,14 @@ class EventIngestRequest(CoreResponse):
     anomaly_score: float | None = Field(default=None, ge=0, le=1)
     asset_id: UUID | None = None
     raw_data: dict[str, Any] | None = None
+    #: Optional ATT&CK technique IDs reported by the source (e.g. a detection rule's metadata). Trimmed,
+    #: upper-cased and de-duplicated; any malformed ID rejects the whole request (422).
+    attack_technique_ids: list[str] | None = None
+
+    @field_validator("attack_technique_ids")
+    @classmethod
+    def valid_attack_technique_ids(cls, value: list[str] | None) -> list[str] | None:
+        return None if value is None else normalize_attack_technique_ids(value)
 
 
 class IncidentCreateRequest(CoreResponse):
@@ -134,10 +149,14 @@ class DecisionResponse(CoreResponse):
     incident_id: UUID
     action: str
     rationale: str
+    # The score the decision was made for; kept as recorded even after the incident's score changes.
     risk_score: float
     confidence: float
     recommendation: str | None
     created_at: datetime
+    # CURRENT, SUPERSEDED (made for a score the incident no longer has) or REJECTED (every request rejected);
+    # computed from stored state, see app/services/decision_validity.py.
+    validity: Literal["CURRENT", "SUPERSEDED", "REJECTED"]
 
 
 class AuthorizationResponse(CoreResponse):
@@ -220,6 +239,10 @@ class CyberMemoryResponse(CoreResponse):
     id: UUID
     incident_id: UUID | None
     decision_id: UUID | None
+    # The authorization and containment the memory was created from, as recorded in its cyber_memory_created
+    # history entry; None when no such entry exists (a memory recorded another way, such as seeded data).
+    authorization_id: UUID | None = None
+    containment_id: UUID | None = None
     lesson: str
     outcome: str | None
     action_taken: str | None

@@ -154,9 +154,9 @@ def test_race_is_resolved_as_duplicate(core_api: CoreApi, monkeypatch: pytest.Mo
     monkeypatch.setattr(collector_service, "_existing_event", stale_first_lookup)
     caught_by_intake = single(core_api, event("race-1"))
 
-    def concurrent_winner(db: Any, payload: dict[str, Any]) -> None:
+    def concurrent_winner(db: Any, payload: dict[str, Any], **options: Any) -> None:
         # Another request inserts the same UID first; this request then hits the unique constraint.
-        real_create(db, payload)
+        real_create(db, payload, **options)
         raise IntegrityError("INSERT INTO security_events", {}, Exception("unique violation"))
 
     lookups.clear()

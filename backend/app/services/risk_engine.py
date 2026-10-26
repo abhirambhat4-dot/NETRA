@@ -1,14 +1,15 @@
 import ipaddress
 import re
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Iterable
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from app.models.enums import Criticality, IncidentState, Severity
+from app.models.authorization import Authorization
+from app.models.enums import AuthorizationStatus, Criticality, IncidentState, Severity
 from app.models.incident import Incident, IncidentHistory
 from app.models.risk_evaluation import RiskEvaluation
 from app.schemas.enrichment import EventContext, IncidentContextBundle, ThreatMatchContext
@@ -18,11 +19,18 @@ from app.schemas.risk import (
     RiskStateTransition,
 )
 from app.services.context_enrichment import enrich_incident_context
+from app.services.incident_locking import locked_incident_statement, serialized_timestamp
 
 #: The scoring methodology below: weights, normalisations, rounding and thresholds. Change any of them only
 #: under a new version. tests/risk_engine_v1_snapshots.json pins risk-v1's numbers and its evidence wording;
 #: a wording change that leaves every number unchanged is reviewed against that snapshot, not versioned.
 RISK_METHODOLOGY_VERSION = "risk-v1"
+#: risk-v2 changes one rule of risk-v1: only OPEN vulnerabilities feed the vulnerability factor. Everything
+#: else is identical. tests/test_risk_v2_and_reevaluation.py pins it; every new calculation uses it.
+RISK_V2_METHODOLOGY_VERSION = "risk-v2"
+#: Vulnerability statuses that count in risk-v2. MITIGATED, ACCEPTED and FALSE_POSITIVE do not; ACCEPTED means
+#: the risk was accepted, not that the vulnerability is gone, so the evidence says so.
+V2_COUNTED_VULNERABILITY_STATUSES = frozenset({"OPEN"})
 
 FACTOR_WEIGHTS = {
     "asset_criticality": 0.25,
@@ -193,7 +201,18 @@ def _threat_evidence(scored_matches: list[ScoredMatch]) -> list[str]:
     return evidence
 
 
-def _calculate_factors(context: IncidentContextBundle) -> tuple[dict[str, RiskFactorExplanation], list[str]]:
+def _v2_vulnerability_note(status: str) -> str:
+    if status in V2_COUNTED_VULNERABILITY_STATUSES:
+        return ""
+    if status == "ACCEPTED":
+        return " Not counted in risk-v2: the risk was accepted; the vulnerability may still be present."
+    return " Not counted in risk-v2: only OPEN vulnerabilities count."
+
+
+def _calculate_factors(
+    context: IncidentContextBundle, *, open_vulnerabilities_only: bool = False
+) -> tuple[dict[str, RiskFactorExplanation], list[str]]:
+    """The risk-v1 factors; ``open_vulnerabilities_only`` applies risk-v2's single change to the vulnerability factor."""
     missing: list[str] = []
 
     if context.asset is None:
@@ -206,17 +225,40 @@ def _calculate_factors(context: IncidentContextBundle) -> tuple[dict[str, RiskFa
         criticality_evidence = [
             f"Asset {context.asset.asset_key} criticality is {context.asset.criticality}."
         ]
+        # risk-v1's wording is pinned by its snapshot; risk-v2 uses the same factor and says so without "V1".
         criticality_reason = (
             f"Asset criticality {context.asset.criticality} maps to {criticality_value:g}/100; "
-            "exposure and status are context only in this V1 factor."
+            + ("exposure and status are context only in this factor, unchanged from risk-v1."
+               if open_vulnerabilities_only else "exposure and status are context only in this V1 factor.")
         )
 
     scored_vulnerabilities = [
         vulnerability
         for vulnerability in context.vulnerabilities
         if vulnerability.cvss_score is not None
+        and (not open_vulnerabilities_only or vulnerability.status in V2_COUNTED_VULNERABILITY_STATUSES)
     ]
-    if scored_vulnerabilities:
+    if open_vulnerabilities_only:
+        vulnerability_evidence = [
+            f"{item.cve_id or item.title}: CVSS {item.cvss_score}, severity {item.severity}, status {item.status}."
+            + _v2_vulnerability_note(item.status)
+            for item in context.vulnerabilities
+        ] or ["No vulnerabilities are linked to the asset."]
+        if scored_vulnerabilities:
+            selected_vulnerability = max(scored_vulnerabilities, key=lambda item: item.cvss_score or 0)
+            vulnerability_value = _bounded((selected_vulnerability.cvss_score or 0) * 10)
+            vulnerability_reason = (
+                f"The highest CVSS score among OPEN vulnerabilities ({selected_vulnerability.cvss_score:g}) is "
+                "normalized by multiplying by 10; MITIGATED, ACCEPTED and FALSE_POSITIVE vulnerabilities are not counted."
+            )
+        else:
+            vulnerability_value = 0.0
+            vulnerability_reason = (
+                "No OPEN vulnerability has a CVSS score, so this factor contributes zero; "
+                "MITIGATED, ACCEPTED and FALSE_POSITIVE vulnerabilities are not counted."
+            )
+            missing.append("No OPEN vulnerability with a CVSS score is available.")
+    elif scored_vulnerabilities:
         selected_vulnerability = max(scored_vulnerabilities, key=lambda item: item.cvss_score or 0)
         vulnerability_value = _bounded((selected_vulnerability.cvss_score or 0) * 10)
         vulnerability_evidence = [
@@ -262,8 +304,9 @@ def _calculate_factors(context: IncidentContextBundle) -> tuple[dict[str, RiskFa
             for event, value in detection_events
         ]
         detection_reason = (
-            "The highest linked-event source mapping is used as a V1 confidence proxy; "
-            "the mapping is heuristic, not a calibrated probability."
+            ("The highest linked-event source mapping is used as a confidence proxy, unchanged from risk-v1; "
+             if open_vulnerabilities_only else "The highest linked-event source mapping is used as a V1 confidence proxy; ")
+            + "the mapping is heuristic, not a calibrated probability."
         )
     else:
         detection_value = 0.0
@@ -384,6 +427,26 @@ def score_context(context: IncidentContextBundle) -> ContextRiskScore:
     )
 
 
+def score_context_v2(context: IncidentContextBundle) -> ContextRiskScore:
+    """Score an already-gathered incident context with risk-v2 (risk-v1 with OPEN-only vulnerabilities).
+
+    Pure, like ``score_context``. Every new calculation and re-evaluation uses this; stored risk-v1 evaluations
+    keep their recorded version and values and are never recalculated.
+    """
+    factors, missing_evidence = _calculate_factors(context, open_vulnerabilities_only=True)
+    risk_score = round(
+        min(100.0, max(0.0, sum(factor.contribution for factor in factors.values()))),
+        2,
+    )
+    return ContextRiskScore(
+        methodology_version=RISK_V2_METHODOLOGY_VERSION,
+        risk_score=risk_score,
+        severity=_risk_severity(risk_score),
+        factors=factors,
+        missing_evidence=missing_evidence,
+    )
+
+
 def _matched_indicator_snapshot(context: IncidentContextBundle) -> list[dict[str, object]]:
     """The active indicators an evaluation used, as identifiers and attribution (inactive ones never match)."""
     return [
@@ -413,6 +476,8 @@ def _evaluation_record(
     """A RiskEvaluation snapshot of one scoring run; the caller adds it in the same transaction as its other writes."""
     return RiskEvaluation(
         incident_id=incident_id,
+        # Ordered by the incident lock, so the latest evaluation is the one written last (see serialized_timestamp).
+        created_at=serialized_timestamp(RiskEvaluation.created_at, RiskEvaluation.incident_id == incident_id),
         methodology_version=scored.methodology_version,  # RISK_METHODOLOGY_VERSION when the score was computed
         risk_score=scored.risk_score,
         risk_level=scored.severity,
@@ -426,21 +491,18 @@ def _evaluation_record(
     )
 
 
-def _locked_incident(incident_id: UUID) -> Select[tuple[Incident]]:
-    """The incident row, locked until the calculation commits or rolls back.
+def _serialized_history_time(incident_id: UUID) -> Any:
+    """A risk history entry's time, ordered by the incident lock: decisions cite the latest one by this time."""
+    return serialized_timestamp(IncidentHistory.occurred_at, IncidentHistory.incident_id == incident_id)
 
-    FOR NO KEY UPDATE serialises concurrent calculations of one incident: under READ COMMITTED a second
-    request waits here, then reads the committed PRIORITISED state and is refused (409), so it cannot add a
-    second risk_calculated entry or evaluation. Unlike FOR UPDATE it does not block other transactions'
-    inserts that only reference the incident. populate_existing refreshes an incident the session already
-    holds (seed_demo uses one long-lived session), so the state check sees the locked row's values.
+
+def _locked_incident(incident_id: UUID) -> Select[tuple[Incident]]:
+    """The incident row, locked until the calculation commits or rolls back (the shared workflow lock).
+
+    A second calculation of the same incident waits for the lock, then reads the committed PRIORITISED
+    state and is refused (409), so it cannot add a second risk_calculated entry or evaluation.
     """
-    return (
-        select(Incident)
-        .where(Incident.id == incident_id)
-        .with_for_update(key_share=True)
-        .execution_options(populate_existing=True)
-    )
+    return locked_incident_statement(incident_id)
 
 
 def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> RiskScoreResult:
@@ -454,7 +516,7 @@ def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> Ri
         )
 
     context = enrich_incident_context(db, incident_id, actor=actor, record_history=False)
-    scored = score_context(context)
+    scored = score_context_v2(context)
     risk_score = scored.risk_score
     transition = RiskStateTransition(
         from_state=IncidentState.UNDERSTOOD.name,
@@ -481,6 +543,7 @@ def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> Ri
             to_state=IncidentState.PRIORITISED,
             action="risk_calculated",
             actor=actor,
+            occurred_at=_serialized_history_time(incident.id),
             details={"risk_calculation": result.model_dump(mode="json")},
         )
     )
@@ -494,6 +557,93 @@ def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> Ri
             context,
             previous_risk_score=previous_risk_score,
             trigger="initial",
+            actor=actor,
+        )
+    )
+    db.commit()
+    return result
+
+
+#: States in which an operator may re-evaluate a scored incident (risk_reevaluated).
+REEVALUATION_STATES = (IncidentState.PRIORITISED, IncidentState.VERIFIED)
+
+
+def reevaluate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> RiskScoreResult:
+    """Score a PRIORITISED or VERIFIED incident again with the current methodology and append the result.
+
+    The previous evaluations, decisions and authorizations are kept unchanged. Refused while an authorization
+    request is open, so no request can be approved, or containment run, against a score it was not made for.
+    A changed score makes earlier decisions stale (their score no longer matches): a VERIFIED incident returns
+    to PRIORITISED, so a new decision, a new authorization request and a new verification are needed before an
+    approval. An unchanged score changes no state, decision or authorization.
+    """
+    incident = db.scalars(_locked_incident(incident_id)).one_or_none()
+    if incident is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
+    if incident.state not in REEVALUATION_STATES or incident.risk_score is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Risk can be re-evaluated only for a scored PRIORITISED or VERIFIED incident",
+        )
+    open_request = db.scalar(
+        select(Authorization.id)
+        .where(
+            Authorization.incident_id == incident.id,
+            Authorization.status.in_((AuthorizationStatus.PENDING, AuthorizationStatus.APPROVED)),
+        )
+        .limit(1)
+    )
+    if open_request is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Risk cannot be re-evaluated while an authorization request is open",
+        )
+
+    context = enrich_incident_context(db, incident_id, actor=actor, record_history=False)
+    scored = score_context_v2(context)
+    previous_risk_score = float(incident.risk_score)
+    score_changed = scored.risk_score != previous_risk_score
+    previous_state = incident.state
+    next_state = IncidentState.PRIORITISED if score_changed else previous_state
+    result = RiskScoreResult(
+        incident_id=incident.id,
+        risk_score=scored.risk_score,
+        severity=scored.severity,
+        factors=scored.factors,
+        reasons=scored.reasons,
+        missing_evidence=scored.missing_evidence,
+        state_transition=RiskStateTransition(
+            from_state=previous_state.name, to_state=next_state.name, action="risk_reevaluated"
+        ),
+    )
+
+    incident.risk_score = scored.risk_score
+    incident.state = next_state
+    db.add(
+        IncidentHistory(
+            incident_id=incident.id,
+            from_state=previous_state,
+            to_state=next_state,
+            action="risk_reevaluated",
+            actor=actor,
+            occurred_at=_serialized_history_time(incident.id),
+            details={
+                "risk_calculation": result.model_dump(mode="json"),
+                "previous_risk_score": previous_risk_score,
+                "score_changed": score_changed,
+                "methodology_version": scored.methodology_version,
+            },
+        )
+    )
+    # One commit for the score, the state, the history entry and the appended evaluation, or none of them.
+    db.add(
+        _evaluation_record(
+            incident.id,
+            scored,
+            result,
+            context,
+            previous_risk_score=previous_risk_score,
+            trigger="reevaluation",
             actor=actor,
         )
     )

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.enums import IncidentState
 from app.models.event import SecurityEvent
 from app.models.incident import Incident, IncidentEvent, IncidentHistory
+from app.services.incident_locking import lock_incident
 
 CORRELATION_WINDOW = timedelta(minutes=30)
 FAMILY_PATTERNS = {
@@ -50,10 +51,15 @@ def _event_response(event: SecurityEvent) -> dict[str, Any]:
 
 
 def correlate_incident_events(db: Session, incident_id: UUID, *, actor: str) -> dict[str, Any]:
+    # Locked before the state check and the read of linked events: links are added only under this lock
+    # (here and in intake), so a concurrent correlation or link cannot insert the same link twice, and the
+    # history below records the state this transaction actually saw.
+    lock_incident(db, incident_id)
     incident = db.scalars(
         select(Incident)
         .where(Incident.id == incident_id)
         .options(selectinload(Incident.events))
+        .execution_options(populate_existing=True)
     ).unique().one_or_none()
     if incident is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
@@ -203,3 +209,45 @@ def correlate_incident_events(db: Session, incident_id: UUID, *, actor: str) -> 
         "correlatedEvents": [_event_response(event) for event in correlated],
         "findings": findings,
     }
+
+
+def review_incident(db: Session, incident_id: UUID, *, actor: str, reason: str) -> Incident:
+    """An analyst's explicit DETECTED -> UNDERSTOOD transition, for an incident whose events correlation did not
+    relate to others. Correlation itself never advances such an incident; this records who decided and why."""
+    review_reason = reason.strip()
+    if not review_reason:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Review reason is required")
+    lock_incident(db, incident_id)
+    incident = db.scalars(
+        select(Incident)
+        .where(Incident.id == incident_id)
+        .options(selectinload(Incident.events))
+        .execution_options(populate_existing=True)
+    ).unique().one_or_none()
+    if incident is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
+    if incident.state != IncidentState.DETECTED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Incident in {incident.state.name.upper()} state cannot be reviewed",
+        )
+    if not incident.events:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Incident must have at least one linked event before review",
+        )
+
+    incident.state = IncidentState.UNDERSTOOD
+    db.add(
+        IncidentHistory(
+            incident_id=incident.id,
+            from_state=IncidentState.DETECTED,
+            to_state=IncidentState.UNDERSTOOD,
+            action="analyst_reviewed",
+            actor=actor,
+            details={"reason": review_reason, "linked_event_count": len(incident.events)},
+        )
+    )
+    db.commit()
+    db.refresh(incident)
+    return incident
