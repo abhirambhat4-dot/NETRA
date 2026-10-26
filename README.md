@@ -140,7 +140,8 @@ Full reference: [docs/DATASET_IMPORTS.md](docs/DATASET_IMPORTS.md).
   intelligence 0.10, attack context 0.10. Each factor's rationale is returned.
 - **Risk evaluation history:** each successful calculation also stores an append-only
   `risk_evaluations` row (migration `0006_add_risk_evaluations`) in the same transaction as the score:
-  score, level, methodology version (`risk-v1`), factor breakdown, missing evidence, matched active
+  score, level, methodology version (`risk-v2` for new calculations, which counts only `OPEN`
+  vulnerabilities; older rows keep `risk-v1`), factor breakdown, missing evidence, matched active
   indicators, trigger and actor. `GET /api/incidents/{id}/risk-evaluations` (any signed-in user)
   returns them oldest first, read-only and never recalculated; an empty list before the first
   calculation, `404` for an unknown incident and `401` without a token. Incident details show them
@@ -152,6 +153,18 @@ Full reference: [docs/DATASET_IMPORTS.md](docs/DATASET_IMPORTS.md).
   number of active and scored incidents, and event counts by detection source. It reconstructs
   history from stored evidence (incident history, risk evaluations, event timestamps) and never
   recalculates or writes anything.
+- **Risk re-evaluation:** `POST /api/incidents/{id}/risk-reevaluation` (`operate_workflow`) re-scores a
+  `PRIORITISED` or `VERIFIED` incident with risk-v2 and appends a `reevaluation` row; earlier rows,
+  decisions and authorisations are kept. It is refused while an authorisation request is open, and a
+  changed score returns a `VERIFIED` incident to `PRIORITISED`.
+- **ATT&CK evidence (source-supplied only):** event ingest and collector submissions may include
+  `attackTechniqueIds` (for example a detection rule's metadata). They are validated (`T1110` or
+  `T1110.001`), stored in `event_attack_techniques` (migration `0007_event_attack_techniques`) in the
+  same transaction as the event, and returned as `attackTechniqueIds` on events. Nothing is inferred
+  from raw data, signatures or labels. `GET /api/threat-intelligence/techniques/observed` (any
+  signed-in user; filters `days` 1-90, `source`, `origin`, `techniqueId`, paging and sorting) counts
+  the reported IDs for events in the window. No ATT&CK catalogue is bundled, so names and tactics are
+  not returned.
 
 ## 7. Assessment history and persistence
 
@@ -177,9 +190,23 @@ stored result, so results are the same after a page refresh.
   | `approver`, `admin` | all of the above plus `resolve_authorization` (approve/reject) |
 
 - **Separation of duties:** an authorisation must be approved by someone other than the requester.
+- **Workflow policies:** every transition takes a row lock on the incident first, so competing
+  requests run one at a time.
+  - *No related events:* correlation never advances an incident on its own; an analyst can move a
+    `DETECTED` incident with linked events to `UNDERSTOOD` with `POST /api/incidents/{id}/review`
+    and a required `reason` (recorded as `analyst_reviewed`).
+  - *Rejected authorisation:* the same (latest) decision can be requested again, or, while the
+    incident is `PRIORITISED`, a new decision recommended; rejected records are kept.
+  - *Failed containment:* after its failure is verified, a new containment attempt can be made while
+    the incident is `AUTHORIZED`; the failed record is kept.
+  - *Completed incidents:* new events cannot be linked to `CONTAINED` or `LEARNED` incidents (`409`).
+  - *Decisions:* each reports `validity` (`CURRENT`, `SUPERSEDED` when the incident's risk score has
+    changed since, or `REJECTED`); an incident is verified only with a `CURRENT` decision, and approval
+    and containment are refused when the decision's score no longer matches the incident's.
 - **Containment is simulated.** `POST /api/authorizations/{id}/contain` records a simulated action
   (`"simulated": true`); no host, firewall or account is changed. Verification and Cyber Memory
-  complete the lifecycle.
+  complete the lifecycle. Because containment is simulated, Cyber Memory records its effectiveness as
+  `UNKNOWN` and names the authorisation and containment it was created from.
 - **Password reset** works by email (`EMAIL_*` settings). Until it is configured,
   `/api/auth/forgot-password` returns `503`.
 
@@ -222,7 +249,7 @@ Dataset Import have no mock mode.
 
 **Schema ownership: read before running Alembic.** Migration `0001` creates only `users`. The core
 tables (assets, events, incidents, decisions and so on) are created by `app.db.init_db`, and
-migrations `0002`–`0006` add the remaining tables and columns with guards for tables that already
+migrations `0002`–`0007` add the remaining tables and columns with guards for tables that already
 exist. Therefore:
 
 ```powershell
@@ -233,7 +260,7 @@ cd backend
 
 # Existing database tracked by Alembic: back it up first, then
 .\.venv\Scripts\python.exe -m alembic current
-.\.venv\Scripts\python.exe -m alembic upgrade head     # head = 0006_add_risk_evaluations
+.\.venv\Scripts\python.exe -m alembic upgrade head     # head = 0007_event_attack_techniques
 ```
 
 **Safety:**
@@ -332,6 +359,27 @@ The skipped test needs the real CIC-IDS2017 files via `NETRA_CIC_DATASET_DIR`. T
 import summary, source-row provenance, an assessment with a historical event window, cited
 findings, and saved history.
 
+**Live network monitor (Windows workstation).** `backend/scripts/netra_live_monitor.py` reads this
+computer's TCP connection metadata (`netstat -ano`, process names from `tasklist`; no administrator
+rights) every few seconds and applies four transparent rules: R1 a new outbound connection to a
+remote-administration port (SSH, Telnet, RDP, VNC), R2 one process reaching many distinct hosts within
+60 s, R3 many distinct ports on one host within 60 s (a pattern consistent with port scanning), and R4
+a new listening port. Connections and listeners open at start-up are the baseline. Alerts are
+observations of metadata only, never evidence of compromise, and carry no ATT&CK IDs.
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -I -B scripts\netra_live_monitor.py            # dry run: prints alerts, sends nothing
+# Submit alerts to a NETRA API on this machine, signed in as an operator. Set NETRA_MONITOR_EMAIL, and
+# NETRA_MONITOR_PASSWORD from Read-Host -AsSecureString; neither is ever printed.
+.\.venv\Scripts\python.exe -I -B scripts\netra_live_monitor.py --send --api http://127.0.0.1:8001
+```
+
+Alerts go to `POST /api/collector/events` and appear as `manual` events (event type
+`live_monitor_*`, signature `NETRA-LNM R1:` and so on). `--send` is refused for any API that is not on
+this machine, so the monitor never writes to a deployed backend; it is not a server component and does
+not run on Render. Polling misses connections shorter than the interval.
+
 **Known limitations**
 
 - **Detections:** NETRA has no detection rules of its own over imported flows. Imported rows are
@@ -351,7 +399,7 @@ findings, and saved history.
   - the guarded backend test launcher supports Windows and a native local PostgreSQL only;
   - there is no CI;
   - production deployment (Vercel/Render/Neon) and migration parity have not been verified for this
-    version.
+    version; migrations 0006 and 0007 have not been applied to production.
 
 ## Repository layout
 
