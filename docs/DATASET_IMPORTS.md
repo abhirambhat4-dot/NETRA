@@ -123,11 +123,14 @@ created it.
 Indexes: `ix_import_batches_status`, `ix_import_batches_uploaded_by_id_created_at`, and the partial
 unique `uq_import_batches_validated_file`.
 
-**Last reported state (2026-10-12; not a fresh production observation):** the Neon test branch is
-at 0004; Neon production was last recorded at `0002_add_password_reset_tokens`, so it has neither
-0003 nor 0004. The isolated `netra_e2e` setup (`backend/scripts/netra_e2e.py`) creates tables with
-`app.db.init_db` and stamps the version. No production backup is recorded in this repository. For
-production, take and record a backup or Neon branch, apply 0003 by its documented path
+**Production state:** Neon production was migrated on 2026-10-26 from `0005_dataset_event_provenance`
+to `0007_event_attack_techniques` (PostgreSQL 18.6), so 0003, 0004 and 0005 are applied
+(record: [PRODUCTION_BACKUP.md](PRODUCTION_BACKUP.md#production-migration-record-2026-10-26)). The
+2026-10-12 record (test branch at 0004, production at `0002`) is historical and superseded. The isolated
+`netra_e2e` setup (`backend/scripts/netra_e2e.py`) creates tables with `app.db.init_db` and stamps the
+version. A Neon snapshot and backup branch exist from before that migration, but no verified logical
+backup (`pg_dump` archive with a tested restore) is recorded; before any further production migration,
+follow [PRODUCTION_BACKUP.md](PRODUCTION_BACKUP.md). For a database still below 0004, take and record a backup or Neon branch, apply 0003 by its documented path
 (`SECURITY_ASSESSMENT_MIGRATION.md`), then `alembic upgrade head` applies 0004. `alembic downgrade 0003_add_security_assessments` drops
 `import_batches` and every recorded batch. The CIC-IDS2017 profile added no schema change.
 

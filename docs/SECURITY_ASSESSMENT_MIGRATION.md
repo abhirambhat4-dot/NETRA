@@ -4,17 +4,23 @@ Migration `0003_add_security_assessments` adds the two tables behind Security As
 `security_assessments` (one append-only snapshot per run) and `assessment_findings` (nine findings
 per snapshot). It creates nothing else and alters no existing table.
 
-Status: last reported states, recorded 2026-10-12. These are not fresh observations: no production
-database was queried when this was written. Re-run the read-only checks below before acting on them.
+Status: recorded 2026-10-26. Re-run the read-only checks below before acting on any of these states.
 
-| Database | Last reported Alembic revision | Notes |
+| Database | Alembic revision | Notes |
 |---|---|---|
-| Neon test branch | `0004_add_import_batches` (head) | 0003 and 0004 applied to the test branch. |
-| Neon production | `0002_add_password_reset_tokens` (**verification required**) | 0003 **not** applied when recorded. This is a historical note, not a known current state: the production revision may have changed since 2026-10-12. Verify it with the read-only checks below before acting; do not infer it from this table. |
+| Neon production | `0007_event_attack_techniques` (migrated 2026-10-26 from `0005_dataset_event_provenance`; PostgreSQL 18.6) | 0003 is applied. `0006_add_risk_evaluations` and `0007_event_attack_techniques` were applied in the Neon SQL Editor and verified: both tables exist, all five expected indexes are present, 3 incidents and 9 security events were kept, and both new tables were empty. See [PRODUCTION_BACKUP.md](PRODUCTION_BACKUP.md#production-migration-record-2026-10-26). |
+| Neon rehearsal branches | `0007_event_attack_techniques` | `netra-migration-test` and `netra-migration-test-2`, created from production; the production SQL was rehearsed on `netra-migration-test-2` first. |
 | Local `netra_e2e` | Not recorded here | Set up by `backend/scripts/netra_e2e.py`: `init-schema` (`app.db.init_db`), then `stamp` (`alembic stamp head`). |
 
-No production backup or production Neon branch is recorded in this repository. Take one, and record
-it, before the upgrade below.
+*Historical (2026-10-12, superseded):* the Neon test branch was recorded at `0004_add_import_batches`
+and production at `0002_add_password_reset_tokens`; production was later verified at `0005` on
+2026-10-26, before the migration above.
+
+Before the 2026-10-26 migration, a manual Neon snapshot of production was taken and a separate backup
+branch exists. These are Neon-side restore points, **not** a verified logical backup: no `pg_dump`
+archive has been taken and no restore has been tested. Before any further production upgrade, follow
+[PRODUCTION_BACKUP.md](PRODUCTION_BACKUP.md) (verified backup and a local restore rehearsal, then stop for
+review).
 
 ## What the migration needs
 

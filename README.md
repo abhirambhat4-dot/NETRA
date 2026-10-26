@@ -271,6 +271,9 @@ cd backend
   Local targets are unaffected. Backend tests run only through `scripts\netra_e2e_pytest.py run`; any
   other pytest invocation is refused before it can reach a database (`tests/_launch_guard.py`).
 - Back up with `pg_dump -Fc` before any migration, and verify the archive with `pg_restore --list`.
+  For production (Neon), follow [docs/PRODUCTION_BACKUP.md](docs/PRODUCTION_BACKUP.md): a verified backup
+  and a local restore rehearsal, then stop for review before migrating. A Neon snapshot or branch is a
+  useful restore point but is not a verified backup.
 - Never point these commands at a shared or production database. Alembic revision IDs must be at
   most 32 characters (a regression test enforces this).
 
@@ -398,8 +401,10 @@ not run on Render. Polling misses connections shorter than the interval.
 - **Testing and deployment:**
   - the guarded backend test launcher supports Windows and a native local PostgreSQL only;
   - there is no CI;
-  - production deployment (Vercel/Render/Neon) and migration parity have not been verified for this
-    version; migrations 0006 and 0007 have not been applied to production.
+  - Neon production was migrated to `0007_event_attack_techniques` on 2026-10-26 (verified in the Neon
+    SQL Editor); deployment of this version to Vercel/Render has not been verified;
+  - no verified logical backup of production exists: the procedure in `docs/PRODUCTION_BACKUP.md` has
+    been syntax-checked only, and only a Neon snapshot and backup branch were taken before the migration.
 
 ## Repository layout
 

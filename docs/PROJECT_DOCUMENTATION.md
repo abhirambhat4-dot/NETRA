@@ -195,9 +195,14 @@ for tables that already exist. On the local development database, 0002–0005 we
 verified `pg_dump` backup before each step, and pre-existing row counts were unchanged; 0006 was
 applied to the local development and E2E databases on 2026-10-25, each after a verified `pg_dump`
 backup and a read-only schema check; 0007 was applied to the E2E database on 2026-10-26 after a
-verified backup, with a post-upgrade structural check. Production migration state has **not** been
-verified for this version, and neither 0006 nor 0007 has been applied there. Both only add a table, so
-they can be applied before the code that uses them is deployed.
+verified backup, with a post-upgrade structural check. On 2026-10-26, production (Neon) was migrated
+from `0005_dataset_event_provenance` to `0007_event_attack_techniques`; both new tables and all five
+expected indexes were verified, existing data was preserved (3 incidents and 9 security events), and
+both new tables were empty at verification. The Neon snapshot and backup branch taken beforehand are
+restore points, **not** a verified logical backup: no production `pg_dump` archive or successful local
+restore rehearsal has been recorded (`docs/PRODUCTION_BACKUP.md`). Deployment of the latest application
+code to Render and Vercel has **not** yet been verified. Both migrations only add a table, so they could
+be applied before the code that uses them is deployed.
 
 ## 8. Security considerations
 
