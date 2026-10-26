@@ -3,7 +3,7 @@ from uuid import UUID
 from app.models.enums import IncidentState
 from app.models.incident import Incident, IncidentHistory
 from tests.conftest import CoreApi
-from tests.test_decision import seed_prioritised_incident
+from tests.test_decision import request_decision, seed_prioritised_incident
 
 
 def request_incident_verification(
@@ -21,6 +21,7 @@ def request_incident_verification(
 
 def test_prioritised_incident_can_be_verified_and_persisted(core_api: CoreApi) -> None:
     incident_id = seed_prioritised_incident(core_api)
+    assert request_decision(core_api, incident_id).status_code == 201  # verification needs a current decision
 
     response = request_incident_verification(core_api, incident_id)
 

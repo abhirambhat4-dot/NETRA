@@ -9,12 +9,48 @@ from app.api.auth import get_current_user
 from app.api.core_serializers import cyber_memory_response
 from app.db.dependencies import get_db
 from app.models.cyber_memory import CyberMemory
+from app.models.decision import Decision
 from app.models.enums import Effectiveness, ResponseAction
-from app.models.incident import Incident
+from app.models.incident import Incident, IncidentHistory
 from app.models.user import User
 from app.schemas.core import CyberMemoryResponse, PageResponse
 
 router = APIRouter(prefix="/cyber-memory", tags=["cyber-memory"])
+
+
+def _uuid(value: object) -> UUID | None:
+    try:
+        return UUID(str(value)) if value is not None else None
+    except ValueError:
+        return None
+
+
+def memory_sources(db: Session, memories: list[CyberMemory]) -> dict[UUID, tuple[UUID | None, UUID | None]]:
+    """(authorization id, containment id) each memory was created from, read from its own cyber_memory_created
+    history entry, never inferred from the newest records. A reference is kept only when it names a record of
+    the memory's incident, so rejected or failed attempts stay distinguishable from the ones the memory used."""
+    by_id = {str(memory.id): memory for memory in memories}
+    incident_ids = {memory.incident_id for memory in memories if memory.incident_id is not None}
+    if not incident_ids:
+        return {}
+    sources: dict[UUID, tuple[UUID | None, UUID | None]] = {}
+    for details in db.scalars(
+        select(IncidentHistory.details).where(
+            IncidentHistory.incident_id.in_(incident_ids), IncidentHistory.action == "cyber_memory_created"
+        )
+    ):
+        memory = by_id.get(str((details or {}).get("memory_id")))
+        if memory is None or memory.incident is None:
+            continue
+        authorization_id, containment_id = _uuid(details.get("authorization_id")), _uuid(details.get("containment_id"))
+        authorizations = {item.id for item in memory.incident.authorizations}
+        containments = {item.id: item for item in memory.incident.containment_actions}
+        containment = containments.get(containment_id)
+        sources[memory.id] = (
+            authorization_id if authorization_id in authorizations else None,
+            containment_id if containment is not None and containment.authorization_id == authorization_id else None,
+        )
+    return sources
 
 
 @router.get("", response_model=PageResponse[CyberMemoryResponse])
@@ -52,7 +88,7 @@ def list_cyber_memory(
         select(CyberMemory)
         .where(*conditions)
         .options(
-            joinedload(CyberMemory.decision),
+            joinedload(CyberMemory.decision).selectinload(Decision.authorizations),
             selectinload(CyberMemory.incident).selectinload(Incident.authorizations),
             selectinload(CyberMemory.incident).selectinload(Incident.containment_actions),
         )
@@ -61,8 +97,9 @@ def list_cyber_memory(
         .limit(page_size)
     )
     records = db.scalars(statement).unique().all()
+    sources = memory_sources(db, list(records))
     return PageResponse[CyberMemoryResponse](
-        items=[cyber_memory_response(record) for record in records],
+        items=[cyber_memory_response(record, sources.get(record.id, (None, None))) for record in records],
         total=total,
         page=page,
         page_size=page_size,

@@ -86,6 +86,8 @@ DEFAULT_PORT = 5432
 LOOPBACK_ADDRESSES = frozenset({"127.0.0.1", "::1"})
 WILDCARD_ADDRESSES = frozenset({"0.0.0.0", "::"})
 CHILD_MARKER = "NETRA_E2E_PYTEST_CHILD"
+# sys.modules name of the in-process proof that tests/_launch_guard.py requires; must match it.
+PROOF_MODULE = "netra_e2e_launch_proof"
 # Removed from the child environment in addition to the repo guard's LIBPQ_VARIABLES and every PG* key.
 STRIPPED_KEYS = frozenset(
     {"PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONUSERBASE", CHILD_MARKER}
@@ -494,6 +496,14 @@ def child_main(options: argparse.Namespace) -> int:
         raise LaunchError(f"could not connect to netra_e2e ({type(error).__name__})") from None
     verify_backend(database, address, server_port, backend, port=port, pg_bin=options.pg_bin, listener_pids=listener_pids)
     print("locality proven: netra_e2e on loopback, served by the local postgres.exe")
+
+    # In-process proof for tests/_launch_guard.py, which refuses to run tests without it. It exists only in
+    # this interpreter, after every check above passed; an environment variable cannot stand in for it.
+    proof = ModuleType(PROOF_MODULE)
+    proof.url = url
+    proof.pid = os.getpid()
+    proof.locality_proven = True
+    sys.modules[PROOF_MODULE] = proof
 
     import pytest
 

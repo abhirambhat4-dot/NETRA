@@ -27,6 +27,7 @@ import { useCountUp } from '@/hooks/useCountUp'
 import { ACTION_LABEL } from '@/lib/format'
 import { ROUTES } from '@/lib/navigation'
 import { SEVERITY_ORDER, riskToSeverity, severityTone, toneStyles } from '@/lib/tones'
+import { currentLatestDecision } from '@/lib/incidentVerification'
 import { cn } from '@/lib/utils'
 import { incidentQueueService } from '@/services'
 import { HttpError } from '@/services/http'
@@ -54,7 +55,7 @@ const stateOf = (incident: IncidentQueueItem): Exclude<StateFilter, 'ALL'> | und
 }
 
 function actionLabel(incident: IncidentQueueItem): string | undefined {
-  const action = incident.latestDecision?.action ?? incident.recommendedAction
+  const action = currentLatestDecision(incident.latestDecision)?.action ?? incident.recommendedAction
   if (!action) return undefined
   return ACTION_LABEL[action as keyof typeof ACTION_LABEL] ?? readableAction(action)
 }

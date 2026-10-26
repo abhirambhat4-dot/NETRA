@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     import_max_upload_bytes: int = Field(default=25 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)
     import_max_rows: int = Field(default=100_000, gt=0, le=10_000_000)
 
+    # ThreatFox (abuse.ch) Auth-Key, used only by scripts/netra_threatfox_sync.py as a request header.
+    # Backend-only: never sent to the frontend, stored in the database or logged.
+    threatfox_auth_key: SecretStr | None = None
+    # ThreatFox indicators stop matching once their latest ThreatFox date is older than this (never deleted).
+    threatfox_expiry_days: int = Field(default=90, ge=1, le=180)
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -9,9 +9,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.asset import Asset
+from app.models.attack_technique import (
+    ATTACK_EVIDENCE_ORIGINS,
+    EventAttackTechnique,
+    normalize_attack_technique_ids,
+)
 from app.models.enums import DetectionSource, IncidentState, Severity
 from app.models.event import SecurityEvent
 from app.models.incident import Incident, IncidentEvent, IncidentHistory
+from app.services.incident_locking import lock_incident
+
+# Completed incidents accept no new events; there is no reopening workflow.
+CLOSED_STATES = (IncidentState.CONTAINED, IncidentState.LEARNED)
 
 
 def _json_safe(value: Any) -> Any:
@@ -73,9 +82,22 @@ def _to_ip(raw_value: Any, field_name: str) -> str | None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid {field_name}") from exc
 
 
-def create_event(db: Session, payload: dict[str, Any]) -> SecurityEvent:
+def create_event(
+    db: Session, payload: dict[str, Any], *, attack_technique_origin: str = "ingest_field"
+) -> SecurityEvent:
+    """Store one event; with ``attack_technique_ids`` in the payload, also its source-supplied ATT&CK technique
+    IDs (origin ``attack_technique_origin``), in the same transaction. IDs are read only from that field."""
     if not payload.get("event_uid"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="event_uid is required")
+    if attack_technique_origin not in ATTACK_EVIDENCE_ORIGINS:
+        raise ValueError(f"unknown ATT&CK evidence origin {attack_technique_origin!r}")
+    try:
+        # Validated again here (the request models already did): intake never trusts its caller.
+        technique_ids = normalize_attack_technique_ids(payload.get("attack_technique_ids"))
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"attack_technique_ids: {error}"
+        ) from None
 
     event_uid = str(payload["event_uid"]).strip()
     if db.scalar(select(SecurityEvent).where(SecurityEvent.event_uid == event_uid)) is not None:
@@ -119,12 +141,24 @@ def create_event(db: Session, payload: dict[str, Any]) -> SecurityEvent:
     )
 
     db.add(event)
+    if technique_ids:
+        db.flush()  # assigns event.id inside this transaction; nothing is committed yet
+        db.add_all(
+            EventAttackTechnique(
+                event_id=event.id,
+                technique_id=technique_id,
+                evidence_kind="source_supplied",
+                evidence_origin=attack_technique_origin,
+            )
+            for technique_id in technique_ids
+        )
+    # One commit for the event and its technique IDs: both are stored, or neither is.
     db.commit()
     db.refresh(event)
     return event
 
 
-def _link_existing_event(db: Session, incident: Incident, event: SecurityEvent) -> IncidentEvent:
+def _link_existing_event(db: Session, incident: Incident, event: SecurityEvent, *, actor: str) -> IncidentEvent:
     existing = db.scalar(
         select(IncidentEvent).where(
             IncidentEvent.incident_id == incident.id,
@@ -133,6 +167,11 @@ def _link_existing_event(db: Session, incident: Incident, event: SecurityEvent) 
     )
     if existing is not None:
         return existing
+    if incident.state in CLOSED_STATES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Incident in {incident.state.name.upper()} state cannot accept new events",
+        )
 
     link = IncidentEvent(incident_id=incident.id, event_id=event.id, linked_at=datetime.now(UTC))
     db.add(link)
@@ -142,7 +181,7 @@ def _link_existing_event(db: Session, incident: Incident, event: SecurityEvent) 
             from_state=incident.state,
             to_state=incident.state,
             action="event_linked",
-            actor="system",
+            actor=actor,
             details={"event_id": str(event.id), "event_uid": event.event_uid},
         )
     )
@@ -150,8 +189,12 @@ def _link_existing_event(db: Session, incident: Incident, event: SecurityEvent) 
     return link
 
 
-def link_event_to_incident(db: Session, incident_id: UUID, event_id: UUID, *, commit: bool = True) -> IncidentEvent:
-    incident = db.get(Incident, incident_id)
+def link_event_to_incident(
+    db: Session, incident_id: UUID, event_id: UUID, *, commit: bool = True, actor: str = "system"
+) -> IncidentEvent:
+    # Locked first, as in correlation: identical concurrent requests then run one at a time, and the second
+    # finds the first one's link and returns it instead of inserting a duplicate.
+    incident = lock_incident(db, incident_id)
     if incident is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
 
@@ -159,17 +202,20 @@ def link_event_to_incident(db: Session, incident_id: UUID, event_id: UUID, *, co
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
-    link = _link_existing_event(db, incident, event)
+    link = _link_existing_event(db, incident, event, actor=actor)
     if commit:
         db.commit()
         db.refresh(link)
     return link
 
 
-def create_incident(db: Session, payload: dict[str, Any]) -> Incident:
+def create_incident(db: Session, payload: dict[str, Any], *, actor: str = "system") -> Incident:
     title = str(payload.get("title") or "").strip()
     if not title:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="title is required")
+    asset_id = _to_uuid(payload.get("asset_id"), "asset_id")
+    if asset_id is not None and db.get(Asset, asset_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
     incident = Incident(
         incident_key=f"INC-{uuid.uuid4().hex[:8].upper()}",
@@ -180,7 +226,7 @@ def create_incident(db: Session, payload: dict[str, Any]) -> Incident:
         state=IncidentState.DETECTED,
         detection_source=_to_enum(DetectionSource, payload.get("detection_source") or DetectionSource.MANUAL, "detection_source"),
         recommended_action=None,
-        asset_id=_to_uuid(payload.get("asset_id"), "asset_id"),
+        asset_id=asset_id,
     )
     db.add(incident)
     db.flush()
@@ -191,7 +237,7 @@ def create_incident(db: Session, payload: dict[str, Any]) -> Incident:
             from_state=None,
             to_state=IncidentState.DETECTED,
             action="incident_created",
-            actor="system",
+            actor=actor,
             details={"title": title},
         )
     )
@@ -199,7 +245,7 @@ def create_incident(db: Session, payload: dict[str, Any]) -> Incident:
     for raw_event_id in payload.get("event_ids") or []:
         event_id = _to_uuid(raw_event_id, "event_id")
         if event_id is not None:
-            link_event_to_incident(db, incident.id, event_id, commit=False)
+            link_event_to_incident(db, incident.id, event_id, commit=False, actor=actor)
 
     db.commit()
     db.refresh(incident)

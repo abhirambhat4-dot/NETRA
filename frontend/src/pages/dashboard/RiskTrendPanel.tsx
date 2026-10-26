@@ -22,7 +22,8 @@ import { dashboardService } from '@/services'
 
 interface Row {
   ts: string
-  risk: number
+  /** Null when no active incident was scored at the bucket end (live API); never shown as 0. */
+  risk: number | null
   active: number
   SURICATA: number
   THREAT_INTEL: number
@@ -42,18 +43,24 @@ function toRows(points: RiskTrendPoint[]): Row[] {
   return points.map((p) => ({ ts: p.timestamp, risk: p.riskScore, active: p.activeIncidents, ...p.events }))
 }
 
-export function RiskTrendPanel() {
+/**
+ * ``live``: the dashboard's live variant. Each point is the average risk of incidents active at the bucket end,
+ * the same figure as the live gauge, so it is labelled as such rather than as a system-wide risk.
+ */
+export function RiskTrendPanel({ live = false, className }: { live?: boolean; className?: string } = {}) {
   const [range, setRange] = useState<TrendRange>('24h')
+  const bucketWindow = range === '24h' ? 'Hourly, last 24 hours · UTC' : '6-hour buckets, last 7 days · UTC'
   const { data, error, reload } = useQuery(`risk-trend-${range}`, () => dashboardService.getRiskTrend(range))
   const rows = data ? toRows(data) : []
   const totalEvents = rows.reduce((s, r) => s + r.SURICATA + r.THREAT_INTEL + r.ML_ANOMALY, 0)
-  const peak = rows.reduce((m, r) => Math.max(m, r.risk), 0)
+  const scored = rows.flatMap((r) => (r.risk === null ? [] : [r.risk]))
+  const peak = scored.length ? Math.max(...scored) : null
 
   return (
     <Panel
-      title="System risk trend"
-      description={range === '24h' ? 'Hourly, last 24 hours · UTC' : '6-hour buckets, last 7 days · UTC'}
-      className="h-full"
+      title={live ? 'Average active incident risk trend' : 'System risk trend'}
+      description={live ? `${bucketWindow} · average risk of the incidents active at each bucket end` : bucketWindow}
+      className={cn('h-full', className)}
       actions={
         <SegmentedControl
           aria-label="Time range"
@@ -75,8 +82,8 @@ export function RiskTrendPanel() {
       ) : (
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap gap-x-8 gap-y-2 text-xs">
-            <Kpi label="Current" value={rows.at(-1)!.risk} tone />
-            <Kpi label="Peak" value={peak} tone />
+            <Kpi label="Current" value={rows.at(-1)!.risk ?? '—'} tone />
+            <Kpi label="Peak" value={peak ?? '—'} tone />
             <Kpi label="Detections" value={formatNumber(totalEvents)} />
           </div>
 
@@ -97,7 +104,7 @@ export function RiskTrendPanel() {
                 <ReferenceLine y={65} stroke="var(--sev-high)" strokeOpacity={0.45} strokeDasharray="4 4" label={{ value: 'High 65', position: 'insideTopRight', fill: 'var(--sev-high)', fontSize: 10 }} />
                 <Tooltip
                   cursor={{ stroke: 'rgb(148 163 184 / 0.35)', strokeWidth: 1 }}
-                  content={({ active, payload }) => <TrendTooltip active={active} row={payload?.[0]?.payload as Row | undefined} range={range} />}
+                  content={({ active, payload }) => <TrendTooltip active={active} row={payload?.[0]?.payload as Row | undefined} range={range} live={live} />}
                 />
                 <Area
                   type="monotone"
@@ -131,7 +138,7 @@ export function RiskTrendPanel() {
                   <CartesianGrid vertical={false} stroke={GRID} />
                   <XAxis dataKey="ts" tick={AXIS} axisLine={false} tickLine={false} tickFormatter={(ts: string) => tickLabel(ts, range)} interval={range === '24h' ? 3 : 3} minTickGap={16} />
                   <YAxis tick={AXIS} axisLine={false} tickLine={false} width={32} tickCount={3} tickFormatter={(v: number) => formatNumber(v)} />
-                  <Tooltip cursor={{ fill: 'rgb(148 163 184 / 0.06)' }} content={({ active, payload }) => <TrendTooltip active={active} row={payload?.[0]?.payload as Row | undefined} range={range} />} />
+                  <Tooltip cursor={{ fill: 'rgb(148 163 184 / 0.06)' }} content={({ active, payload }) => <TrendTooltip active={active} row={payload?.[0]?.payload as Row | undefined} range={range} live={live} />} />
                   {EVENT_SOURCES.map((s, i) => (
                     <Bar
                       key={s}
@@ -164,22 +171,26 @@ function Kpi({ label, value, tone }: { label: string; value: number | string; to
   )
 }
 
-function TrendTooltip({ active, row, range }: { active?: boolean; row?: Row; range: TrendRange }) {
+function TrendTooltip({ active, row, range, live }: { active?: boolean; row?: Row; range: TrendRange; live: boolean }) {
   if (!active || !row) return null
   const d = new Date(row.ts)
   const when =
     range === '24h'
       ? `${d.toISOString().slice(11, 16)} UTC`
       : `${tickLabel(row.ts, range)}, ${d.toISOString().slice(11, 16)} UTC`
-  const sev = riskToSeverity(row.risk)
+  const sev = row.risk === null ? null : riskToSeverity(row.risk)
   return (
     <div className="min-w-44 rounded-lg border border-border bg-popover/95 px-3 py-2.5 text-xs shadow-xl backdrop-blur-md">
       <div className="mb-2 font-mono text-[11px] text-muted-foreground">{when}</div>
       <div className="flex items-center justify-between gap-6">
-        <span className="text-muted-foreground">System risk</span>
-        <span className={cn('font-mono font-semibold', toneStyles[severityTone[sev]].text)}>
-          {row.risk} <span className="text-[10px] font-medium">{sev}</span>
-        </span>
+        <span className="text-muted-foreground">{live ? 'Average active risk' : 'System risk'}</span>
+        {sev === null ? (
+          <span className="font-mono text-muted-foreground">Not scored</span>
+        ) : (
+          <span className={cn('font-mono font-semibold', toneStyles[severityTone[sev]].text)}>
+            {row.risk} <span className="text-[10px] font-medium">{sev}</span>
+          </span>
+        )}
       </div>
       <div className="mt-1 flex items-center justify-between gap-6">
         <span className="text-muted-foreground">Active incidents</span>

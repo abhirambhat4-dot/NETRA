@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models.asset import Asset
 from app.models.authorization import Authorization
@@ -28,6 +28,7 @@ from app.models.event import SecurityEvent
 from app.models.incident import Incident, IncidentEvent, IncidentHistory
 from app.models.threat_indicator import ThreatIndicator
 from app.models.vulnerability import Vulnerability
+from app.services.intake import create_incident, link_event_to_incident
 from tests.conftest import CoreApi
 
 
@@ -502,6 +503,76 @@ def test_incident_creation_and_link_event(core_api: CoreApi) -> None:
     detail = core_api.client.get(f"/api/incidents/{incident_id}", headers=core_api.headers)
     assert detail.status_code == 200
     assert detail.json()["incident"]["eventCount"] == 1
+
+
+def ingest_minimal_event(core_api: CoreApi) -> UUID:
+    response = core_api.client.post(
+        "/api/events/ingest",
+        json={
+            "event_uid": f"evt-{uuid4().hex}",
+            "occurred_at": "2026-01-01T10:00:00Z",
+            "source": "MANUAL",
+            "event_type": "manual_report",
+            "severity": "LOW",
+        },
+        headers=core_api.headers,
+    )
+    assert response.status_code == 201
+    return UUID(response.json()["id"])
+
+
+def test_incident_creation_and_linking_record_the_signed_in_user(core_api: CoreApi) -> None:
+    created = core_api.client.post(
+        "/api/incidents",
+        json={"title": "Analyst-created incident", "event_ids": [str(ingest_minimal_event(core_api))]},
+        headers=core_api.headers,
+    )
+    assert created.status_code == 201
+    incident_id = UUID(created.json()["id"])
+    linked = core_api.client.post(
+        f"/api/incidents/{incident_id}/events",
+        json={"event_id": str(ingest_minimal_event(core_api))},
+        headers=core_api.headers,
+    )
+    assert linked.status_code == 201
+
+    with core_api.session_factory() as session:
+        history = session.scalars(select(IncidentHistory).where(IncidentHistory.incident_id == incident_id)).all()
+    assert sorted(row.action for row in history) == ["event_linked", "event_linked", "incident_created"]
+    assert {row.actor for row in history} == {"core-api-test@example.com"}
+    timeline = core_api.client.get(f"/api/incidents/{incident_id}/timeline", headers=core_api.headers).json()
+    assert {entry["actor"] for entry in timeline if entry["source"] == "history"} == {"core-api-test@example.com"}
+
+
+def test_service_callers_without_a_user_are_still_recorded_as_system(core_api: CoreApi) -> None:
+    event_id = ingest_minimal_event(core_api)
+    with core_api.session_factory() as session:
+        incident = create_incident(session, {"title": "Seeded incident"})
+        link_event_to_incident(session, incident.id, event_id)
+        actors = set(session.scalars(select(IncidentHistory.actor).where(IncidentHistory.incident_id == incident.id)))
+    assert actors == {"system"}
+
+
+def test_incident_creation_refuses_unknown_asset_or_event_without_partial_writes(core_api: CoreApi) -> None:
+    def counts() -> tuple[int, int, int]:
+        with core_api.session_factory() as session:
+            return tuple(
+                session.scalar(select(func.count()).select_from(model)) for model in (Incident, IncidentHistory, IncidentEvent)
+            )
+
+    before = counts()
+    unknown_asset = core_api.client.post(
+        "/api/incidents", json={"title": "Unknown asset", "asset_id": str(uuid4())}, headers=core_api.headers
+    )
+    unknown_event = core_api.client.post(
+        "/api/incidents",
+        json={"title": "Unknown event", "event_ids": [str(ingest_minimal_event(core_api)), str(uuid4())]},
+        headers=core_api.headers,
+    )
+
+    assert (unknown_asset.status_code, unknown_asset.json()["detail"]) == (404, "Asset not found")
+    assert (unknown_event.status_code, unknown_event.json()["detail"]) == (404, "Event not found")
+    assert counts() == before
 
 
 def seed_enrichment_case(

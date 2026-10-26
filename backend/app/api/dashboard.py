@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,8 @@ from app.models.event import SecurityEvent
 from app.models.incident import Incident
 from app.models.threat_indicator import ThreatIndicator
 from app.models.user import User
-from app.schemas.core import DashboardStats
+from app.schemas.core import DashboardStats, RiskTrendPointResponse
+from app.services.risk_trend import TrendRange, load_risk_trend
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 ACTIVE_STATES = tuple(state for state in IncidentState if state not in (IncidentState.CONTAINED, IncidentState.LEARNED))
@@ -69,3 +70,22 @@ def dashboard_stats(
             select(func.count()).select_from(Incident).where(Incident.created_at >= recent_since),
         ),
     )
+
+
+@router.get("/risk-trend", response_model=list[RiskTrendPointResponse])
+def dashboard_risk_trend(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+    trend_range: Annotated[TrendRange, Query(alias="range")] = "24h",
+) -> list[RiskTrendPointResponse]:
+    """Hourly (24h) or 6-hour (7d) buckets, oldest first. Read-only; see app/services/risk_trend.py."""
+    return [
+        RiskTrendPointResponse(
+            timestamp=point.timestamp,
+            risk_score=point.risk_score,
+            active_incidents=point.active_incidents,
+            scored_incidents=point.scored_incidents,
+            events=point.events,
+        )
+        for point in load_risk_trend(db, trend_range)
+    ]

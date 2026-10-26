@@ -68,7 +68,8 @@ export function incidentAttention(prioritized: readonly BackendPrioritizedIncide
     .flatMap((entry) => {
       const incident = byId.get(entry.incidentId)
       if (!incident) return []
-      const confidence = incident.latestDecision?.confidence
+      // Only a current decision speaks for the incident (a superseded or rejected one is history).
+      const confidence = incident.latestDecision?.validity === 'CURRENT' ? incident.latestDecision.confidence : undefined
       return [{
         key: `incident-${entry.incidentId}`,
         kind: 'incident' as const,

@@ -32,6 +32,7 @@ import { cn } from '@/lib/utils'
 import { assetService, incidentService, memoryService } from '@/services'
 import { liveCyberMemoryService } from '@/services'
 import { HttpError, USE_MOCKS } from '@/services/http'
+import { effectivenessLabel } from '@/lib/workspaceSummary'
 
 const JOURNAL_PREVIEW = 5
 const JOURNAL_MAX = 10
@@ -559,7 +560,7 @@ function MemoryRecord({ entry: m, asset, entryIndex = 0 }: { entry: CyberMemoryE
           <StatusBadge status="ESCALATED" size="sm" className="mt-0.5" />
         ) : (
           <span className="mt-0.5 shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground capitalize">
-            {m.effectiveness ? m.effectiveness.replaceAll('_', ' ').toLowerCase() : 'Outcome unavailable'}
+            {m.effectiveness ? effectivenessLabel(m.effectiveness) : 'Outcome unavailable'}
           </span>
         )}
         <ChevronDown className={cn('mt-1 size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />

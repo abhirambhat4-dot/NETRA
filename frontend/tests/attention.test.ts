@@ -170,9 +170,15 @@ test('incident reasons list only the factors the API returned', () => {
   assert.equal(unscored.reason, 'Risk not calculated')
   const [scored] = incidentAttention(
     [prioritized('a', 1, { riskScore: 72.4 })],
-    [incident('a', { latestDecision: { id: 'd', incidentId: 'a', action: 'MONITOR', rationale: '', riskScore: 72, confidence: 0.81, recommendation: null, createdAt: '' } })],
+    [incident('a', { latestDecision: { id: 'd', incidentId: 'a', action: 'MONITOR', rationale: '', riskScore: 72, confidence: 0.81, recommendation: null, createdAt: '', validity: 'CURRENT' } })],
   )
   assert.equal(scored.reason, 'Risk 72 · CRITICAL asset · 2 events · decision confidence 81%')
+  // A superseded decision (made for another score) is history: its confidence is not presented as the incident's.
+  const [superseded] = incidentAttention(
+    [prioritized('a', 1, { riskScore: 72.4 })],
+    [incident('a', { latestDecision: { id: 'd', incidentId: 'a', action: 'MONITOR', rationale: '', riskScore: 60, confidence: 0.81, recommendation: null, createdAt: '', validity: 'SUPERSEDED' } })],
+  )
+  assert.equal(superseded.reason, 'Risk 72 · CRITICAL asset · 2 events')
 })
 
 test('live notifications never include imported dataset rows or events already in an incident', () => {

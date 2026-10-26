@@ -1,20 +1,36 @@
+import ipaddress
 import re
-from typing import Iterable
+from dataclasses import dataclass
+from typing import Any, Iterable
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from app.models.enums import Criticality, IncidentState, Severity
+from app.models.authorization import Authorization
+from app.models.enums import AuthorizationStatus, Criticality, IncidentState, Severity
 from app.models.incident import Incident, IncidentHistory
-from app.schemas.enrichment import EventContext, IncidentContextBundle
+from app.models.risk_evaluation import RiskEvaluation
+from app.schemas.enrichment import EventContext, IncidentContextBundle, ThreatMatchContext
 from app.schemas.risk import (
     RiskFactorExplanation,
     RiskScoreResult,
     RiskStateTransition,
 )
 from app.services.context_enrichment import enrich_incident_context
+from app.services.incident_locking import locked_incident_statement, serialized_timestamp
+
+#: The scoring methodology below: weights, normalisations, rounding and thresholds. Change any of them only
+#: under a new version. tests/risk_engine_v1_snapshots.json pins risk-v1's numbers and its evidence wording;
+#: a wording change that leaves every number unchanged is reviewed against that snapshot, not versioned.
+RISK_METHODOLOGY_VERSION = "risk-v1"
+#: risk-v2 changes one rule of risk-v1: only OPEN vulnerabilities feed the vulnerability factor. Everything
+#: else is identical. tests/test_risk_v2_and_reevaluation.py pins it; every new calculation uses it.
+RISK_V2_METHODOLOGY_VERSION = "risk-v2"
+#: Vulnerability statuses that count in risk-v2. MITIGATED, ACCEPTED and FALSE_POSITIVE do not; ACCEPTED means
+#: the risk was accepted, not that the vulnerability is gone, so the evidence says so.
+V2_COUNTED_VULNERABILITY_STATUSES = frozenset({"OPEN"})
 
 FACTOR_WEIGHTS = {
     "asset_criticality": 0.25,
@@ -129,7 +145,74 @@ def _attack_context(events: Iterable[EventContext]) -> tuple[float, list[str], s
     return float(score), evidence, reason
 
 
-def _calculate_factors(context: IncidentContextBundle) -> tuple[dict[str, RiskFactorExplanation], list[str]]:
+#: A threat-intelligence match with its combined 0-100 value and how that value was formed.
+ScoredMatch = tuple[ThreatMatchContext, float, str]
+
+
+def _indicator_identity(match: ThreatMatchContext) -> tuple[str, str]:
+    """(type, value) as enrichment matches it: IP addresses in canonical form, other values case-folded."""
+    if match.indicator_type == "IP":
+        try:
+            return match.indicator_type, str(ipaddress.ip_address(match.value))
+        except ValueError:
+            pass
+    return match.indicator_type, match.value.casefold()
+
+
+def _threat_evidence(scored_matches: list[ScoredMatch]) -> list[str]:
+    """Threat-intelligence evidence, one entry per indicator; explanation only, never part of the score.
+
+    An indicator in one record keeps its single line. One indicator in several records (several sources, or
+    duplicate records of one source) is listed once with every source and record ID, and each source once,
+    at its highest report: the factor uses the highest single report, so more reports add no points.
+    """
+    groups: dict[tuple[str, str], list[ScoredMatch]] = {}
+    for scored in scored_matches:
+        groups.setdefault(_indicator_identity(scored[0]), []).append(scored)
+
+    evidence: list[str] = []
+    for (indicator_type, value), records in groups.items():
+        if len(records) == 1:
+            match, combined_value, combination = records[0]
+            evidence.append(
+                f"{match.indicator_type} {match.value} from {match.source}: {combination} = {combined_value:g}/100."
+            )
+            continue
+        by_source: dict[str, list[ScoredMatch]] = {}
+        for scored in records:
+            by_source.setdefault(scored[0].source, []).append(scored)
+        sources = sorted(by_source)
+        highest = max(combined_value for _, combined_value, _ in records)
+        evidence.append(
+            f"{indicator_type} {value} is reported by {len(sources)} source{'' if len(sources) == 1 else 's'} "
+            f"({', '.join(sources)}) in {len(records)} active records. This indicator is considered once, using its "
+            f"highest report ({highest:g}/100); additional sources or records add no points."
+        )
+        ranked = sorted(by_source.items(), key=lambda item: (-max(scored[1] for scored in item[1]), item[0]))
+        for source, source_records in ranked:
+            match, combined_value, combination = max(source_records, key=lambda scored: scored[1])
+            ids = ", ".join(sorted(str(scored[0].id) for scored in source_records))
+            label = (
+                f"indicator {ids}"
+                if len(source_records) == 1
+                else f"{len(source_records)} records, indicators {ids}; highest shown"
+            )
+            evidence.append(f"{indicator_type} {value} from {source}: {combination} = {combined_value:g}/100 ({label}).")
+    return evidence
+
+
+def _v2_vulnerability_note(status: str) -> str:
+    if status in V2_COUNTED_VULNERABILITY_STATUSES:
+        return ""
+    if status == "ACCEPTED":
+        return " Not counted in risk-v2: the risk was accepted; the vulnerability may still be present."
+    return " Not counted in risk-v2: only OPEN vulnerabilities count."
+
+
+def _calculate_factors(
+    context: IncidentContextBundle, *, open_vulnerabilities_only: bool = False
+) -> tuple[dict[str, RiskFactorExplanation], list[str]]:
+    """The risk-v1 factors; ``open_vulnerabilities_only`` applies risk-v2's single change to the vulnerability factor."""
     missing: list[str] = []
 
     if context.asset is None:
@@ -142,17 +225,40 @@ def _calculate_factors(context: IncidentContextBundle) -> tuple[dict[str, RiskFa
         criticality_evidence = [
             f"Asset {context.asset.asset_key} criticality is {context.asset.criticality}."
         ]
+        # risk-v1's wording is pinned by its snapshot; risk-v2 uses the same factor and says so without "V1".
         criticality_reason = (
             f"Asset criticality {context.asset.criticality} maps to {criticality_value:g}/100; "
-            "exposure and status are context only in this V1 factor."
+            + ("exposure and status are context only in this factor, unchanged from risk-v1."
+               if open_vulnerabilities_only else "exposure and status are context only in this V1 factor.")
         )
 
     scored_vulnerabilities = [
         vulnerability
         for vulnerability in context.vulnerabilities
         if vulnerability.cvss_score is not None
+        and (not open_vulnerabilities_only or vulnerability.status in V2_COUNTED_VULNERABILITY_STATUSES)
     ]
-    if scored_vulnerabilities:
+    if open_vulnerabilities_only:
+        vulnerability_evidence = [
+            f"{item.cve_id or item.title}: CVSS {item.cvss_score}, severity {item.severity}, status {item.status}."
+            + _v2_vulnerability_note(item.status)
+            for item in context.vulnerabilities
+        ] or ["No vulnerabilities are linked to the asset."]
+        if scored_vulnerabilities:
+            selected_vulnerability = max(scored_vulnerabilities, key=lambda item: item.cvss_score or 0)
+            vulnerability_value = _bounded((selected_vulnerability.cvss_score or 0) * 10)
+            vulnerability_reason = (
+                f"The highest CVSS score among OPEN vulnerabilities ({selected_vulnerability.cvss_score:g}) is "
+                "normalized by multiplying by 10; MITIGATED, ACCEPTED and FALSE_POSITIVE vulnerabilities are not counted."
+            )
+        else:
+            vulnerability_value = 0.0
+            vulnerability_reason = (
+                "No OPEN vulnerability has a CVSS score, so this factor contributes zero; "
+                "MITIGATED, ACCEPTED and FALSE_POSITIVE vulnerabilities are not counted."
+            )
+            missing.append("No OPEN vulnerability with a CVSS score is available.")
+    elif scored_vulnerabilities:
         selected_vulnerability = max(scored_vulnerabilities, key=lambda item: item.cvss_score or 0)
         vulnerability_value = _bounded((selected_vulnerability.cvss_score or 0) * 10)
         vulnerability_evidence = [
@@ -198,8 +304,9 @@ def _calculate_factors(context: IncidentContextBundle) -> tuple[dict[str, RiskFa
             for event, value in detection_events
         ]
         detection_reason = (
-            "The highest linked-event source mapping is used as a V1 confidence proxy; "
-            "the mapping is heuristic, not a calibrated probability."
+            ("The highest linked-event source mapping is used as a confidence proxy, unchanged from risk-v1; "
+             if open_vulnerabilities_only else "The highest linked-event source mapping is used as a V1 confidence proxy; ")
+            + "the mapping is heuristic, not a calibrated probability."
         )
     else:
         detection_value = 0.0
@@ -209,7 +316,7 @@ def _calculate_factors(context: IncidentContextBundle) -> tuple[dict[str, RiskFa
 
     severity_values = SEVERITY_VALUES
     threat_scores: list[tuple[float, str]] = []
-    threat_evidence: list[str] = []
+    scored_matches: list[ScoredMatch] = []
     for match in context.threat_intelligence_matches:
         severity_value = severity_values[match.severity]
         if match.confidence is None:
@@ -220,9 +327,8 @@ def _calculate_factors(context: IncidentContextBundle) -> tuple[dict[str, RiskFa
             combined_value = round(confidence_value * 0.7 + severity_value * 0.3, 2)
             combination = f"70% confidence ({confidence_value:g}) + 30% severity ({severity_value:g})"
         threat_scores.append((combined_value, match.value))
-        threat_evidence.append(
-            f"{match.indicator_type} {match.value} from {match.source}: {combination} = {combined_value:g}/100."
-        )
+        scored_matches.append((match, combined_value, combination))
+    threat_evidence = _threat_evidence(scored_matches)
     if threat_scores:
         threat_value = max(value for value, _ in threat_scores)
         threat_reason = "Each active match combines confidence and severity; the highest combined match is used."
@@ -287,8 +393,120 @@ def _risk_severity(score: float) -> str:
     return "CRITICAL"
 
 
+@dataclass(frozen=True)
+class ContextRiskScore:
+    """What ``score_context`` derives from an incident context; ``calculate_incident_risk`` reports it."""
+
+    methodology_version: str
+    risk_score: float
+    severity: str
+    factors: dict[str, RiskFactorExplanation]
+    missing_evidence: list[str]
+
+    @property
+    def reasons(self) -> list[str]:
+        return [factor.reason for factor in self.factors.values()]
+
+
+def score_context(context: IncidentContextBundle) -> ContextRiskScore:
+    """Score an already-gathered incident context with risk-v1.
+
+    Pure: it reads only ``context``; no database, clock, settings or network access, and no state change.
+    """
+    factors, missing_evidence = _calculate_factors(context)
+    risk_score = round(
+        min(100.0, max(0.0, sum(factor.contribution for factor in factors.values()))),
+        2,
+    )
+    return ContextRiskScore(
+        methodology_version=RISK_METHODOLOGY_VERSION,
+        risk_score=risk_score,
+        severity=_risk_severity(risk_score),
+        factors=factors,
+        missing_evidence=missing_evidence,
+    )
+
+
+def score_context_v2(context: IncidentContextBundle) -> ContextRiskScore:
+    """Score an already-gathered incident context with risk-v2 (risk-v1 with OPEN-only vulnerabilities).
+
+    Pure, like ``score_context``. Every new calculation and re-evaluation uses this; stored risk-v1 evaluations
+    keep their recorded version and values and are never recalculated.
+    """
+    factors, missing_evidence = _calculate_factors(context, open_vulnerabilities_only=True)
+    risk_score = round(
+        min(100.0, max(0.0, sum(factor.contribution for factor in factors.values()))),
+        2,
+    )
+    return ContextRiskScore(
+        methodology_version=RISK_V2_METHODOLOGY_VERSION,
+        risk_score=risk_score,
+        severity=_risk_severity(risk_score),
+        factors=factors,
+        missing_evidence=missing_evidence,
+    )
+
+
+def _matched_indicator_snapshot(context: IncidentContextBundle) -> list[dict[str, object]]:
+    """The active indicators an evaluation used, as identifiers and attribution (inactive ones never match)."""
+    return [
+        {
+            "id": str(match.id),
+            "indicatorType": match.indicator_type,
+            "value": match.value,
+            "source": match.source,
+            "confidence": match.confidence,
+            "severity": match.severity,
+            "matchedEventIds": [str(event_id) for event_id in match.matched_event_ids],
+        }
+        for match in context.threat_intelligence_matches
+    ]
+
+
+def _evaluation_record(
+    incident_id: UUID,
+    scored: ContextRiskScore,
+    result: RiskScoreResult,
+    context: IncidentContextBundle,
+    *,
+    previous_risk_score: float | None,
+    trigger: str,
+    actor: str,
+) -> RiskEvaluation:
+    """A RiskEvaluation snapshot of one scoring run; the caller adds it in the same transaction as its other writes."""
+    return RiskEvaluation(
+        incident_id=incident_id,
+        # Ordered by the incident lock, so the latest evaluation is the one written last (see serialized_timestamp).
+        created_at=serialized_timestamp(RiskEvaluation.created_at, RiskEvaluation.incident_id == incident_id),
+        methodology_version=scored.methodology_version,  # RISK_METHODOLOGY_VERSION when the score was computed
+        risk_score=scored.risk_score,
+        risk_level=scored.severity,
+        previous_risk_score=previous_risk_score,
+        # The factor breakdown exactly as the risk API reports it.
+        factors=result.model_dump(mode="json", by_alias=True)["factors"],
+        missing_evidence=list(scored.missing_evidence),
+        matched_indicators=_matched_indicator_snapshot(context),
+        trigger=trigger,
+        actor=actor,
+    )
+
+
+def _serialized_history_time(incident_id: UUID) -> Any:
+    """A risk history entry's time, ordered by the incident lock: decisions cite the latest one by this time."""
+    return serialized_timestamp(IncidentHistory.occurred_at, IncidentHistory.incident_id == incident_id)
+
+
+def _locked_incident(incident_id: UUID) -> Select[tuple[Incident]]:
+    """The incident row, locked until the calculation commits or rolls back (the shared workflow lock).
+
+    A second calculation of the same incident waits for the lock, then reads the committed PRIORITISED
+    state and is refused (409), so it cannot add a second risk_calculated entry or evaluation.
+    """
+    return locked_incident_statement(incident_id)
+
+
 def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> RiskScoreResult:
-    incident = db.scalars(select(Incident).where(Incident.id == incident_id)).one_or_none()
+    incident = db.scalars(_locked_incident(incident_id)).one_or_none()
     if incident is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
     if incident.state != IncidentState.UNDERSTOOD:
@@ -298,12 +516,8 @@ def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> Ri
         )
 
     context = enrich_incident_context(db, incident_id, actor=actor, record_history=False)
-    factors, missing_evidence = _calculate_factors(context)
-    risk_score = round(
-        min(100.0, max(0.0, sum(factor.contribution for factor in factors.values()))),
-        2,
-    )
-    severity = _risk_severity(risk_score)
+    scored = score_context_v2(context)
+    risk_score = scored.risk_score
     transition = RiskStateTransition(
         from_state=IncidentState.UNDERSTOOD.name,
         to_state=IncidentState.PRIORITISED.name,
@@ -312,13 +526,14 @@ def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> Ri
     result = RiskScoreResult(
         incident_id=incident.id,
         risk_score=risk_score,
-        severity=severity,
-        factors=factors,
-        reasons=[factor.reason for factor in factors.values()],
-        missing_evidence=missing_evidence,
+        severity=scored.severity,
+        factors=scored.factors,
+        reasons=scored.reasons,
+        missing_evidence=scored.missing_evidence,
         state_transition=transition,
     )
 
+    previous_risk_score = incident.risk_score
     incident.risk_score = risk_score
     incident.state = IncidentState.PRIORITISED
     db.add(
@@ -328,7 +543,108 @@ def calculate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> Ri
             to_state=IncidentState.PRIORITISED,
             action="risk_calculated",
             actor=actor,
+            occurred_at=_serialized_history_time(incident.id),
             details={"risk_calculation": result.model_dump(mode="json")},
+        )
+    )
+    # Committed together with the score, the state change and the history entry, or not at all. The state
+    # check above makes this the incident's only initial evaluation: a repeat call is refused with 409.
+    db.add(
+        _evaluation_record(
+            incident.id,
+            scored,
+            result,
+            context,
+            previous_risk_score=previous_risk_score,
+            trigger="initial",
+            actor=actor,
+        )
+    )
+    db.commit()
+    return result
+
+
+#: States in which an operator may re-evaluate a scored incident (risk_reevaluated).
+REEVALUATION_STATES = (IncidentState.PRIORITISED, IncidentState.VERIFIED)
+
+
+def reevaluate_incident_risk(db: Session, incident_id: UUID, *, actor: str) -> RiskScoreResult:
+    """Score a PRIORITISED or VERIFIED incident again with the current methodology and append the result.
+
+    The previous evaluations, decisions and authorizations are kept unchanged. Refused while an authorization
+    request is open, so no request can be approved, or containment run, against a score it was not made for.
+    A changed score makes earlier decisions stale (their score no longer matches): a VERIFIED incident returns
+    to PRIORITISED, so a new decision, a new authorization request and a new verification are needed before an
+    approval. An unchanged score changes no state, decision or authorization.
+    """
+    incident = db.scalars(_locked_incident(incident_id)).one_or_none()
+    if incident is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
+    if incident.state not in REEVALUATION_STATES or incident.risk_score is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Risk can be re-evaluated only for a scored PRIORITISED or VERIFIED incident",
+        )
+    open_request = db.scalar(
+        select(Authorization.id)
+        .where(
+            Authorization.incident_id == incident.id,
+            Authorization.status.in_((AuthorizationStatus.PENDING, AuthorizationStatus.APPROVED)),
+        )
+        .limit(1)
+    )
+    if open_request is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Risk cannot be re-evaluated while an authorization request is open",
+        )
+
+    context = enrich_incident_context(db, incident_id, actor=actor, record_history=False)
+    scored = score_context_v2(context)
+    previous_risk_score = float(incident.risk_score)
+    score_changed = scored.risk_score != previous_risk_score
+    previous_state = incident.state
+    next_state = IncidentState.PRIORITISED if score_changed else previous_state
+    result = RiskScoreResult(
+        incident_id=incident.id,
+        risk_score=scored.risk_score,
+        severity=scored.severity,
+        factors=scored.factors,
+        reasons=scored.reasons,
+        missing_evidence=scored.missing_evidence,
+        state_transition=RiskStateTransition(
+            from_state=previous_state.name, to_state=next_state.name, action="risk_reevaluated"
+        ),
+    )
+
+    incident.risk_score = scored.risk_score
+    incident.state = next_state
+    db.add(
+        IncidentHistory(
+            incident_id=incident.id,
+            from_state=previous_state,
+            to_state=next_state,
+            action="risk_reevaluated",
+            actor=actor,
+            occurred_at=_serialized_history_time(incident.id),
+            details={
+                "risk_calculation": result.model_dump(mode="json"),
+                "previous_risk_score": previous_risk_score,
+                "score_changed": score_changed,
+                "methodology_version": scored.methodology_version,
+            },
+        )
+    )
+    # One commit for the score, the state, the history entry and the appended evaluation, or none of them.
+    db.add(
+        _evaluation_record(
+            incident.id,
+            scored,
+            result,
+            context,
+            previous_risk_score=previous_risk_score,
+            trigger="reevaluation",
+            actor=actor,
         )
     )
     db.commit()

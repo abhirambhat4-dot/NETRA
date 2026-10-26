@@ -94,6 +94,12 @@ export interface MemorySummary {
   demo: number
 }
 
+/** How a memory's effectiveness is shown. UNKNOWN is stated as such: NETRA's containment is simulated, and a
+ * successful simulation is not evidence of real-world effect. */
+export function effectivenessLabel(value: string): string {
+  return value === 'UNKNOWN' ? 'effectiveness unknown' : value.replaceAll('_', ' ').toLowerCase()
+}
+
 /** Entries of demo incidents (by id, from the explicit demo markers) are counted separately, not shown. */
 export function memorySummary(entries: readonly CyberMemoryEntry[], demoIncidentIds: ReadonlySet<string> = new Set()): MemorySummary {
   const genuine = entries.filter((entry) => !(entry.incidentId && demoIncidentIds.has(entry.incidentId)))

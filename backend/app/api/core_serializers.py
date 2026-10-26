@@ -1,4 +1,5 @@
 from enum import Enum
+from uuid import UUID
 
 from app.models.asset import Asset
 from app.models.authorization import Authorization
@@ -23,6 +24,7 @@ from app.schemas.core import (
     ThreatIndicatorResponse,
     VulnerabilityResponse,
 )
+from app.services.decision_validity import decision_validity
 
 
 def enum_text(value: Enum | str | None) -> str | None:
@@ -101,11 +103,16 @@ def event_response(event: SecurityEvent) -> EventResponse:
         asset=asset_reference(event.asset),
         import_batch_id=event.import_batch_id,
         source_row=event.source_row,
+        # Only IDs the source explicitly supplied (the table admits no other evidence kind).
+        attack_technique_ids=[
+            row.technique_id for row in event.attack_techniques if row.evidence_kind == "source_supplied"
+        ],
     )
 
 
 def decision_response(decision: Decision) -> DecisionResponse:
     return DecisionResponse(
+        validity=decision_validity(decision, decision.incident.risk_score),
         id=decision.id,
         incident_id=decision.incident_id,
         action=enum_text(decision.action),
@@ -193,12 +200,17 @@ def cyber_memory_reference(memory: CyberMemory) -> CyberMemoryReference:
     return CyberMemoryReference(id=memory.id, lesson=memory.lesson, outcome=memory.outcome)
 
 
-def cyber_memory_response(memory: CyberMemory) -> CyberMemoryResponse:
+def cyber_memory_response(
+    memory: CyberMemory, sources: tuple[UUID | None, UUID | None] = (None, None)
+) -> CyberMemoryResponse:
+    """``sources`` is (authorization id, containment id) the memory was created from; see memory_sources."""
     incident = memory.incident
     return CyberMemoryResponse(
         id=memory.id,
         incident_id=memory.incident_id,
         decision_id=memory.decision_id,
+        authorization_id=sources[0],
+        containment_id=sources[1],
         lesson=memory.lesson,
         outcome=memory.outcome,
         action_taken=enum_text(memory.action_taken),

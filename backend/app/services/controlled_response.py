@@ -19,6 +19,14 @@ from app.models.enums import (
 )
 from app.models.incident import Incident, IncidentHistory
 from app.models.event import SecurityEvent
+from app.services.incident_locking import lock_incident, serialized_timestamp
+
+
+#: Every memory NETRA creates comes from a simulated containment, so its effectiveness is recorded as UNKNOWN.
+SIMULATED_EFFECTIVENESS_NOTE = (
+    "Effectiveness is unknown: the containment was simulated, and a successful simulation is not evidence of "
+    "real-world effect."
+)
 
 
 def _history(
@@ -42,6 +50,10 @@ def _history(
 
 
 def _approved_authorization(db: Session, authorization_id: UUID) -> Authorization:
+    # Locked before any check: the one-containment-per-authorization check then cannot pass twice at once.
+    incident_id = db.scalar(select(Authorization.incident_id).where(Authorization.id == authorization_id))
+    if incident_id is not None:
+        lock_incident(db, incident_id)
     authorization = db.scalars(
         select(Authorization)
         .where(Authorization.id == authorization_id)
@@ -49,6 +61,7 @@ def _approved_authorization(db: Session, authorization_id: UUID) -> Authorizatio
             joinedload(Authorization.incident).joinedload(Incident.asset),
             joinedload(Authorization.decision),
         )
+        .execution_options(populate_existing=True)
     ).unique().one_or_none()
     if authorization is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Authorization not found")
@@ -72,6 +85,12 @@ def _approved_authorization(db: Session, authorization_id: UUID) -> Authorizatio
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Incident must be AUTHORIZED before containment",
+        )
+    # Containment runs only for the score that was approved; a different incident score voids the approval's use.
+    if decision.risk_score != authorization.incident.risk_score:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Decision risk score no longer matches the incident risk score",
         )
     return authorization
 
@@ -129,16 +148,21 @@ def simulate_authorized_containment(
     authorization = _approved_authorization(db, authorization_id)
     incident = authorization.incident
     decision = authorization.decision
-    existing = db.scalar(
-        select(ContainmentAction.id)
+    # A new attempt is allowed only after every earlier one failed and that failure was verified; the failed
+    # records are kept unchanged, and the incident must still be AUTHORIZED (checked above).
+    previous_attempts = db.scalars(
+        select(ContainmentAction)
         .where(ContainmentAction.authorization_id == authorization.id)
-        .limit(1)
-    )
-    if existing is not None:
+        .order_by(ContainmentAction.created_at, ContainmentAction.id)
+    ).all()
+    if any(
+        attempt.status != ContainmentStatus.FAILED or attempt.verified_at is None for attempt in previous_attempts
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A containment action already exists for this authorization",
         )
+    retry_of = {"retry_of_containment_id": str(previous_attempts[-1].id)} if previous_attempts else {}
 
     events = db.scalars(
         select(SecurityEvent)
@@ -149,6 +173,8 @@ def simulate_authorized_containment(
     now = datetime.now(UTC)
     containment = ContainmentAction(
         incident_id=incident.id,
+        # Ordered by the incident lock, so a retry always sorts after the attempts it follows.
+        created_at=serialized_timestamp(ContainmentAction.created_at, ContainmentAction.incident_id == incident.id),
         authorization_id=authorization.id,
         action_type=decision.action,
         target=target,
@@ -173,6 +199,7 @@ def simulate_authorized_containment(
                 "decision_id": str(decision.id),
                 "action": decision.action.name,
                 "target": target,
+                **retry_of,
             },
         )
     )
@@ -222,6 +249,10 @@ def verify_containment(
     *,
     actor: str,
 ) -> ContainmentAction:
+    # Locked before any check, so a containment is verified at most once.
+    incident_id = db.scalar(select(ContainmentAction.incident_id).where(ContainmentAction.id == containment_id))
+    if incident_id is not None:
+        lock_incident(db, incident_id)
     containment = db.scalars(
         select(ContainmentAction)
         .where(ContainmentAction.id == containment_id)
@@ -229,6 +260,7 @@ def verify_containment(
             joinedload(ContainmentAction.incident),
             joinedload(ContainmentAction.authorization).joinedload(Authorization.decision),
         )
+        .execution_options(populate_existing=True)
     ).unique().one_or_none()
     if containment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Containment action not found")
@@ -315,9 +347,12 @@ def create_incident_cyber_memory(
     *,
     actor: str,
 ) -> CyberMemory:
+    # Locked before any check, so at most one Cyber Memory entry is created per incident.
+    lock_incident(db, incident_id)
     incident = db.scalars(
         select(Incident)
         .where(Incident.id == incident_id)
+        .execution_options(populate_existing=True)
         .options(
             joinedload(Incident.asset),
             selectinload(Incident.events),
@@ -384,7 +419,8 @@ def create_incident_cyber_memory(
     )
     outcome = (
         f"{containment.result or 'Controlled containment simulation result unavailable.'} "
-        f"Verification succeeded at {containment.verified_at.isoformat()}"
+        f"Verification succeeded at {containment.verified_at.isoformat()}. "
+        f"{SIMULATED_EFFECTIVENESS_NOTE}"
     )
     memory = CyberMemory(
         incident=incident,
@@ -392,7 +428,8 @@ def create_incident_cyber_memory(
         lesson=lesson,
         outcome=outcome,
         action_taken=containment.action_type,
-        effectiveness=Effectiveness.EFFECTIVE,
+        # Containment is simulated and its verification checks the recorded result, not a real-world effect.
+        effectiveness=Effectiveness.UNKNOWN,
     )
     db.add(memory)
     db.flush()
@@ -412,7 +449,7 @@ def create_incident_cyber_memory(
                 "containment_id": str(containment.id),
                 "action": containment.action_type.name,
                 "outcome": outcome,
-                "effectiveness": Effectiveness.EFFECTIVE.name,
+                "effectiveness": Effectiveness.UNKNOWN.name,
             },
         )
     )

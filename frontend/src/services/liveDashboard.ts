@@ -8,6 +8,7 @@ import type {
   SystemComponentHealth,
   TrendRange,
 } from '@/api/types'
+import { adaptRiskTrend, type BackendRiskTrendPoint } from '@/lib/riskTrend'
 import type { HealthOutcome } from '@/lib/workspaceStatus'
 import { HttpError, http } from './http'
 
@@ -92,5 +93,7 @@ export const liveDashboardService = {
     const [api, database] = await Promise.all([healthOutcome('/health'), healthOutcome('/health/db')])
     return { api, database }
   },
-  getRiskTrend: async (_range: TrendRange): Promise<RiskTrendPoint[]> => [],
+  /** Reconstructed from stored incident history and risk evaluations (GET /dashboard/risk-trend); read-only. */
+  getRiskTrend: async (range: TrendRange): Promise<RiskTrendPoint[]> =>
+    adaptRiskTrend(await http.get<BackendRiskTrendPoint[]>('/dashboard/risk-trend', { range })),
 }

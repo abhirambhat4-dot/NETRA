@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
+from app.models.attack_technique import normalize_attack_technique_ids
 from app.schemas.core import CoreResponse, EventResponse
 
 # Mirrors the security_events column limits so oversized input is rejected before the database.
@@ -35,6 +36,13 @@ class CollectorEventIn(CoreResponse):
     anomaly_score: float | None = Field(default=None, ge=0, le=1)
     asset_id: UUID | None = None
     raw_data: dict[str, Any] | None = None
+    #: Optional ATT&CK technique IDs reported by the source. A malformed list rejects this row only.
+    attack_technique_ids: list[str] | None = None
+
+    @field_validator("attack_technique_ids")
+    @classmethod
+    def valid_attack_technique_ids(cls, value: list[str] | None) -> list[str] | None:
+        return None if value is None else normalize_attack_technique_ids(value)
 
     @field_validator("event_type", "signature", "protocol", mode="before")
     @classmethod

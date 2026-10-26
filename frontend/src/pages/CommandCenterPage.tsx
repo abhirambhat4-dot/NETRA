@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { useQuery } from '@/hooks/useQuery'
 import { ROUTES } from '@/lib/navigation'
 import { severityTone, toneStyles, type Tone } from '@/lib/tones'
+import { currentLatestDecision } from '@/lib/incidentVerification'
 import { cn } from '@/lib/utils'
 import { assetInventoryService, dashboardService, eventService, incidentQueueService, threatIntelService } from '@/services'
 import { HttpError, USE_MOCKS } from '@/services/http'
@@ -57,9 +58,11 @@ export function CommandCenterPage() {
   const unsupportedNotice = unsupportedIncidentsNotice(incidents.data?.unsupported ?? 0)
   const primaryIncident = queue?.[0]
   const riskScore = USE_MOCKS ? stats.data?.overallRisk ?? null : stats.data?.averageRiskScore ?? null
-  const recommendedAction = primaryIncident?.latestDecision?.action ?? primaryIncident?.recommendedAction ?? null
-  const recommendationText = primaryIncident?.latestDecision?.recommendation ?? (recommendedAction ? `Recommended action: ${recommendedAction}.` : null)
-  const evidenceText = primaryIncident?.latestDecision?.rationale ?? null
+  // Only a current decision speaks for the incident; a superseded or rejected one is history.
+  const latestDecision = currentLatestDecision(primaryIncident?.latestDecision)
+  const recommendedAction = latestDecision?.action ?? primaryIncident?.recommendedAction ?? null
+  const recommendationText = latestDecision?.recommendation ?? (recommendedAction ? `Recommended action: ${recommendedAction}.` : null)
+  const evidenceText = latestDecision?.rationale ?? null
   const drivers = stats.data?.riskDrivers ?? []
 
   if (stats.error) {
@@ -158,7 +161,7 @@ export function CommandCenterPage() {
                       style={delay(220)}
                     />
                     <MetricTile
-                      label={USE_MOCKS ? 'Critical assets' : 'Critical incidents'}
+                      label={USE_MOCKS ? 'Critical assets' : 'Critical-severity incidents'}
                       value={stats.data ? String(USE_MOCKS ? stats.data.criticalAssets : stats.data.incidentsBySeverity.CRITICAL ?? 'Unavailable') : '—'}
                       hint={!USE_MOCKS && stats.data ? `${stats.data.criticalAssets} critical assets` : undefined}
                       tone="accent"
@@ -351,7 +354,7 @@ export function CommandCenterPage() {
           ) : (
             <Panel title="Not returned by the current API" description="These signals are not estimated or filled with demo values." className="cc-card rounded-2xl">
               <dl className="divide-y divide-border text-[13px]">
-                <Availability label="Risk history and drivers" />
+                <Availability label="Risk drivers (risk history is now shown in the trend below)" />
                 <Availability label="ATT&CK activity" />
                 <Availability label="Asset risk scores" />
               </dl>
@@ -359,6 +362,15 @@ export function CommandCenterPage() {
           )}
         </div>
       </div>
+
+      {/* Live risk history: reconstructed by the API from stored incident history (GET /dashboard/risk-trend). */}
+      {!USE_MOCKS && (
+        <div className="cc-rise" style={delay(460)}>
+          <Suspense fallback={<Panel title="Average active incident risk trend" className="cc-card min-h-90 rounded-2xl"><LoadingState variant="inline" label="Loading chart…" /></Panel>}>
+            <RiskTrendPanel live className="cc-card rounded-2xl" />
+          </Suspense>
+        </div>
+      )}
 
       {USE_MOCKS && (
         <Disclosure label="Open demo-only dashboard enrichment" hint="Mock data · not live telemetry">

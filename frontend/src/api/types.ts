@@ -224,15 +224,21 @@ export type BackendResponseAction =
   | 'QUARANTINE_FILE'
   | 'NO_ACTION'
 
+/** CURRENT: for the incident's current risk score and not rejected. SUPERSEDED: made for a score the incident no
+ * longer has. REJECTED: every authorization request for it was rejected. Computed by the backend from stored state. */
+export type BackendDecisionValidity = 'CURRENT' | 'SUPERSEDED' | 'REJECTED'
+
 export interface BackendIncidentDecisionResponse {
   id: string
   incidentId: string
   action: BackendResponseAction
   rationale: string
+  /** The score the decision was made for, kept as recorded. */
   riskScore: number
   confidence: number
   recommendation: string | null
   createdAt: string
+  validity: BackendDecisionValidity
 }
 
 /** GET /incidents item as serialized by the backend. */
@@ -701,6 +707,9 @@ export interface BackendCyberMemoryResponse {
   id: string
   incidentId: string | null
   decisionId: string | null
+  /** The authorization and containment the memory was created from (its creation history entry); null when unrecorded. */
+  authorizationId: string | null
+  containmentId: string | null
   lesson: string
   outcome: string | null
   actionTaken: BackendResponseAction | null
@@ -1059,7 +1068,7 @@ export type TrendRange = '24h' | '7d'
 /** One bucket of the system risk / activity trend. */
 export interface RiskTrendPoint {
   timestamp: string // bucket start
-  riskScore: number // 0–100 system risk at bucket end
+  riskScore: number | null // 0–100 risk at bucket end; null (live API only) when no active incident was scored
   activeIncidents: number
   events: Record<Exclude<DetectionSource, 'HYBRID'>, number> // event volume by source
 }

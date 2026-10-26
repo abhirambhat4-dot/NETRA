@@ -11,8 +11,9 @@ import { useAction } from '@/hooks/useAction'
 import { useQuery } from '@/hooks/useQuery'
 import { forbiddenActionMessage, permissionExplanation, resolutionAccess } from '@/lib/authorizationAccess'
 import { formatDateTime } from '@/lib/format'
-import { canVerifyIncident, shouldRefreshAfterVerifyError } from '@/lib/incidentVerification'
+import { canVerifyIncident, currentDecisions, decisionValidityLabel, shouldRefreshAfterVerifyError, verificationBlockedReason } from '@/lib/incidentVerification'
 import { ROUTES } from '@/lib/navigation'
+import { LEGACY_RISK_HISTORY_MESSAGE, latestRiskEvaluation, riskChange, riskEvaluationSummary } from '@/lib/riskEvaluation'
 import { DATA_CHANGED_EVENT, liveIncidentDetailsService, liveIncidentWorkflowService } from '@/services'
 import { HttpError } from '@/services/http'
 import { riskToSeverity, severityTone, toneStyles } from '@/lib/tones'
@@ -60,13 +61,23 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
   const [rejectionReason, setRejectionReason] = useState('')
   const [forbidden, setForbidden] = useState<string | null>(null)
   const { incident } = detail
-  const latestDecisionId = incident.latestDecision?.id
-  const decision = incident.latestDecision ?? detail.decisions[detail.decisions.length - 1] ?? null
+  // Stored risk evaluations; reloaded with the rest of the page after every workflow action.
+  const riskEvaluations = useQuery(`live-incident-risk-evaluations-${incident.id}`, () =>
+    liveIncidentDetailsService.riskEvaluations(incident.id),
+  )
+  const latestEvaluation = riskEvaluations.data ? latestRiskEvaluation(riskEvaluations.data) : null
+  // Only a CURRENT decision (made for the incident's current risk score, not rejected) can be verified against and
+  // authorized; superseded and rejected decisions stay listed as history.
+  const current = currentDecisions(detail.decisions)
+  const currentDecision = current[current.length - 1] ?? null
+  const decision = currentDecision ?? incident.latestDecision ?? detail.decisions[detail.decisions.length - 1] ?? null
+  const verificationBlocked = verificationBlockedReason(incident.state, detail.decisions)
+  // A rejected request or a failed containment may be retried; the lists are oldest first, so show the latest attempt.
   const authorization = decision
-    ? detail.authorizations.find((item) => item.decisionId === decision.id)
+    ? detail.authorizations.findLast((item) => item.decisionId === decision.id)
     : undefined
   const containment = authorization
-    ? detail.containmentActions.find((item) => item.authorizationId === authorization.id)
+    ? detail.containmentActions.findLast((item) => item.authorizationId === authorization.id)
     : undefined
   const hasMemory = detail.cyberMemories.length > 0
   // Role checks only decide which controls are offered; the API enforces every permission.
@@ -78,8 +89,8 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
   const workflowStepDue =
     incident.state === 'DETECTED' ||
     incident.state === 'UNDERSTOOD' ||
-    (incident.state === 'PRIORITISED' && detail.decisions.length === 0) ||
-    canVerifyIncident(incident.state, detail.decisions.length) ||
+    (incident.state === 'PRIORITISED' && current.length === 0) ||
+    canVerifyIncident(incident.state, current.length) ||
     (incident.state === 'CONTAINED' && !hasMemory)
 
   /**
@@ -207,7 +218,7 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
               Calculate risk
             </Button>
           )}
-          {!workflowBlocked && incident.state === 'PRIORITISED' && detail.decisions.length === 0 && (
+          {!workflowBlocked && incident.state === 'PRIORITISED' && current.length === 0 && (
             <Button
               disabled={busy !== null}
               onClick={() => run('decision', guarded(() => liveIncidentWorkflowService.recommendDecision(incident.id)), 'Decision recommendation created')}
@@ -216,13 +227,14 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
               Recommend decision
             </Button>
           )}
-          {!workflowBlocked && canVerifyIncident(incident.state, detail.decisions.length) && (
+          {verificationBlocked && <p className="text-xs text-muted-foreground">{verificationBlocked}</p>}
+          {!workflowBlocked && canVerifyIncident(incident.state, current.length) && (
             <Button variant="outline" disabled={busy !== null} onClick={verifyIncident}>
               {busy === 'verify-incident' ? <Loader2 className="animate-spin" /> : <BadgeCheck />}
               Verify incident
             </Button>
           )}
-          {decision &&
+          {decision?.validity === 'CURRENT' &&
             (incident.state === 'PRIORITISED' || incident.state === 'VERIFIED') &&
             !authorization &&
             (requestBlocked ? (
@@ -320,9 +332,9 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
           {incident.state !== 'LEARNED' && ![
             incident.state === 'DETECTED' || incident.state === 'UNDERSTOOD',
             incident.state === 'UNDERSTOOD',
-            incident.state === 'PRIORITISED' && detail.decisions.length === 0,
-            canVerifyIncident(incident.state, detail.decisions.length),
-            Boolean(decision && (incident.state === 'PRIORITISED' || incident.state === 'VERIFIED') && !authorization),
+            incident.state === 'PRIORITISED' && current.length === 0,
+            canVerifyIncident(incident.state, current.length),
+            Boolean(decision?.validity === 'CURRENT' && (incident.state === 'PRIORITISED' || incident.state === 'VERIFIED') && !authorization),
             Boolean(authorization?.status === 'PENDING'),
             Boolean(incident.state === 'AUTHORIZED' && authorization?.status === 'APPROVED' && !containment),
             Boolean(incident.state === 'AUTHORIZED' && containment?.executedAt && ['SUCCEEDED', 'FAILED'].includes(containment.status)),
@@ -357,9 +369,49 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
               <Unavailable message="No asset is associated with this incident." />
             )}
             <div className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
-              <Fact label="Risk assessment" value="Unavailable from this endpoint" />
+              <Fact
+                label="Risk assessment"
+                value={riskEvaluations.error ? 'Risk evaluations could not be loaded' : riskEvaluations.data ? riskEvaluationSummary(latestEvaluation, incident.riskScore) : 'Loading…'}
+              />
               <Fact label="MITRE ATT&CK technique" value="Unavailable from this endpoint" />
             </div>
+          </Panel>
+
+          <Panel title="Risk evaluations" description="Stored scoring runs from the risk engine, oldest first; never recalculated">
+            {riskEvaluations.error ? (
+              <ErrorState title="Risk evaluations could not be loaded" message={riskEvaluations.error.message} onRetry={riskEvaluations.reload} />
+            ) : !riskEvaluations.data ? (
+              <LoadingState count={2} />
+            ) : riskEvaluations.data.length ? (
+              <RecordList>
+                {riskEvaluations.data.map((evaluation) => (
+                  <Record key={evaluation.id} id={evaluation.id} timestamp={evaluation.createdAt} label={`${evaluation.riskScore}/100 ${evaluation.riskLevel}`}>
+                    {evaluation.id === latestEvaluation?.id && <p className="text-[10px] font-semibold text-primary">Latest evaluation</p>}
+                    <p className="text-[11px]">
+                      Methodology: {evaluation.methodologyVersion} · Trigger: {evaluation.trigger} · Actor: {evaluation.actor}
+                    </p>
+                    {riskChange(evaluation) && <p className="text-[11px]">{riskChange(evaluation)}</p>}
+                    <ul className="space-y-0.5 text-[11px] text-muted-foreground">
+                      {evaluation.factors.map((factor) => (
+                        <li key={factor.key} title={factor.reason}>
+                          {factor.label}: {factor.contribution} points ({factor.normalizedValue}/100 × {factor.weight})
+                        </li>
+                      ))}
+                    </ul>
+                    {evaluation.matchedIndicators.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground">Matched indicators: {evaluation.matchedIndicators.join('; ')}</p>
+                    )}
+                    {evaluation.missingEvidence.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground">Missing evidence: {evaluation.missingEvidence.join(' ')}</p>
+                    )}
+                  </Record>
+                ))}
+              </RecordList>
+            ) : (
+              <Unavailable
+                message={incident.riskScore != null ? LEGACY_RISK_HISTORY_MESSAGE : 'No risk evaluation has been recorded yet. Calculate risk once the incident is UNDERSTOOD.'}
+              />
+            )}
           </Panel>
 
           <Panel title="Security events" description={`${detail.events.length} linked event${detail.events.length === 1 ? '' : 's'}`}>
@@ -421,7 +473,9 @@ function LiveIncidentDetailsContent({ detail }: { detail: LiveIncidentDetailsVie
               <RecordList>
                 {detail.decisions.map((decision) => (
                   <Record key={decision.id} id={decision.id} timestamp={decision.createdAt} label={decision.action}>
-                    {latestDecisionId === decision.id && <p className="text-[10px] font-semibold text-primary">Latest decision</p>}
+                    <p className={cn('text-[10px] font-semibold', decision.validity === 'CURRENT' ? 'text-primary' : 'text-muted-foreground')}>
+                      {decisionValidityLabel(decision.validity, decision.riskScore, incident.riskScore)}
+                    </p>
                     <p className="text-xs text-muted-foreground">{decision.rationale}</p>
                     <p className="text-[11px]">Risk: {decision.riskScore} · Confidence: {decision.confidence}</p>
                     <p className="text-[11px]">Recommendation: {decision.recommendation ?? 'N/A'}</p>
